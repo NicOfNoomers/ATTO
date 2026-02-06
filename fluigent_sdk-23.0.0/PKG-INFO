@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: fluigent_sdk
+Version: 23.0.0
+Summary: SDK for Fluigent Instruments
+Home-page: http://www.fluigent.com
+Author: Fluigent
+Author-email: support@fluigent.com
+License: Proprietary
