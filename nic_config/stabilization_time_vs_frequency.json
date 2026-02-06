@@ -1,0 +1,46 @@
+{
+  "port": "COM22",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "break_seconds_between_tests": 0,
+  "send_zero_on_exit": true,
+
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25
+  },
+
+  "analysis": {
+    "settling": {
+      "steady_window_s": 10,
+      "band_percent": 2.0,
+      "min_time_in_band_s": 5
+    }
+  },
+
+  "tests": [
+    { "type": "constant", "frequency_hz": 500, "duration_s": 120, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "constant", "frequency_hz": 100,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 200,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 300,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 400,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 600,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 700,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 800,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 900,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 1000, "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "constant", "frequency_hz": 900,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 800,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 700,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 600,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 400,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 300,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 200,  "duration_s": 75, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 100,  "duration_s": 75, "repeat": 1, "settle_ms": 0 }
+  ]
+}

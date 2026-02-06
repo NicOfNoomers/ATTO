@@ -1,0 +1,44 @@
+{
+  "port": "COM22",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "send_zero_on_exit": true,
+  "serial": { "protocol": "freq_only" },
+  "flow_sensor": { "backend": "fluigent", "channel": 0, "sample_rate_hz": 25.0 },
+  "meta": {
+    "name": "10x Sweep 1Hz-1kHz with 500Hz breaks",
+    "description": "10 sweeps from 1 Hz to 1000 Hz (~10 Hz steps), 10 s per step, 60 s at 500 Hz between sweeps.",
+    "operator": "",
+    "created": "2026-02-03T00:00:00+01:00"
+  },
+  "tests": [
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 500, "duration_s": 60, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 50, "step_duration_s": 5, "repeat": 1, "settle_ms": 0 }
+  ]
+}

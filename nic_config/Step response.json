@@ -1,0 +1,38 @@
+{
+  "port": "COM22",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "break_seconds_between_tests": 0,
+  "send_zero_on_exit": true,
+
+  "flow_sensor": { "backend": "fluigent", "channel": 0, "sample_rate_hz": 50 },
+
+  "analysis": {
+    "step_response": {
+      "deadband_percent": 5,
+      "rise_10_90": true,
+      "settling_band_percent": 2,
+      "steady_window_s": 8
+    },
+    "correlation": {
+      "use_value": "steady_state",
+      "steady_window_s": 3
+    }
+  },
+
+  "tests": [
+    { "type": "constant", "frequency_hz": 500, "duration_s": 120, "repeat": 1, "settle_ms": 0 },
+
+    { "type": "constant", "frequency_hz": 200, "duration_s": 15, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 800, "duration_s": 45, "repeat": 3, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 200, "duration_s": 45, "repeat": 3, "settle_ms": 0 },
+
+    { "type": "constant", "frequency_hz": 300, "duration_s": 15, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 900, "duration_s": 45, "repeat": 3, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 300, "duration_s": 45, "repeat": 3, "settle_ms": 0 },
+
+    { "type": "constant", "frequency_hz": 400, "duration_s": 15, "repeat": 1, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 700, "duration_s": 45, "repeat": 3, "settle_ms": 0 },
+    { "type": "constant", "frequency_hz": 400, "duration_s": 45, "repeat": 3, "settle_ms": 0 }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "port": "COM15",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 10000.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "10x Sweep 1Hz-1kHz with 500Hz breaks",
+    "description": "",
+    "operator": "",
+    "created": "2026-02-05T02:36:11+01:00"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  }
+}
