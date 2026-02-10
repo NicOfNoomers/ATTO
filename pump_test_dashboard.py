@@ -1347,7 +1347,13 @@ class DashboardApp:
         threading.Thread(target=self._join_active_bg, daemon=True).start()
 
     def _join_active_bg(self):
+        run_dir = self.run_dir
+        captured_data = None
+        
         try:
+            # Capture data before stopping the stream
+            if self.active_stream is not None:
+                captured_data = self.active_stream.get_plot_data()
             self.active_stream.stop()
             self.active_stream.join(timeout=5.0)
         finally:
@@ -1359,6 +1365,54 @@ class DashboardApp:
             self.var_status.set("Idle.")
             self.var_manual_info.set("Manual session not connected.")
             self.var_manual_enabled.set(False)
+        
+        # Generate summary plot if we have run data
+        if run_dir and captured_data and len(captured_data[0]) > 0:
+            self.root.after(100, lambda: self._generate_summary_plot(run_dir, captured_data))
+    
+    def _generate_summary_plot(self, run_dir: str, data: Tuple[List[float], List[float], List[float]]):
+        """Generate and save a summary plot when test completes."""
+        ts, freqs, flows = data
+        
+        if not ts or len(ts) == 0:
+            return
+        
+        # Create figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+        
+        # Top subplot: Time vs Flow
+        ax1.plot(ts, flows, 'b-', lw=1)
+        ax1.set_xlabel('Time (s)')
+        ax1.set_ylabel('Flow rate', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
+        ax1.grid(True, alpha=0.25)
+        ax1.set_title('Flow Rate vs Time')
+        
+        # Add secondary y-axis for frequency on top plot
+        ax1_freq = ax1.twinx()
+        ax1_freq.plot(ts, freqs, 'r-', lw=1, alpha=0.7)
+        ax1_freq.set_ylabel('Frequency (Hz)', color='r')
+        ax1_freq.tick_params(axis='y', labelcolor='r')
+        
+        # Bottom subplot: Time vs Frequency
+        ax2.plot(ts, freqs, 'r-', lw=1)
+        ax2.set_xlabel('Time (s)')
+        ax2.set_ylabel('Frequency (Hz)', color='r')
+        ax2.tick_params(axis='y', labelcolor='r')
+        ax2.grid(True, alpha=0.25)
+        ax2.set_title('Frequency vs Time')
+        
+        plt.tight_layout()
+        
+        # Save the plot
+        plot_path = os.path.join(run_dir, "summary_plot.png")
+        try:
+            fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+            self.var_status.set(f"Test complete. Plot saved to: {os.path.basename(plot_path)}")
+        except Exception as e:
+            self.var_status.set(f"Test complete. Failed to save plot: {e}")
+        finally:
+            plt.close(fig)
 
     # ---- manual actions ----
     def _manual_toggle_output(self):
