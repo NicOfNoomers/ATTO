@@ -717,9 +717,19 @@ class DashboardApp:
         self.var_status = tk.StringVar(value="Idle.")
         ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
 
-        # Main split
-        main = ttk.Frame(self.root)
-        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        # Main split with scrollbar support
+        self.main_canvas = tk.Canvas(self.root)
+        self.scrollbar_y = ttk.Scrollbar(self.root, orient=tk.VERTICAL, command=self.main_canvas.yview)
+        self.scrollbar_x = ttk.Scrollbar(self.root, orient=tk.HORIZONTAL, command=self.main_canvas.xview)
+        self.main_canvas.configure(yscrollcommand=self._on_scroll_y, xscrollcommand=self._on_scroll_x)
+
+        self.scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        main = ttk.Frame(self.main_canvas)
+        self.main_canvas.create_window((0, 0), window=main, anchor="nw")
+        main.bind("<Configure>", lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
 
         left = ttk.Frame(main)
         left.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 8))
@@ -737,6 +747,16 @@ class DashboardApp:
 
         self._update_mode_ui()
         self._refresh_manual_duty_state()
+
+    def _on_scroll_y(self, first, last):
+        """Handle vertical scrollbar."""
+        self.scrollbar_y.set(first, last)
+        self.main_canvas.yview_moveto(first)
+
+    def _on_scroll_x(self, first, last):
+        """Handle horizontal scrollbar."""
+        self.scrollbar_x.set(first, last)
+        self.main_canvas.xview_moveto(first)
 
     def _build_config_builder(self, parent):
         listf = ttk.LabelFrame(parent, text="Config builder (test blocks)")
@@ -863,9 +883,121 @@ class DashboardApp:
         self.ax1.grid(True, alpha=0.25)
         self.ax2.grid(True, alpha=0.25)
 
+        # Zoom controls frame
+        zoom_frame = ttk.Frame(self.plot_frame)
+        zoom_frame.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 2))
+        
+        # Time window controls
+        ttk.Label(zoom_frame, text="Time window (s):").pack(side=tk.LEFT, padx=(0, 4))
+        self.var_time_window = tk.StringVar(value="30")
+        ttk.Entry(zoom_frame, textvariable=self.var_time_window, width=8).pack(side=tk.LEFT, padx=4)
+        ttk.Button(zoom_frame, text="Zoom In", command=self._zoom_time_in).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Zoom Out", command=self._zoom_time_out).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Reset", command=self._zoom_time_reset).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Label(zoom_frame, text="  |  ").pack(side=tk.LEFT)
+        
+        # Y-axis range for frequency plot
+        ttk.Label(zoom_frame, text="Freq Y min:").pack(side=tk.LEFT)
+        self.var_freq_ymin = tk.StringVar(value="")
+        ttk.Entry(zoom_frame, textvariable=self.var_freq_ymin, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Label(zoom_frame, text="max:").pack(side=tk.LEFT)
+        self.var_freq_ymax = tk.StringVar(value="")
+        ttk.Entry(zoom_frame, textvariable=self.var_freq_ymax, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Set Freq Y", command=self._set_freq_y_range).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Label(zoom_frame, text="  |  ").pack(side=tk.LEFT)
+        
+        # Y-axis range for flow plot
+        ttk.Label(zoom_frame, text="Flow Y min:").pack(side=tk.LEFT)
+        self.var_flow_ymin = tk.StringVar(value="")
+        ttk.Entry(zoom_frame, textvariable=self.var_flow_ymin, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Label(zoom_frame, text="max:").pack(side=tk.LEFT)
+        self.var_flow_ymax = tk.StringVar(value="")
+        ttk.Entry(zoom_frame, textvariable=self.var_flow_ymax, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Set Flow Y", command=self._set_flow_y_range).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Auto Y", command=self._auto_y_range).pack(side=tk.LEFT, padx=2)
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        # Custom zoom/pan with mouse wheel on plots
+        self.canvas.mpl_connect('scroll_event', self._on_scroll_event)
+        
+        # Track if user has manually set y-axis ranges
+        self._user_freq_y_range = None
+        self._user_flow_y_range = None
+        self._auto_y_enabled = True
+
+    # ---- zoom controls ----
+    def _get_time_window(self) -> float:
+        """Get current time window in seconds."""
+        try:
+            return float(self.var_time_window.get())
+        except ValueError:
+            return 30.0
+
+    def _set_time_window(self, window: float):
+        """Set the time window variable."""
+        self.var_time_window.set(str(int(window)))
+
+    def _zoom_time_in(self):
+        """Zoom in on time axis (decrease time window)."""
+        current = self._get_time_window()
+        new_window = max(5.0, current * 0.7)
+        self._set_time_window(new_window)
+
+    def _zoom_time_out(self):
+        """Zoom out on time axis (increase time window)."""
+        current = self._get_time_window()
+        new_window = min(600.0, current * 1.5)
+        self._set_time_window(new_window)
+
+    def _zoom_time_reset(self):
+        """Reset time window to default."""
+        self._set_time_window(30.0)
+
+    def _set_freq_y_range(self):
+        """Set custom Y range for frequency plot."""
+        try:
+            ymin = safe_float(self.var_freq_ymin.get(), None)
+            ymax = safe_float(self.var_freq_ymax.get(), None)
+            if ymin is not None and ymax is not None:
+                self._user_freq_y_range = (ymin, ymax)
+                self._auto_y_enabled = False
+                self.ax1.set_ylim(ymin, ymax)
+                self.canvas.draw()
+        except Exception:
+            pass
+
+    def _set_flow_y_range(self):
+        """Set custom Y range for flow plot."""
+        try:
+            ymin = safe_float(self.var_flow_ymin.get(), None)
+            ymax = safe_float(self.var_flow_ymax.get(), None)
+            if ymin is not None and ymax is not None:
+                self._user_flow_y_range = (ymin, ymax)
+                self._auto_y_enabled = False
+                self.ax2.set_ylim(ymin, ymax)
+                self.canvas.draw()
+        except Exception:
+            pass
+
+    def _auto_y_range(self):
+        """Enable auto Y range for both plots."""
+        self._user_freq_y_range = None
+        self._user_flow_y_range = None
+        self._auto_y_enabled = True
+
+    def _on_scroll_event(self, event):
+        """Handle mouse scroll for zooming time axis."""
+        if event.inaxes:
+            base_scale = 1.1
+            if event.button == 'scrollup':
+                self._zoom_time_in()
+            elif event.button == 'scrolldown':
+                self._zoom_time_out()
 
     # ---- plot update ----
     def _update_plot(self, _frame):
@@ -879,26 +1011,33 @@ class DashboardApp:
         self.line_flow.set_data(ts, flows)
 
         tmax = ts[-1]
-        window = 30.0
+        window = self._get_time_window()
         tmin = max(0.0, tmax - window)
         self.ax1.set_xlim(tmin, tmin + window)
         self.ax2.set_xlim(tmin, tmin + window)
 
-        try:
-            fmin, fmax = min(freqs), max(freqs)
-            if fmin == fmax:
-                fmin -= 1; fmax += 1
-            self.ax1.set_ylim(fmin, fmax)
-        except Exception:
-            pass
+        # Apply user-defined Y ranges or auto-scale
+        if self._user_freq_y_range is not None:
+            self.ax1.set_ylim(self._user_freq_y_range)
+        else:
+            try:
+                fmin, fmax = min(freqs), max(freqs)
+                if fmin == fmax:
+                    fmin -= 1; fmax += 1
+                self.ax1.set_ylim(fmin, fmax)
+            except Exception:
+                pass
 
-        try:
-            ymin, ymax = min(flows), max(flows)
-            if ymin == ymax:
-                ymin -= 0.1; ymax += 0.1
-            self.ax2.set_ylim(ymin, ymax)
-        except Exception:
-            pass
+        if self._user_flow_y_range is not None:
+            self.ax2.set_ylim(self._user_flow_y_range)
+        else:
+            try:
+                ymin, ymax = min(flows), max(flows)
+                if ymin == ymax:
+                    ymin -= 0.1; ymax += 0.1
+                self.ax2.set_ylim(ymin, ymax)
+            except Exception:
+                pass
 
         self.canvas.draw()
         return self.line_freq, self.line_flow
