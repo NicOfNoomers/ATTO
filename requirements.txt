@@ -2,3 +2,4 @@
 pyserial>=3.5
 matplotlib>=3.5.0
 numpy>=1.21.0
+opencv-python>=4.5.0  # For USB camera video recording (optional)

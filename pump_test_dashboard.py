@@ -43,6 +43,12 @@ try:
 except Exception:
     serial = None
 
+try:
+    import cv2  # opencv for video capture
+    CV2_AVAILABLE = True
+except Exception:
+    CV2_AVAILABLE = False
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -589,6 +595,116 @@ class PumpTestRunner(LiveSessionBase):
             return list(self.buf_t), list(self.buf_freq), list(self.buf_flow)
 
 
+# ---------------- video recording ----------------
+class VideoRecorder:
+    """USB camera video recorder with overlay support."""
+    
+    def __init__(self):
+        self.cap = None
+        self.writer = None
+        self.recording = False
+        self.output_path = None
+        self.frame_width = 640
+        self.frame_height = 480
+        self.fps = 30.0
+        
+    def open(self, camera_index: int = 0) -> bool:
+        """Open a USB camera."""
+        if not CV2_AVAILABLE:
+            return False
+        try:
+            self.cap = cv2.VideoCapture(camera_index)
+            if not self.cap.isOpened():
+                self.cap = None
+                return False
+            # Get actual frame dimensions
+            self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            return True
+        except Exception:
+            self.cap = None
+            return False
+    
+    def close(self):
+        """Close the camera and writer."""
+        if self.writer:
+            self.writer.release()
+            self.writer = None
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+        self.recording = False
+    
+    def start_recording(self, output_path: str) -> bool:
+        """Start recording video to a file."""
+        if not self.cap:
+            return False
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.writer = cv2.VideoWriter(output_path, fourcc, self.fps, 
+                                          (self.frame_width, self.frame_height))
+            if not self.writer.isOpened():
+                self.writer = None
+                return False
+            self.output_path = output_path
+            self.recording = True
+            return True
+        except Exception:
+            self.writer = None
+            return False
+    
+    def stop_recording(self):
+        """Stop recording."""
+        self.recording = False
+        if self.writer:
+            self.writer.release()
+            self.writer = None
+    
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self.recording and self.writer is not None
+    
+    def is_opened(self) -> bool:
+        """Check if camera is open."""
+        return self.cap is not None and self.cap.isOpened()
+    
+    def read_frame(self) -> Optional["np.ndarray"]:
+        """Read a frame from the camera."""
+        if self.cap:
+            ret, frame = self.cap.read()
+            if ret:
+                return frame
+        return None
+    
+    def add_overlay(self, frame, t_s: float, freq: float, flow: float) -> "np.ndarray":
+        """Add overlay text to frame."""
+        try:
+            import numpy as np
+            # Add semi-transparent overlay rectangle
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (5, 5), (250, 90), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+            
+            # Add text
+            cv2.putText(frame, f"Time: {t_s:.2f}s", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(frame, f"Freq: {freq:.0f} Hz", (10, 55), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(frame, f"Flow: {flow:.4f}", (10, 80), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            return frame
+        except ImportError:
+            # numpy not available, just return frame
+            return frame
+    
+    def record_frame(self, frame) -> bool:
+        """Record a frame if recording is active."""
+        if self.writer and self.recording:
+            self.writer.write(frame)
+            return True
+        return False
+
+
 # ---------------- UI ----------------
 class DashboardApp:
     def __init__(self, initial_config_path: Optional[str] = None):
@@ -747,6 +863,132 @@ class DashboardApp:
 
         self._update_mode_ui()
         self._refresh_manual_duty_state()
+
+        # Initialize video recorder
+        self.video_recorder = None
+        self.video_recording = False
+        self.var_video_enabled = tk.BooleanVar(value=False)
+        self.var_video_camera_index = tk.StringVar(value="0")
+        self.var_video_status = tk.StringVar(value="Camera: Not connected")
+        
+        # Build video controls
+        self._build_video_controls(right)
+        
+        # Start video preview if camera is connected
+        self._init_video()
+
+    # ---- video controls ----
+    def _build_video_controls(self, parent):
+        """Build video recording controls."""
+        video_frame = ttk.LabelFrame(parent, text="USB Camera (optional)")
+        video_frame.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
+        
+        row1 = ttk.Frame(video_frame)
+        row1.pack(side=tk.TOP, fill=tk.X, padx=6, pady=4)
+        
+        ttk.Checkbutton(row1, text="Enable video recording", variable=self.var_video_enabled)\
+            .pack(side=tk.LEFT, padx=(0, 8))
+        
+        ttk.Label(row1, text="Camera index:").pack(side=tk.LEFT)
+        ttk.Entry(row1, textvariable=self.var_video_camera_index, width=6).pack(side=tk.LEFT, padx=4)
+        
+        self.btn_video_connect = ttk.Button(row1, text="Connect Camera", command=self._connect_camera)
+        self.btn_video_connect.pack(side=tk.LEFT, padx=8)
+        
+        self.btn_video_disconnect = ttk.Button(row1, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
+        self.btn_video_disconnect.pack(side=tk.LEFT, padx=4)
+        
+        row2 = ttk.Frame(video_frame)
+        row2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
+        
+        ttk.Label(row2, textvariable=self.var_video_status).pack(side=tk.LEFT)
+        ttk.Label(row2, text="  |  Recording: off").pack(side=tk.LEFT)
+        
+        # Store video label for updating recording status
+        self.var_video_rec_status = tk.StringVar(value="off")
+        self.lbl_video_rec = ttk.Label(row2, textvariable=self.var_video_rec_status)
+        self.lbl_video_rec.pack(side=tk.LEFT, padx=4)
+
+    def _init_video(self):
+        """Initialize video recorder."""
+        if not CV2_AVAILABLE:
+            self.var_video_status.set("Camera: OpenCV not available (pip install opencv-python)")
+            return
+        
+        # Create video recorder instance
+        self.video_recorder = VideoRecorder()
+        
+        # Try to auto-connect to camera 0
+        camera_idx = safe_int(self.var_video_camera_index.get(), 0)
+        if self.video_recorder.open(camera_idx):
+            self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
+            self.btn_video_connect.config(state=tk.DISABLED)
+            self.btn_video_disconnect.config(state=tk.NORMAL)
+        else:
+            self.var_video_status.set("Camera: Not connected (click Connect to try)")
+            self.btn_video_connect.config(state=tk.NORMAL)
+            self.btn_video_disconnect.config(state=tk.DISABLED)
+
+    def _connect_camera(self):
+        """Connect to USB camera."""
+        if not CV2_AVAILABLE:
+            messagebox.showwarning("Camera", "OpenCV is not installed. Run: pip install opencv-python")
+            return
+        
+        if self.video_recorder is None:
+            self.video_recorder = VideoRecorder()
+        
+        camera_idx = safe_int(self.var_video_camera_index.get(), 0)
+        if self.video_recorder.open(camera_idx):
+            self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
+            self.btn_video_connect.config(state=tk.DISABLED)
+            self.btn_video_disconnect.config(state=tk.NORMAL)
+        else:
+            self.var_video_status.set(f"Camera: Failed to connect (index {camera_idx})")
+            messagebox.showerror("Camera", f"Could not open camera at index {camera_idx}. Check USB connection.")
+
+    def _disconnect_camera(self):
+        """Disconnect from USB camera."""
+        if self.video_recorder:
+            # Stop recording if active
+            if self.video_recorder.is_recording():
+                self.video_recorder.stop_recording()
+                self.var_video_rec_status.set("off")
+            
+            self.video_recorder.close()
+            self.video_recorder = None
+        
+        self.var_video_status.set("Camera: Disconnected")
+        self.btn_video_connect.config(state=tk.NORMAL)
+        self.btn_video_disconnect.config(state=tk.DISABLED)
+
+    def _start_video_recording(self):
+        """Start video recording for current run."""
+        if not self.var_video_enabled.get():
+            return False
+        
+        if not self.video_recorder or not self.video_recorder.is_opened():
+            # Camera not connected, disable video for this run
+            self.var_video_enabled.set(False)
+            return False
+        
+        if self.video_recorder.is_recording():
+            return True
+        
+        # Start recording
+        video_path = os.path.join(self.run_dir, "video_recording.mp4")
+        if self.video_recorder.start_recording(video_path):
+            self.var_video_rec_status.set("recording")
+            return True
+        else:
+            messagebox.showerror("Video", "Failed to start video recording")
+            return False
+
+    def _stop_video_recording(self):
+        """Stop video recording."""
+        if self.video_recorder and self.video_recorder.is_recording():
+            self.video_recorder.stop_recording()
+            self.var_video_rec_status.set("off")
 
     def _on_scroll_y(self, first, last):
         """Handle vertical scrollbar."""
@@ -1365,6 +1607,9 @@ class DashboardApp:
             self.var_status.set("Idle.")
             self.var_manual_info.set("Manual session not connected.")
             self.var_manual_enabled.set(False)
+        
+        # Stop video recording if active
+        self._stop_video_recording()
         
         # Generate summary plot if we have run data
         if run_dir and captured_data and len(captured_data[0]) > 0:
