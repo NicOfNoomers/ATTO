@@ -768,7 +768,8 @@ class DashboardApp:
     def __init__(self, initial_config_path: Optional[str] = None):
         self.root = tk.Tk()
         self.root.title("Pump Testing Suite Dashboard (v2)")
-        self.root.geometry("1250x840")
+        self._apply_ui_scaling()
+        self._set_default_geometry()
 
         self.ui_events: "queue.Queue[Tuple[str, Any]]" = queue.Queue()
         self.cfg: Dict[str, Any] = {"tests": []}
@@ -894,36 +895,33 @@ class DashboardApp:
         self.var_status = tk.StringVar(value="Idle.")
         ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
 
-        # Main split with scrollbar support
-        self.main_canvas = tk.Canvas(self.root)
-        self.scrollbar_y = ttk.Scrollbar(self.root, orient=tk.VERTICAL, command=self.main_canvas.yview)
-        self.scrollbar_x = ttk.Scrollbar(self.root, orient=tk.HORIZONTAL, command=self.main_canvas.xview)
-        self.main_canvas.configure(yscrollcommand=self._on_scroll_y, xscrollcommand=self._on_scroll_x)
+        # Main split (responsive, no scrollbars)
+        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
-        self.scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
-        self.scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        main = ttk.Frame(self.main_canvas)
-        self.main_canvas.create_window((0, 0), window=main, anchor="nw")
-        main.bind("<Configure>", lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
-
-        left = ttk.Frame(main)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 8))
+        left = ttk.Frame(main, width=420)
+        left.pack_propagate(False)
+        main.add(left, weight=0)
         self._build_config_builder(left)
 
         right = ttk.Frame(main)
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        main.add(right, weight=1)
 
-        self.plot_frame = ttk.LabelFrame(right, text="Live plots")
-        self.plot_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        right_pane = ttk.PanedWindow(right, orient=tk.VERTICAL)
+        right_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        self.manual_frame = ttk.LabelFrame(right, text="Manual control")
-        self.manual_frame.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
+        self.plot_frame = ttk.LabelFrame(right_pane, text="Live plots")
+        right_pane.add(self.plot_frame, weight=3)
+
+        controls = ttk.Frame(right_pane)
+        right_pane.add(controls, weight=1)
+
+        controls.columnconfigure(0, weight=1)
+        controls.rowconfigure(2, weight=1)
+
+        self.manual_frame = ttk.LabelFrame(controls, text="Manual control")
+        self.manual_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self._build_manual_panel(self.manual_frame)
-
-        self._update_mode_ui()
-        self._refresh_manual_duty_state()
 
         # Initialize video recorder
         self.video_recorder = None
@@ -931,13 +929,14 @@ class DashboardApp:
         self.var_video_enabled = tk.BooleanVar(value=False)
         self.var_video_camera_index = tk.StringVar(value="0")
         self.var_video_status = tk.StringVar(value="Camera: Not connected")
-        
-        # Build video controls
-        self._build_video_controls(right)
-        
-        # Build video preview panel
-        self._build_video_preview(right)
-        
+
+        # Build video controls and preview
+        self._build_video_controls(controls).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self._build_video_preview(controls).grid(row=2, column=0, sticky="nsew")
+
+        self._update_mode_ui()
+        self._refresh_manual_duty_state()
+
         # Start video preview if camera is connected
         self._init_video()
 
@@ -945,7 +944,7 @@ class DashboardApp:
     def _build_video_controls(self, parent):
         """Build video recording controls."""
         video_frame = ttk.LabelFrame(parent, text="USB Camera (optional)")
-        video_frame.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
+        self.video_controls_frame = video_frame
         
         row1 = ttk.Frame(video_frame)
         row1.pack(side=tk.TOP, fill=tk.X, padx=6, pady=4)
@@ -972,6 +971,7 @@ class DashboardApp:
         self.var_video_rec_status = tk.StringVar(value="off")
         self.lbl_video_rec = ttk.Label(row2, textvariable=self.var_video_rec_status)
         self.lbl_video_rec.pack(side=tk.LEFT, padx=4)
+        return video_frame
 
     def _init_video(self):
         """Initialize video recorder."""
@@ -1067,7 +1067,6 @@ class DashboardApp:
     def _build_video_preview(self, parent):
         """Build video preview panel to show real-time camera feed."""
         self.video_preview_frame = ttk.LabelFrame(parent, text="Camera Preview")
-        self.video_preview_frame.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
         
         # Placeholder for video preview
         self.video_preview_label = ttk.Label(self.video_preview_frame, text="Camera not connected\nConnect camera to see preview", anchor="center")
@@ -1075,6 +1074,7 @@ class DashboardApp:
         
         # Start video preview update
         self._video_preview_running = False
+        return self.video_preview_frame
 
     def _start_video_preview(self):
         """Start updating the video preview in the UI."""
@@ -1124,15 +1124,31 @@ class DashboardApp:
         """Stop updating the video preview."""
         self._video_preview_running = False
 
-    def _on_scroll_y(self, first, last):
-        """Handle vertical scrollbar."""
-        self.scrollbar_y.set(first, last)
-        self.main_canvas.yview_moveto(first)
+    def _apply_ui_scaling(self):
+        """Scale UI based on screen size to avoid scroll-only layouts."""
+        try:
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            base_w, base_h = 1250, 840
+            scale = min(sw / base_w, sh / base_h)
+            scale = clamp(scale, 0.85, 1.15)
+            self.root.tk.call("tk", "scaling", scale)
+        except Exception:
+            pass
 
-    def _on_scroll_x(self, first, last):
-        """Handle horizontal scrollbar."""
-        self.scrollbar_x.set(first, last)
-        self.main_canvas.xview_moveto(first)
+    def _set_default_geometry(self):
+        """Set a sensible starting size based on screen resolution."""
+        try:
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            w = min(1250, int(sw * 0.95))
+            h = min(840, int(sh * 0.90))
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            self.root.geometry(f"{w}x{h}+{x}+{y}")
+            self.root.minsize(900, 640)
+        except Exception:
+            self.root.geometry("1250x840")
 
     def _build_config_builder(self, parent):
         listf = ttk.LabelFrame(parent, text="Config builder (test blocks)")
