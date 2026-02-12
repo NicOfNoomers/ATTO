@@ -230,11 +230,12 @@ class LiveSessionBase:
 
 class ManualSession(LiveSessionBase):
     """Manual real-time control session."""
-    def __init__(self, cfg: Dict[str, Any], run_dir: Optional[str], ui_events: "queue.Queue[Tuple[str, Any]]"):
+    def __init__(self, cfg: Dict[str, Any], run_dir: Optional[str], ui_events: "queue.Queue[Tuple[str, Any]]", video_recorder: Optional["VideoRecorder"] = None):
         self.cfg = cfg
         self.run_dir = run_dir
         self.ui_events = ui_events
         self.stop_flag = threading.Event()
+        self.video_recorder = video_recorder
 
         self.protocol = (cfg.get("protocol") or cfg.get("serial", {}).get("protocol") or "freq_only")
         self.ser = None
@@ -252,6 +253,7 @@ class ManualSession(LiveSessionBase):
         self.logger = DataLogger(run_dir) if run_dir else None
         self.t0 = None
         self.t_sample = None
+        self.t_video = None
 
     def _emit(self, kind: str, msg: str):
         self.ui_events.put((kind, msg))
@@ -371,6 +373,33 @@ class ManualSession(LiveSessionBase):
                     self.logger.log_merged(t_s, f, d, float(val))
             time.sleep(dt)
 
+    def _video_loop(self):
+        """Background thread for capturing video frames with overlay."""
+        video_recorder = None
+        
+        # Get video recorder from UI if available
+        try:
+            from pump_test_dashboard import DashboardApp
+            # Will be set by UI
+            pass
+        except ImportError:
+            pass
+        
+        while not self.stop_flag.is_set():
+            if self.video_recorder and self.video_recorder.is_recording():
+                frame = self.video_recorder.read_frame()
+                if frame is not None:
+                    t_s = time.monotonic() - self.t0
+                    with self.lock:
+                        f = self.freq_set if self.output_enabled else 0
+                        flow_val = self.buf_flow[-1] if self.buf_flow else 0.0
+                    
+                    # Add overlay and record
+                    overlay_frame = self.video_recorder.add_overlay(frame, t_s, f, flow_val)
+                    self.video_recorder.record_frame(overlay_frame)
+            
+            time.sleep(1.0 / 30.0)  # ~30 fps for video
+
     def start(self):
         self._setup_hardware()
         self.t0 = time.monotonic()
@@ -378,6 +407,11 @@ class ManualSession(LiveSessionBase):
         self._emit("status", "Manual: connected. Sampling started.")
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_sample.start()
+        
+        # Start video recording if enabled and recorder is available
+        if self.video_recorder and self.video_recorder.is_opened():
+            self.t_video = threading.Thread(target=self._video_loop, daemon=True)
+            self.t_video.start()
 
     def stop(self):
         self.stop_flag.set()
@@ -398,11 +432,12 @@ class ManualSession(LiveSessionBase):
 
 class PumpTestRunner(LiveSessionBase):
     """Scheduled runner based on cfg['tests'] blocks (constant + sweep)."""
-    def __init__(self, cfg: Dict[str, Any], run_dir: str, ui_events: "queue.Queue[Tuple[str, Any]]"):
+    def __init__(self, cfg: Dict[str, Any], run_dir: str, ui_events: "queue.Queue[Tuple[str, Any]]", video_recorder: Optional["VideoRecorder"] = None):
         self.cfg = cfg
         self.run_dir = run_dir
         self.ui_events = ui_events
         self.stop_flag = threading.Event()
+        self.video_recorder = video_recorder
 
         self.protocol = (cfg.get("protocol") or cfg.get("serial", {}).get("protocol") or "freq_only")
         self.ser = None
@@ -420,6 +455,7 @@ class PumpTestRunner(LiveSessionBase):
         self.t0 = None
         self.t_sample = None
         self.t_run = None
+        self.t_video = None
 
     def _emit(self, kind: str, msg: str):
         self.ui_events.put((kind, msg))
@@ -503,6 +539,23 @@ class PumpTestRunner(LiveSessionBase):
                 self.logger.log_merged(t_s, f, d, float(val))
             time.sleep(dt)
 
+    def _video_loop(self):
+        """Background thread for capturing video frames with overlay."""
+        while not self.stop_flag.is_set():
+            if self.video_recorder and self.video_recorder.is_recording():
+                frame = self.video_recorder.read_frame()
+                if frame is not None:
+                    t_s = time.monotonic() - self.t0
+                    with self.lock:
+                        f = self.freq_set
+                        flow_val = self.buf_flow[-1] if self.buf_flow else 0.0
+                    
+                    # Add overlay and record
+                    overlay_frame = self.video_recorder.add_overlay(frame, t_s, f, flow_val)
+                    self.video_recorder.record_frame(overlay_frame)
+            
+            time.sleep(1.0 / 30.0)  # ~30 fps for video
+
     def _run_tests(self):
         tests = self.cfg.get("tests", [])
         break_between = float(self.cfg.get("break_seconds_between_tests", 0.0))
@@ -577,6 +630,11 @@ class PumpTestRunner(LiveSessionBase):
         self.t_run = threading.Thread(target=self._run_tests, daemon=True)
         self.t_sample.start()
         self.t_run.start()
+        
+        # Start video recording if enabled and recorder is available
+        if self.video_recorder and self.video_recorder.is_opened():
+            self.t_video = threading.Thread(target=self._video_loop, daemon=True)
+            self.t_video.start()
 
     def stop(self):
         self.stop_flag.set()
@@ -747,6 +805,9 @@ class DashboardApp:
         self.var_out_dir   = tk.StringVar(value=os.path.abspath("./pump_runs"))
         self.var_log_manual = tk.BooleanVar(value=False)
         self.txt_desc      = tk.Text(meta, height=4, width=55)
+        self._default_test_name = self.var_test_name.get()
+        self._default_operator = self.var_operator.get()
+        self._default_desc = ""
 
         ttk.Label(meta, text="Name:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(meta, textvariable=self.var_test_name, width=40).grid(row=0, column=1, sticky="w", padx=4, pady=2)
@@ -874,6 +935,9 @@ class DashboardApp:
         # Build video controls
         self._build_video_controls(right)
         
+        # Build video preview panel
+        self._build_video_preview(right)
+        
         # Start video preview if camera is connected
         self._init_video()
 
@@ -924,6 +988,8 @@ class DashboardApp:
             self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
             self.btn_video_connect.config(state=tk.DISABLED)
             self.btn_video_disconnect.config(state=tk.NORMAL)
+            # Start video preview
+            self._start_video_preview()
         else:
             self.var_video_status.set("Camera: Not connected (click Connect to try)")
             self.btn_video_connect.config(state=tk.NORMAL)
@@ -943,12 +1009,17 @@ class DashboardApp:
             self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
             self.btn_video_connect.config(state=tk.DISABLED)
             self.btn_video_disconnect.config(state=tk.NORMAL)
+            # Start video preview
+            self._start_video_preview()
         else:
             self.var_video_status.set(f"Camera: Failed to connect (index {camera_idx})")
             messagebox.showerror("Camera", f"Could not open camera at index {camera_idx}. Check USB connection.")
 
     def _disconnect_camera(self):
         """Disconnect from USB camera."""
+        # Stop video preview first
+        self._stop_video_preview()
+        
         if self.video_recorder:
             # Stop recording if active
             if self.video_recorder.is_recording():
@@ -961,6 +1032,9 @@ class DashboardApp:
         self.var_video_status.set("Camera: Disconnected")
         self.btn_video_connect.config(state=tk.NORMAL)
         self.btn_video_disconnect.config(state=tk.DISABLED)
+        
+        # Reset preview label
+        self.video_preview_label.configure(image="", text="Camera not connected\nConnect camera to see preview")
 
     def _start_video_recording(self):
         """Start video recording for current run."""
@@ -989,6 +1063,66 @@ class DashboardApp:
         if self.video_recorder and self.video_recorder.is_recording():
             self.video_recorder.stop_recording()
             self.var_video_rec_status.set("off")
+
+    def _build_video_preview(self, parent):
+        """Build video preview panel to show real-time camera feed."""
+        self.video_preview_frame = ttk.LabelFrame(parent, text="Camera Preview")
+        self.video_preview_frame.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
+        
+        # Placeholder for video preview
+        self.video_preview_label = ttk.Label(self.video_preview_frame, text="Camera not connected\nConnect camera to see preview", anchor="center")
+        self.video_preview_label.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
+        
+        # Start video preview update
+        self._video_preview_running = False
+
+    def _start_video_preview(self):
+        """Start updating the video preview in the UI."""
+        if self._video_preview_running:
+            return
+        
+        self._video_preview_running = True
+        self._update_video_preview()
+
+    def _update_video_preview(self):
+        """Update the video preview with the latest camera frame."""
+        if not self._video_preview_running:
+            return
+        
+        if self.video_recorder and self.video_recorder.is_opened():
+            frame = self.video_recorder.read_frame()
+            if frame is not None:
+                # Convert frame to RGB for display
+                try:
+                    import numpy as np
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Resize frame to fit in preview (max 320x240)
+                    h, w = frame_rgb.shape[:2]
+                    max_size = 240
+                    scale = min(max_size / h, max_size / w)
+                    new_h = int(h * scale)
+                    new_w = int(w * scale)
+                    frame_rgb = cv2.resize(frame_rgb, (new_w, new_h))
+                    
+                    # Convert to PIL Image and then to PhotoImage
+                    from PIL import Image, ImageTk
+                    pil_image = Image.fromarray(frame_rgb)
+                    photo = ImageTk.PhotoImage(pil_image)
+                    
+                    self.video_preview_label.configure(image=photo, text="")
+                    self.video_preview_label.image = photo  # Keep reference
+                except ImportError:
+                    self.video_preview_label.configure(text="PIL not available for preview")
+                except Exception:
+                    pass
+        
+        # Schedule next update
+        self.root.after(33, self._update_video_preview)  # ~30 fps
+
+    def _stop_video_preview(self):
+        """Stop updating the video preview."""
+        self._video_preview_running = False
 
     def _on_scroll_y(self, first, last):
         """Handle vertical scrollbar."""
@@ -1316,11 +1450,12 @@ class DashboardApp:
             self.var_sample_rate.set(str(flow_cfg.get("sample_rate_hz", self.var_sample_rate.get())))
 
         meta = self.cfg.get("meta", {})
-        if isinstance(meta, dict):
-            self.var_test_name.set(meta.get("name", self.var_test_name.get()))
-            self.var_operator.set(meta.get("operator", self.var_operator.get()))
-            self.txt_desc.delete("1.0", tk.END)
-            self.txt_desc.insert("1.0", meta.get("description", ""))
+        if not isinstance(meta, dict):
+            meta = {}
+        self.var_test_name.set(meta.get("name", self._default_test_name))
+        self.var_operator.set(meta.get("operator", self._default_operator))
+        self.txt_desc.delete("1.0", tk.END)
+        self.txt_desc.insert("1.0", meta.get("description", self._default_desc))
 
         self.cfg.setdefault("tests", [])
         self.refresh_blocks_list()
@@ -1531,7 +1666,8 @@ class DashboardApp:
         with open(os.path.join(self.run_dir, "config.json"), "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
 
-        runner = PumpTestRunner(cfg, self.run_dir, self.ui_events)
+        # Pass video recorder to the runner
+        runner = PumpTestRunner(cfg, self.run_dir, self.ui_events, self.video_recorder)
         try:
             runner.start()
         except Exception as e:
@@ -1543,7 +1679,12 @@ class DashboardApp:
         self.btn_stop.config(state=tk.NORMAL)
         self.btn_manual_connect.config(state=tk.DISABLED)
         self.btn_manual_disconnect.config(state=tk.DISABLED)
-        self.var_status.set(f"Running. Folder: {self.run_dir}")
+        
+        # Start video recording if enabled
+        if self._start_video_recording():
+            self.var_status.set(f"Running. Folder: {self.run_dir} (Video recording on)")
+        else:
+            self.var_status.set(f"Running. Folder: {self.run_dir}")
 
     def manual_connect(self):
         if self.active_stream is not None:
@@ -1562,7 +1703,7 @@ class DashboardApp:
             with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
 
-        sess = ManualSession(cfg, run_dir, self.ui_events)
+        sess = ManualSession(cfg, run_dir, self.ui_events, self.video_recorder)
         try:
             sess.start()
         except Exception as e:
@@ -1575,7 +1716,12 @@ class DashboardApp:
         self.btn_manual_disconnect.config(state=tk.NORMAL)
         self.btn_start.config(state=tk.DISABLED)
         self.var_manual_info.set("Manual connected. Use Output ON + Set freq.")
-        self.var_status.set("Manual connected.")
+        
+        # Start video recording if enabled
+        if self._start_video_recording():
+            self.var_status.set("Manual connected. (Video recording on)")
+        else:
+            self.var_status.set("Manual connected.")
 
     def manual_disconnect(self):
         if isinstance(self.active_stream, ManualSession):
