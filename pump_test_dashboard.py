@@ -11,6 +11,7 @@ Adds:
 
 2) Config builder UI (no hand-editing JSON):
    - Add Constant / Add Sweep blocks
+   - Add Group / Group Selected: repeat a sequence of blocks N times or forever
    - Edit selected block
    - Duplicate / Remove
    - Move Up / Move Down (organize order)
@@ -30,6 +31,7 @@ import os
 import json
 import time
 import csv
+import copy
 import math
 import threading
 import queue
@@ -431,7 +433,7 @@ class ManualSession(LiveSessionBase):
 
 
 class PumpTestRunner(LiveSessionBase):
-    """Scheduled runner based on cfg['tests'] blocks (constant + sweep)."""
+    """Scheduled runner based on cfg['tests'] blocks (constant + sweep + group)."""
     def __init__(self, cfg: Dict[str, Any], run_dir: str, ui_events: "queue.Queue[Tuple[str, Any]]", video_recorder: Optional["VideoRecorder"] = None):
         self.cfg = cfg
         self.run_dir = run_dir
@@ -445,6 +447,7 @@ class PumpTestRunner(LiveSessionBase):
 
         self.freq_set = 0
         self.duty_set = 0.0
+        self._step_deadline: Optional[float] = None
 
         self.lock = threading.Lock()
         self.buf_t = deque(maxlen=5000)
@@ -556,6 +559,92 @@ class PumpTestRunner(LiveSessionBase):
             
             time.sleep(1.0 / 30.0)  # ~30 fps for video
 
+    def _exec_block(self, test, log_event, status_prefix: str = ""):
+        """Execute one test block. Supports 'constant', 'sweep', and 'group'
+        (a list of child blocks repeated 'repeat' times; repeat <= 0 loops
+        forever until Stop)."""
+        ttype = (test.get("type") or "constant").lower()
+        settle_ms = max(0, int(test.get("settle_ms", 0)))
+
+        if ttype == "group":
+            sub_blocks = test.get("blocks", [])
+            if not sub_blocks:
+                return
+            repeat = int(test.get("repeat", 1))
+            infinite = repeat <= 0
+            cycle = 0
+            last_status_t = 0.0
+            while not self.stop_flag.is_set() and (infinite or cycle < repeat):
+                cycle += 1
+                # Throttle status updates: short cycles (ms-scale) would flood the UI
+                now = time.monotonic()
+                if now - last_status_t >= 0.5:
+                    total = "inf" if infinite else str(repeat)
+                    self._emit("status", f"{status_prefix}group cycle {cycle}/{total}")
+                    last_status_t = now
+                for b in sub_blocks:
+                    if self.stop_flag.is_set():
+                        break
+                    self._exec_block(b, log_event, status_prefix)
+            return
+
+        settle_s = settle_ms / 1000.0
+        repeat = max(1, int(test.get("repeat", 1)))
+        for _ in range(repeat):
+            if self.stop_flag.is_set():
+                break
+
+            if ttype == "constant":
+                hz = int(test["frequency_hz"])
+                dur = float(test["duration_s"])
+                t_start = self._step_start()
+                self._set_freq(hz)
+                self._wait_until(t_start + settle_s)
+                log_event()
+                self._step_deadline = t_start + settle_s + dur
+                self._wait_until(self._step_deadline)
+
+            elif ttype == "sweep":
+                a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
+                if "step_duration_s" in test:
+                    step_dur = float(test["step_duration_s"])
+                elif "total_duration_s" in test:
+                    step_dur = float(test["total_duration_s"]) / max(1, n)
+                else:
+                    raise ValueError("Sweep needs step_duration_s or total_duration_s")
+
+                for hz in linspace_int(a, b, n):
+                    if self.stop_flag.is_set():
+                        break
+                    t_start = self._step_start()
+                    self._set_freq(hz)
+                    self._wait_until(t_start + settle_s)
+                    log_event()
+                    self._step_deadline = t_start + settle_s + step_dur
+                    self._wait_until(self._step_deadline)
+            else:
+                raise ValueError(f"Unknown block type: {ttype}")
+
+    def _step_start(self) -> float:
+        """Start time for the next step. Back-to-back steps start at the previous
+        step's deadline instead of 'now', so sleep overshoot (~0.5 ms per step on
+        Windows) doesn't accumulate over a long ms-scale group loop."""
+        now = time.monotonic()
+        prev = self._step_deadline
+        if prev is not None and 0.0 <= now - prev < 0.05:
+            return prev
+        return now
+
+    def _wait_until(self, t_end: float):
+        """Sleep until the monotonic deadline t_end, or until Stop."""
+        while not self.stop_flag.is_set():
+            remaining = t_end - time.monotonic()
+            if remaining <= 0:
+                return
+            # Cap each sleep so Stop stays responsive, but never sleep past the
+            # deadline: ms-scale group steps would otherwise stretch to 20 ms.
+            time.sleep(min(0.02, remaining))
+
     def _run_tests(self):
         tests = self.cfg.get("tests", [])
         break_between = float(self.cfg.get("break_seconds_between_tests", 0.0))
@@ -568,47 +657,10 @@ class PumpTestRunner(LiveSessionBase):
                 break
 
             ttype = (test.get("type") or "constant").lower()
-            repeat = max(1, int(test.get("repeat", 1)))
-            settle_ms = max(0, int(test.get("settle_ms", 0)))
+            repeat = int(test.get("repeat", 1))
+            self._emit("status", f"Running block {i}/{len(tests)}: {ttype} x{repeat if repeat > 0 else 'inf'}")
 
-            self._emit("status", f"Running block {i}/{len(tests)}: {ttype} x{repeat}")
-
-            for _ in range(repeat):
-                if self.stop_flag.is_set():
-                    break
-
-                if ttype == "constant":
-                    hz = int(test["frequency_hz"])
-                    dur = float(test["duration_s"])
-                    self._set_freq(hz)
-                    if settle_ms:
-                        time.sleep(settle_ms / 1000.0)
-                    log_event()
-                    t_end = time.monotonic() + dur
-                    while time.monotonic() < t_end and not self.stop_flag.is_set():
-                        time.sleep(0.02)
-
-                elif ttype == "sweep":
-                    a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
-                    if "step_duration_s" in test:
-                        step_dur = float(test["step_duration_s"])
-                    elif "total_duration_s" in test:
-                        step_dur = float(test["total_duration_s"]) / max(1, n)
-                    else:
-                        raise ValueError("Sweep needs step_duration_s or total_duration_s")
-
-                    for hz in linspace_int(a, b, n):
-                        if self.stop_flag.is_set():
-                            break
-                        self._set_freq(hz)
-                        if settle_ms:
-                            time.sleep(settle_ms / 1000.0)
-                        log_event()
-                        t_end = time.monotonic() + step_dur
-                        while time.monotonic() < t_end and not self.stop_flag.is_set():
-                            time.sleep(0.02)
-                else:
-                    raise ValueError(f"Unknown block type: {ttype}")
+            self._exec_block(test, log_event, status_prefix=f"Block {i}/{len(tests)}: ")
 
             if self.stop_flag.is_set():
                 break
@@ -1154,19 +1206,36 @@ class DashboardApp:
         listf = ttk.LabelFrame(parent, text="Config builder (test blocks)")
         listf.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        self.lst_blocks = tk.Listbox(listf, width=62, height=16)
+        # exportselection=False: otherwise selecting text in an editor Entry
+        # silently clears the list selection and "Apply changes" has no target.
+        self.lst_blocks = tk.Listbox(listf, width=62, height=16, selectmode=tk.EXTENDED, exportselection=False)
         self.lst_blocks.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
         self.lst_blocks.bind("<<ListboxSelect>>", self._on_block_select)
+        self.lst_blocks.bind("<Escape>", lambda _e: self.lst_blocks.selection_clear(0, tk.END))
+        # Maps listbox row -> path into cfg["tests"]: (i,) for a top-level
+        # block or group header, (i, j) for child j inside group i.
+        self._row_paths: List[tuple] = []
 
         actions = ttk.Frame(listf)
         actions.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
         ttk.Button(actions, text="Add Constant", command=self.add_constant_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Add Sweep", command=self.add_sweep_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(actions, text="Add Group", command=self.add_group_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Duplicate", command=self.duplicate_selected_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Remove", command=self.remove_selected_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Move Up", command=lambda: self.move_selected_block(-1)).pack(side=tk.LEFT, padx=8)
         ttk.Button(actions, text="Move Down", command=lambda: self.move_selected_block(+1)).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Clear All", command=self.clear_all_blocks).pack(side=tk.RIGHT, padx=2)
+
+        actions2 = ttk.Frame(listf)
+        actions2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
+        ttk.Button(actions2, text="Group Selected", command=self.group_selected_blocks).pack(side=tk.LEFT, padx=2)
+        ttk.Button(actions2, text="Ungroup", command=self.ungroup_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Label(listf, wraplength=420, justify=tk.LEFT,
+                  text="A group repeats its blocks back-to-back (Repeat 0 = loop until Stop). "
+                       "With a group row selected, Add Constant/Sweep adds inside the group; "
+                       "Esc clears the selection so Add appends at the end.")\
+            .pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6))
 
         editf = ttk.LabelFrame(parent, text="Edit selected block")
         editf.pack(side=tk.TOP, fill=tk.X, pady=(8, 0))
@@ -1177,8 +1246,9 @@ class DashboardApp:
 
         row0 = ttk.Frame(editf); row0.pack(side=tk.TOP, fill=tk.X, padx=6, pady=4)
         ttk.Label(row0, text="Type:").pack(side=tk.LEFT)
-        ttk.Combobox(row0, state="readonly", width=12, values=["constant", "sweep"], textvariable=self.var_edit_type)\
-            .pack(side=tk.LEFT, padx=6)
+        self.cmb_edit_type = ttk.Combobox(row0, state="readonly", width=12, values=["constant", "sweep"],
+                                          textvariable=self.var_edit_type)
+        self.cmb_edit_type.pack(side=tk.LEFT, padx=6)
         ttk.Label(row0, text="Repeat:").pack(side=tk.LEFT, padx=(14, 2))
         ttk.Entry(row0, textvariable=self.var_edit_repeat, width=8).pack(side=tk.LEFT)
         ttk.Label(row0, text="Settle ms:").pack(side=tk.LEFT, padx=(14, 2))
@@ -1216,6 +1286,12 @@ class DashboardApp:
         ttk.Label(row2, text="OR Total duration (s):").pack(side=tk.LEFT, padx=(14, 2))
         ttk.Entry(row2, textvariable=self.var_edit_total_dur, width=10).pack(side=tk.LEFT, padx=6)
 
+        # Group editor (children are edited as individual rows in the list)
+        self.edit_group = ttk.Frame(editf)
+        ttk.Label(self.edit_group,
+                  text="Group: child blocks run in order, repeated 'Repeat' times (0 = loop until Stop).")\
+            .pack(side=tk.LEFT)
+
         ttk.Button(editf, text="Apply changes", command=self.apply_edit_to_selected)\
             .pack(side=tk.TOP, padx=6, pady=(6, 8))
 
@@ -1224,11 +1300,14 @@ class DashboardApp:
 
     def _refresh_editor_visibility(self):
         ttype = self.var_edit_type.get().strip().lower()
+        self.edit_constant.pack_forget()
+        self.edit_sweep.pack_forget()
+        self.edit_group.pack_forget()
         if ttype == "constant":
-            self.edit_sweep.pack_forget()
             self.edit_constant.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
+        elif ttype == "group":
+            self.edit_group.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
         else:
-            self.edit_constant.pack_forget()
             self.edit_sweep.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
 
     def _build_manual_panel(self, parent):
@@ -1516,27 +1595,92 @@ class DashboardApp:
         self.var_status.set(f"Saved config: {os.path.basename(p)}")
 
     # ---- config builder list ----
+    @staticmethod
+    def _is_group(t) -> bool:
+        return (t.get("type") or "").lower() == "group"
+
+    @staticmethod
+    def _block_duration_s(t) -> float:
+        """Nominal run time of one block including its repeats (inf for an endless group)."""
+        ttype = (t.get("type") or "constant").lower()
+        repeat = safe_int(t.get("repeat", 1), 1)
+        settle_s = max(0, safe_int(t.get("settle_ms", 0), 0)) / 1000.0
+        if ttype == "group":
+            if repeat <= 0:
+                return math.inf
+            return repeat * sum(DashboardApp._block_duration_s(b) for b in t.get("blocks", []))
+        repeat = max(1, repeat)
+        if ttype == "constant":
+            return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
+        steps = max(1, safe_int(t.get("steps", 1), 1))
+        if "step_duration_s" in t:
+            step_dur = safe_float(t.get("step_duration_s"), 0.0)
+        else:
+            step_dur = safe_float(t.get("total_duration_s", 0), 0.0) / steps
+        return repeat * steps * (step_dur + settle_s)
+
+    @staticmethod
+    def _describe_block(t) -> str:
+        ttype = (t.get("type") or "constant").lower()
+        if ttype == "constant":
+            return f"constant: {t.get('frequency_hz')} Hz for {t.get('duration_s')} s (x{t.get('repeat', 1)})"
+        if ttype == "group":
+            children = t.get("blocks", [])
+            repeat = safe_int(t.get("repeat", 1), 1)
+            reps = "loop until Stop" if repeat <= 0 else f"x{repeat}"
+            cycle_s = sum(DashboardApp._block_duration_s(b) for b in children)
+            return f"GROUP ({reps}): {len(children)} blocks, {cycle_s:g} s per cycle"
+        sdur = t.get("step_duration_s", None)
+        tdur = t.get("total_duration_s", None)
+        d = f"{sdur}s/step" if sdur is not None else f"{tdur}s total"
+        return f"sweep: {t.get('start_hz')}→{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
+
     def refresh_blocks_list(self):
         self.lst_blocks.delete(0, tk.END)
-        for i, t in enumerate(self.cfg.get("tests", []), 1):
-            ttype = (t.get("type") or "constant").lower()
-            if ttype == "constant":
-                s = f"{i:02d}. constant: {t.get('frequency_hz')} Hz for {t.get('duration_s')} s (x{t.get('repeat', 1)})"
-            else:
-                sdur = t.get("step_duration_s", None)
-                tdur = t.get("total_duration_s", None)
-                d = f"{sdur}s/step" if sdur is not None else f"{tdur}s total"
-                s = f"{i:02d}. sweep: {t.get('start_hz')}→{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
-            self.lst_blocks.insert(tk.END, s)
+        self._row_paths = []
+        for i, t in enumerate(self.cfg.get("tests", [])):
+            self.lst_blocks.insert(tk.END, f"{i + 1:02d}. {self._describe_block(t)}")
+            self._row_paths.append((i,))
+            if self._is_group(t):
+                self.lst_blocks.itemconfig(tk.END, background="#e3ebfa")
+                for j, child in enumerate(t.get("blocks", [])):
+                    self.lst_blocks.insert(tk.END, f"        {i + 1}.{j + 1}  {self._describe_block(child)}")
+                    self.lst_blocks.itemconfig(tk.END, background="#f3f6fc")
+                    self._row_paths.append((i, j))
+
+    def _selected_paths(self) -> List[tuple]:
+        rows = self.lst_blocks.curselection()
+        return [self._row_paths[int(r)] for r in rows if int(r) < len(self._row_paths)]
+
+    def _block_at(self, path: tuple) -> Dict[str, Any]:
+        container, idx = self._container_of(path)
+        return container[idx]
+
+    def _container_of(self, path: tuple) -> Tuple[List[Dict[str, Any]], int]:
+        """Return (list, index) such that list[index] is the block at path."""
+        tests = self.cfg.setdefault("tests", [])
+        if len(path) == 1:
+            return tests, path[0]
+        return tests[path[0]].setdefault("blocks", []), path[1]
+
+    def _select_path(self, path: tuple):
+        self.lst_blocks.selection_clear(0, tk.END)
+        if path in self._row_paths:
+            row = self._row_paths.index(path)
+            self.lst_blocks.selection_set(row)
+            self.lst_blocks.activate(row)
+            self.lst_blocks.see(row)
+            self._on_block_select()
 
     def _on_block_select(self, _evt=None):
-        sel = self.lst_blocks.curselection()
-        if not sel:
+        paths = self._selected_paths()
+        if not paths:
             return
-        idx = int(sel[0])
-        t = self.cfg["tests"][idx]
+        t = self._block_at(paths[0])
         ttype = (t.get("type") or "constant").lower()
 
+        # A group can't be turned into a constant/sweep (its children would be lost)
+        self.cmb_edit_type.configure(values=["group"] if ttype == "group" else ["constant", "sweep"])
         self.var_edit_type.set(ttype)
         self.var_edit_repeat.set(str(t.get("repeat", 1)))
         self.var_edit_settle_ms.set(str(t.get("settle_ms", 0)))
@@ -1554,15 +1698,23 @@ class DashboardApp:
         self._refresh_editor_visibility()
 
     def apply_edit_to_selected(self):
-        sel = self.lst_blocks.curselection()
-        if not sel:
+        paths = self._selected_paths()
+        if not paths:
             messagebox.showinfo("Edit", "Select a block to edit.")
             return
-        idx = int(sel[0])
+        path = paths[0]
 
         ttype = self.var_edit_type.get().strip().lower()
         repeat = max(1, safe_int(self.var_edit_repeat.get(), 1))
         settle = max(0, safe_int(self.var_edit_settle_ms.get(), 0))
+
+        if ttype == "group":
+            grp = self._block_at(path)
+            if self._is_group(grp):
+                grp["repeat"] = max(0, safe_int(self.var_edit_repeat.get(), 1))
+            self.refresh_blocks_list()
+            self._select_path(path)
+            return
 
         if ttype == "constant":
             block = {
@@ -1590,54 +1742,118 @@ class DashboardApp:
             else:
                 block["step_duration_s"] = 1.0
 
-        self.cfg["tests"][idx] = block
+        container, idx = self._container_of(path)
+        if self._is_group(container[idx]):
+            return
+        container[idx] = block
         self.refresh_blocks_list()
-        self.lst_blocks.selection_clear(0, tk.END)
-        self.lst_blocks.selection_set(idx)
-        self.lst_blocks.activate(idx)
+        self._select_path(path)
+
+    def _insert_new_block(self, block: Dict[str, Any]):
+        """Add a block inside the selected group (header or child row selected),
+        otherwise at the end of the sequence."""
+        tests = self.cfg.setdefault("tests", [])
+        paths = self._selected_paths()
+        new_path = None
+        if paths:
+            p = paths[0]
+            if len(p) == 2:
+                tests[p[0]]["blocks"].insert(p[1] + 1, block)
+                new_path = (p[0], p[1] + 1)
+            elif self._is_group(tests[p[0]]):
+                children = tests[p[0]].setdefault("blocks", [])
+                children.append(block)
+                new_path = (p[0], len(children) - 1)
+        if new_path is None:
+            tests.append(block)
+            new_path = (len(tests) - 1,)
+        self.refresh_blocks_list()
+        self._select_path(new_path)
 
     def add_constant_block(self):
-        self.cfg.setdefault("tests", [])
-        self.cfg["tests"].append({"type": "constant", "frequency_hz": 500, "duration_s": 10, "repeat": 1, "settle_ms": 0})
-        self.refresh_blocks_list()
+        self._insert_new_block({"type": "constant", "frequency_hz": 500, "duration_s": 10, "repeat": 1, "settle_ms": 0})
 
     def add_sweep_block(self):
-        self.cfg.setdefault("tests", [])
-        self.cfg["tests"].append({"type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 10,
-                                  "step_duration_s": 1.5, "repeat": 1, "settle_ms": 0})
+        self._insert_new_block({"type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 10,
+                                "step_duration_s": 1.5, "repeat": 1, "settle_ms": 0})
+
+    def add_group_block(self):
+        tests = self.cfg.setdefault("tests", [])
+        tests.append({
+            "type": "group",
+            "repeat": 10,
+            "blocks": [
+                {"type": "constant", "frequency_hz": 500, "duration_s": 0.1, "repeat": 1, "settle_ms": 0},
+                {"type": "constant", "frequency_hz": 0, "duration_s": 0.1, "repeat": 1, "settle_ms": 0},
+            ],
+        })
         self.refresh_blocks_list()
+        self._select_path((len(tests) - 1,))
+
+    def group_selected_blocks(self):
+        paths = self._selected_paths()
+        if not paths:
+            messagebox.showinfo("Group", "Select one or more blocks to group (Ctrl/Shift+click to select several).")
+            return
+        if any(len(p) != 1 or self._is_group(self._block_at(p)) for p in paths):
+            messagebox.showinfo("Group", "Only top-level constant/sweep blocks can be grouped "
+                                         "(groups cannot be nested).")
+            return
+        tests = self.cfg["tests"]
+        idxs = sorted(p[0] for p in paths)
+        children = [tests[i] for i in idxs]
+        for i in reversed(idxs):
+            tests.pop(i)
+        tests.insert(idxs[0], {"type": "group", "repeat": 10, "blocks": children})
+        self.refresh_blocks_list()
+        self._select_path((idxs[0],))
+
+    def ungroup_selected_block(self):
+        paths = self._selected_paths()
+        tests = self.cfg.get("tests", [])
+        if not paths or not self._is_group(tests[paths[0][0]]):
+            messagebox.showinfo("Ungroup", "Select a group (or a block inside it) to ungroup.")
+            return
+        gi = paths[0][0]
+        tests[gi:gi + 1] = tests[gi].get("blocks", [])
+        self.refresh_blocks_list()
+        if gi < len(tests):
+            self._select_path((gi,))
 
     def remove_selected_block(self):
-        sel = self.lst_blocks.curselection()
-        if not sel:
+        paths = self._selected_paths()
+        if not paths:
             return
-        self.cfg["tests"].pop(int(sel[0]))
+        tests = self.cfg["tests"]
+        top = sorted({p[0] for p in paths if len(p) == 1}, reverse=True)
+        # Children first (highest index first) so the remaining paths stay valid
+        for gi, ci in sorted((p for p in paths if len(p) == 2), reverse=True):
+            if gi not in top:
+                tests[gi]["blocks"].pop(ci)
+        for i in top:
+            tests.pop(i)
         self.refresh_blocks_list()
 
     def duplicate_selected_block(self):
-        sel = self.lst_blocks.curselection()
-        if not sel:
+        paths = self._selected_paths()
+        if not paths:
             return
-        idx = int(sel[0])
-        self.cfg["tests"].insert(idx + 1, dict(self.cfg["tests"][idx]))
+        container, idx = self._container_of(paths[0])
+        container.insert(idx + 1, copy.deepcopy(container[idx]))
         self.refresh_blocks_list()
-        self.lst_blocks.selection_clear(0, tk.END)
-        self.lst_blocks.selection_set(idx + 1)
+        self._select_path(paths[0][:-1] + (idx + 1,))
 
     def move_selected_block(self, direction: int):
-        sel = self.lst_blocks.curselection()
-        if not sel:
+        paths = self._selected_paths()
+        if not paths:
             return
-        idx = int(sel[0])
+        container, idx = self._container_of(paths[0])
         new_idx = idx + int(direction)
-        tests = self.cfg.get("tests", [])
-        if new_idx < 0 or new_idx >= len(tests):
+        if new_idx < 0 or new_idx >= len(container):
             return
-        tests[idx], tests[new_idx] = tests[new_idx], tests[idx]
+        container[idx], container[new_idx] = container[new_idx], container[idx]
         self.refresh_blocks_list()
-        self.lst_blocks.selection_clear(0, tk.END)
-        self.lst_blocks.selection_set(new_idx)
-        self.lst_blocks.activate(new_idx)
+        self._select_path(paths[0][:-1] + (new_idx,))
 
     def clear_all_blocks(self):
         if messagebox.askyesno("Clear", "Clear all test blocks?"):
