@@ -1119,14 +1119,56 @@ class DashboardApp:
     def _build_video_preview(self, parent):
         """Build video preview panel to show real-time camera feed."""
         self.video_preview_frame = ttk.LabelFrame(parent, text="Camera Preview")
-        
+
+        topbar = ttk.Frame(self.video_preview_frame)
+        topbar.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 0))
+        self.btn_video_popout = ttk.Button(topbar, text="Pop Out", command=self._toggle_video_popout)
+        self.btn_video_popout.pack(side=tk.RIGHT)
+
         # Placeholder for video preview
         self.video_preview_label = ttk.Label(self.video_preview_frame, text="Camera not connected\nConnect camera to see preview", anchor="center")
         self.video_preview_label.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
-        
+
+        # Pop-out window (created on demand, e.g. for a secondary screen)
+        self.video_popout = None
+        self.video_popout_label = None
+
         # Start video preview update
         self._video_preview_running = False
         return self.video_preview_frame
+
+    def _toggle_video_popout(self):
+        """Open or close the resizable pop-out camera window."""
+        if self.video_popout is not None and self.video_popout.winfo_exists():
+            self._close_video_popout()
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("Camera View")
+        win.geometry("800x620")
+        win.minsize(320, 240)
+        win.configure(bg="black")
+        win.protocol("WM_DELETE_WINDOW", self._close_video_popout)
+
+        label = tk.Label(win, bg="black", fg="white", anchor="center",
+                         text="Camera not connected\nConnect camera to see the feed")
+        label.pack(fill=tk.BOTH, expand=True)
+
+        self.video_popout = win
+        self.video_popout_label = label
+        self.btn_video_popout.config(text="Close Pop-out")
+
+    def _close_video_popout(self):
+        """Close the pop-out camera window if open."""
+        if self.video_popout is not None:
+            try:
+                self.video_popout.destroy()
+            except Exception:
+                pass
+        self.video_popout = None
+        self.video_popout_label = None
+        if hasattr(self, "btn_video_popout"):
+            self.btn_video_popout.config(text="Pop Out")
 
     def _start_video_preview(self):
         """Start updating the video preview in the UI."""
@@ -1155,15 +1197,29 @@ class DashboardApp:
                     scale = min(max_size / h, max_size / w)
                     new_h = int(h * scale)
                     new_w = int(w * scale)
-                    frame_rgb = cv2.resize(frame_rgb, (new_w, new_h))
-                    
+                    small = cv2.resize(frame_rgb, (new_w, new_h))
+
                     # Convert to PIL Image and then to PhotoImage
                     from PIL import Image, ImageTk
-                    pil_image = Image.fromarray(frame_rgb)
+                    pil_image = Image.fromarray(small)
                     photo = ImageTk.PhotoImage(pil_image)
                     
                     self.video_preview_label.configure(image=photo, text="")
                     self.video_preview_label.image = photo  # Keep reference
+
+                    # Feed the pop-out window at its own (larger) size
+                    if self.video_popout_label is not None:
+                        if not self.video_popout.winfo_exists():
+                            self._close_video_popout()
+                        else:
+                            pw = self.video_popout_label.winfo_width()
+                            ph = self.video_popout_label.winfo_height()
+                            if pw > 20 and ph > 20:
+                                pscale = min(pw / w, ph / h)
+                                big = cv2.resize(frame_rgb, (max(int(w * pscale), 1), max(int(h * pscale), 1)))
+                                pphoto = ImageTk.PhotoImage(Image.fromarray(big))
+                                self.video_popout_label.configure(image=pphoto, text="")
+                                self.video_popout_label.image = pphoto
                 except ImportError:
                     self.video_preview_label.configure(text="PIL not available for preview")
                 except Exception:
@@ -1175,6 +1231,9 @@ class DashboardApp:
     def _stop_video_preview(self):
         """Stop updating the video preview."""
         self._video_preview_running = False
+        if getattr(self, "video_popout_label", None) is not None and self.video_popout.winfo_exists():
+            self.video_popout_label.configure(image="", text="Camera not connected\nConnect camera to see the feed")
+            self.video_popout_label.image = None
 
     def _apply_ui_scaling(self):
         """Scale UI based on screen size to avoid scroll-only layouts."""
