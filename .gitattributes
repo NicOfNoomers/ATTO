@@ -1,0 +1,2 @@
+# cmd.exe needs CRLF in batch files, whatever core.autocrlf says on the PC that checks them out
+*.bat text eol=crlf

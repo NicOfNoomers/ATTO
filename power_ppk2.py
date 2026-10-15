@@ -112,12 +112,27 @@ def counter_gaps(counter: np.ndarray) -> int:
     return int(np.sum(np.where(steps == 0, 63, steps - 1)))
 
 
+PPK2_USB_IDS = {(0x1915, 0xC00A)}      # Nordic Semiconductor, PPK2
+
+
 def find_ppk2_ports() -> List[str]:
+    """PPK2 serial ports. ppk2-api matches the Windows name 'nRF Connect USB CDC
+    ACM', which needs Nordic's driver; on other PCs the PPK2 shows up as a plain
+    'USB Serial Device', so also match its USB ID."""
+    found: List[str] = []
     try:
         from ppk2_api.ppk2_api import PPK2_API
-        return list(PPK2_API.list_devices())
+        found += [p for p in PPK2_API.list_devices()]
     except Exception:
-        return []
+        pass
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            if ((p.vid, p.pid) in PPK2_USB_IDS or (p.product or "") == "PPK2") and p.device not in found:
+                found.append(p.device)
+    except Exception:
+        pass
+    return found
 
 
 # ---------------- sources ----------------
@@ -136,7 +151,7 @@ class PPK2Source:
         from ppk2_api.ppk2_api import PPK2_API
         port = self.port_cfg
         if not port or str(port).lower() == "auto":
-            found = PPK2_API.list_devices()
+            found = find_ppk2_ports()
             if not found:
                 raise RuntimeError("No PPK2 found. Is it plugged in and switched on? "
                                    "(Close the nRF Connect Power Profiler app if it is open.)")

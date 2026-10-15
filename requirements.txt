@@ -2,5 +2,9 @@
 pyserial>=3.5
 matplotlib>=3.5.0
 numpy>=1.21.0
+ppk2-api>=0.9.2  # Nordic PPK2 power meter (power_ppk2.py)
+setuptools<81  # the Fluigent SDK imports pkg_resources, which setuptools 81+ removed
 opencv-python>=4.5.0  # For USB camera video recording (optional)
 Pillow>=9.0.0  # For camera preview display in UI
+psutil>=5.9.0  # optional: memory watchdog that flushes data before low-memory crashes
+websockets>=12.0  # shared flow server / network flow backend

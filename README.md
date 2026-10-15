@@ -16,7 +16,9 @@ ATTO TEAM repo
 **Windows:**
 ```cmd
 install.bat
+install.bat C:\Python313\python.exe   (to pick a specific Python)
 ```
+`install.bat` uses the first working Python 3.8+ (a working `.venv`, the `py` launcher, `python`, `python3`, `python3.10`; see `find_python.bat`), installs `requirements.txt` into it, installs the Fluigent SDK from `fluigent_sdk-23.0.0/` if it isn't installed yet, and runs `scripts\check_setup.py`, which lists missing packages and the serial ports (PPK2 and Arduino marked). Start the dashboard with `run_dashboard.bat`, which uses the same Python.
 
 **Linux/Mac:**
 ```bash
@@ -24,7 +26,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Both scripts will:
+The Linux/Mac script will:
 1. Check for Python installation
 2. Detect or create a virtual environment (`.venv/`)
 3. Prompt to use existing virtual environment if found
@@ -70,6 +72,34 @@ The Fluigent SDK (version 23.0.0) is included in the repository under `fluigent_
 Using a virtual environment is recommended to avoid conflicts with other Python projects. The install scripts will:
 - Create a `.venv` virtual environment if none exists
 - Prompt to use an existing virtual environment if found at `.venv/` or `venv/`
+
+## Power Meter (Nordic PPK2) and Voltage Steps
+
+The dashboard can log the pump's supply current, power and energy with a Nordic Power Profiler Kit II, used as an **ammeter**: the bench supply sets the voltage and its current limit protects the pump; the PPK2 only measures.
+
+### Wiring
+- bench supply + -> PPK2 **VIN**, PPK2 **VOUT** -> pump driver **VM**, all grounds connected
+- PPK2 **USB DATA/POWER** port -> the test PC, power switch on
+- bench supply current limit set (60 mA for the pump), voltage at most 2.5 V
+
+### First time on a PC
+1. `install.bat` (installs `ppk2-api`; the setup check should show the PPK2 as `<- PPK2`, USB ID 1915:c00a)
+2. With the **bench supply off**, check that the PPK2 doesn't put a voltage on the line in ammeter mode:
+   `python scripts\ppk2_probe.py --idle-check` and measure VOUT-GND with a multimeter (must be ~0 V)
+3. Optional bench test (current per frequency, decoder check, lost samples):
+   `python scripts\ppk2_probe.py --supply-mv 2500 --arduino COM17`
+
+Close the dashboard while the probe runs (only one program can use the PPK2), and close the nRF Connect Power Profiler app.
+
+### Use
+In the **Power meter (PPK2)** panel tick *Measure power* (port `auto` or *Detect*), set the supply voltage at start and the bench supply's current limit. The PPK2 then starts and stops with every scheduled run or manual session. The live line shows current, power, voltage and energy; the supply current is drawn in red on the frequency plot. If the current stays at or above the trip level (default 95 % of the bench supply limit) for 200 ms, the supply is clamping: the run stops, the pump goes to 0 Hz and the PPK2's output is switched off.
+
+**Voltage steps** (*Add Voltage Step* in the config builder) pause the run until you have set the bench supply and confirmed the voltage in the yellow banner. Before the run starts the dashboard lists when each change is due (also saved as `schedule.txt`; *Voltage schedule...* shows the live list) so you can set alarms.
+
+### Files (in each run folder)
+- `power/bins_*.csv(.gz)`: every 10 ms: mean/min/max current (mA), power (mW), supply voltage, cumulative charge (mC) and energy (mJ), logic inputs, lost samples. A new file every hour; closed files are gzipped
+- `power/power_1s.csv` (1 s summary), `power/raw/` (2 s of raw 100 kS/s data every 10 min, and around a trip), `power/power_events.csv`, `power/anchors.csv`, `power/summary.json`
+- `voltage_changes.csv` (requested/confirmed voltage, how long the confirmation took), `schedule.txt`, `status.json` (progress heartbeat every 10 s)
 
 ## USB Camera Video Recording
 

@@ -1,80 +1,53 @@
 @echo off
-REM ATTO Pump Test Dashboard - Installation Script (Windows)
-REM This script installs all required dependencies for the Pump Testing Suite
+REM ATTO Pump Test Dashboard - installation (Windows)
+REM   install.bat                         use the first working Python (see find_python.bat)
+REM   install.bat C:\Python313\python.exe use this Python
+REM Installs into that Python (no new virtual environment), then checks the setup.
+setlocal
+cd /d "%~dp0"
 
 echo ============================================
 echo ATTO Pump Test Dashboard - Installation
 echo ============================================
 echo.
 
-REM Check if Python is installed
-python --version >nul 2>&1
+call "%~dp0find_python.bat" %1
+if not defined PY (
+    echo ERROR: no working Python 3.8+ found.
+    echo Install Python from https://www.python.org/downloads/ and tick "Add python.exe to PATH",
+    echo or give the path:  install.bat C:\Python313\python.exe
+    pause
+    exit /b 1
+)
+echo Using Python: %PY%
+%PY% --version
+echo.
+
+echo Installing dependencies from requirements.txt ...
+%PY% -m pip install --upgrade pip
+%PY% -m pip install -r requirements.txt
 if errorlevel 1 (
-    echo ERROR: Python is not installed or not in PATH.
-    echo Please install Python 3.8+ from https://python.org
+    echo.
+    echo ERROR: pip install failed - see the messages above.
     pause
     exit /b 1
 )
 
-echo Python found:
-python --version
-echo.
-
-REM Check for virtual environment
-set USE_VENV=0
-set VENV_PATH=.venv
-
-if exist "%VENV_PATH%\Scripts\activate.bat" (
-    set USE_VENV=1
-    echo Virtual environment found at %VENV_PATH%
-) else if exist "venv\Scripts\activate.bat" (
-    set VENV_PATH=venv
-    set USE_VENV=1
-    echo Virtual environment found at %VENV_PATH%
-)
-
-if "%USE_VENV%"=="1" (
+%PY% -c "import Fluigent.SDK" >nul 2>&1
+if errorlevel 1 if exist "fluigent_sdk-23.0.0" (
     echo.
-    set /p USE_VENV_CHOICE="Use existing virtual environment? (Y/n): "
-    if /i not "!USE_VENV_CHOICE!"=="n" (
-        echo Activating virtual environment...
-        call "%VENV_PATH%\Scripts\activate.bat"
-        goto install_deps
-    )
+    echo Installing the Fluigent SDK ...
+    %PY% -m pip install .\fluigent_sdk-23.0.0
 )
 
 echo.
-echo Creating new virtual environment...
-python -m venv .venv
-echo Activating virtual environment...
-call .venv\Scripts\activate.bat
-echo Upgrading pip...
-python -m pip install --upgrade pip >nul 2>&1
-
-:install_deps
-echo.
-echo Installing dependencies from requirements.txt...
-echo.
-pip install -r requirements.txt
-echo.
-
-REM Install Fluigent SDK if available
-if exist "fluigent_sdk-23.0.0" (
-    echo Installing Fluigent SDK...
-    pip install ./fluigent_sdk-23.0.0
-    echo.
-)
-
 echo ============================================
-echo Installation complete!
+echo Checking the setup (packages, PPK2, Arduino)
 echo ============================================
+%PY% scripts\check_setup.py
+
 echo.
-echo Virtual environment: %VENV_NAME%
-echo.
-echo To run the dashboard:
-echo   python pump_test_dashboard.py
-echo.
-echo For help:
-echo   python pump_test_dashboard.py --help
+echo To start the dashboard: double-click run_dashboard.bat
+echo   or run:  %PY% pump_test_dashboard.py
 echo.
 pause
