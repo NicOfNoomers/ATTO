@@ -135,6 +135,89 @@ def find_ppk2_ports() -> List[str]:
     return found
 
 
+def _import_ppk2_api():
+    try:
+        from ppk2_api.ppk2_api import PPK2_API, PPK2_Command
+        return PPK2_API, PPK2_Command
+    except ImportError:
+        import sys
+        raise RuntimeError(f"The ppk2-api package is not installed for the Python running the dashboard "
+                           f"({sys.executable}). Click 'Install missing packages' in the Power meter panel, or: "
+                           f"\"{sys.executable}\" -m pip install -r requirements.txt") from None
+
+
+def _drain(ser, quiet_s: float = 0.25, max_s: float = 3.0) -> bool:
+    """Discard incoming bytes until the line has been quiet for quiet_s."""
+    t_end = time.monotonic() + max_s
+    last = time.monotonic()
+    while time.monotonic() < t_end:
+        n = ser.in_waiting
+        if n:
+            ser.read(n)
+            last = time.monotonic()
+        elif time.monotonic() - last >= quiet_s:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _read_modifiers(ppk, cmd, timeout_s: float = 3.0) -> bool:
+    """Ask for the calibration data and parse it. Accumulates the reply until
+    'END' and decodes it leniently (ppk2-api decodes every chunk as strict utf-8
+    and keeps only the last one)."""
+    ppk._write_serial((cmd.GET_META_DATA,))
+    buf = b""
+    t_end = time.monotonic() + timeout_s
+    while time.monotonic() < t_end:
+        n = ppk.ser.in_waiting
+        if n:
+            buf += ppk.ser.read(n)
+            if b"END" in buf:
+                break
+        time.sleep(0.02)
+    if b"END" not in buf:
+        return False
+    text = buf[:buf.rindex(b"END") + 3].decode("utf-8", errors="ignore")
+    return bool(ppk._parse_metadata(text))
+
+
+def connect_ppk2(port: Optional[str] = None):
+    """Open a PPK2 and read its calibration -> (PPK2_API, port). Nothing is powered.
+
+    A PPK2 can still be streaming samples from an earlier session (dashboard
+    killed, probe interrupted); ppk2-api's get_modifiers() then fails with
+    "'utf-8' codec can't decode byte 0x..". So: stop the stream, drain the
+    leftover bytes, then ask for the calibration (up to 3 tries).
+    """
+    PPK2_API, cmd = _import_ppk2_api()
+    if not port or str(port).lower() == "auto":
+        found = find_ppk2_ports()
+        if not found:
+            raise RuntimeError("No PPK2 found. Is it plugged in (USB DATA/POWER port) and switched on? "
+                               "(Close the nRF Connect Power Profiler app if it is open.)")
+        port = found[0]
+    ppk = PPK2_API(port, timeout=1, write_timeout=1, exclusive=True)
+    try:
+        try:
+            ppk.ser.set_buffer_size(rx_size=4 * 1024 * 1024)   # ~10 s of data if the reader stalls
+        except Exception:
+            pass
+        for _ in range(3):
+            ppk.stop_measuring()
+            _drain(ppk.ser)
+            if _read_modifiers(ppk, cmd):
+                return ppk, port
+        raise RuntimeError(f"{port}: the PPK2 did not send its calibration data (3 tries). Unplug it and plug "
+                           f"it in again; if that doesn't help, update its firmware once with nRF Connect for "
+                           f"Desktop -> Power Profiler (then close that app).")
+    except Exception:
+        try:
+            ppk.ser.close()
+        except Exception:
+            pass
+        raise
+
+
 # ---------------- sources ----------------
 class PPK2Source:
     """Decoded sample chunks from a real PPK2 in ampere-meter mode."""
@@ -148,28 +231,8 @@ class PPK2Source:
         self.modifiers = None
 
     def open(self):
+        ppk, port = connect_ppk2(self.port_cfg)
         try:
-            from ppk2_api.ppk2_api import PPK2_API
-        except ImportError:
-            import sys
-            raise RuntimeError(f"The ppk2-api package is not installed for the Python running the dashboard "
-                               f"({sys.executable}). Run install.bat and start with run_dashboard.bat, or: "
-                               f"\"{sys.executable}\" -m pip install -r requirements.txt") from None
-        port = self.port_cfg
-        if not port or str(port).lower() == "auto":
-            found = find_ppk2_ports()
-            if not found:
-                raise RuntimeError("No PPK2 found. Is it plugged in and switched on? "
-                                   "(Close the nRF Connect Power Profiler app if it is open.)")
-            port = found[0]
-        ppk = PPK2_API(port, timeout=1, write_timeout=1, exclusive=True)
-        try:
-            try:
-                ppk.ser.set_buffer_size(rx_size=4 * 1024 * 1024)   # ~10 s if the reader stalls
-            except Exception:
-                pass
-            if not ppk.get_modifiers():
-                raise RuntimeError(f"{port}: could not read the PPK2's calibration data.")
             ppk.use_ampere_meter()
             # Ampere-meter mode powers nothing; ppk2-api needs the input voltage
             # for its calibration and refuses to measure without it.

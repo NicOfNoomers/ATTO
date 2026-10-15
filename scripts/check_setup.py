@@ -67,15 +67,12 @@ def main():
     elif "--no-connect" not in sys.argv:
         print(f"\nAsking the PPK2 on {ppk2[0]} for its calibration data (output stays off) ...")
         try:
-            from ppk2_api.ppk2_api import PPK2_API
-            ppk = PPK2_API(ppk2[0], timeout=1, write_timeout=1, exclusive=True)
+            from power_ppk2 import connect_ppk2
+            ppk, _port = connect_ppk2(ppk2[0])     # also stops a stream left running by an earlier session
             try:
-                ok = ppk.get_modifiers()
                 mods = ppk.modifiers
-                print(f"  {'OK' if ok else 'NO ANSWER'}: calibrated={mods.get('Calibrated')} HW={mods.get('HW')} "
+                print(f"  OK: calibrated={mods.get('Calibrated')} HW={mods.get('HW')} "
                       f"R={[round(float(mods['R'][str(i)]), 3) for i in range(5)]}")
-                if not ok:
-                    print("  Update the PPK2 firmware once with nRF Connect for Desktop -> Power Profiler, then retry.")
             finally:
                 ppk.ser.close()
         except Exception as e:

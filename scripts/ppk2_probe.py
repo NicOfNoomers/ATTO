@@ -38,26 +38,16 @@ import numpy as np
 
 # The decoder is shared with the dashboard's power meter (power_ppk2.py, repo root)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from power_ppk2 import (FS as SAMPLE_RATE, best_alignment, counter_gaps, decode_words,  # noqa: E402
-                        find_ppk2_ports, modifier_arrays)
+from power_ppk2 import (FS as SAMPLE_RATE, best_alignment, connect_ppk2, counter_gaps,  # noqa: E402
+                        decode_words, modifier_arrays)
 
 
 # ---------------- hardware ----------------
 def open_ppk2(port, vdd_mv):
-    from ppk2_api.ppk2_api import PPK2_API
-    if not port:
-        found = find_ppk2_ports()
-        if not found:
-            sys.exit("No PPK2 found (USB ID 1915:c00a). Is it plugged in (USB DATA/POWER port) and switched on? "
-                     "Run scripts\\check_setup.py to list the serial ports.")
-        port = found[0]
-    ppk = PPK2_API(port, timeout=1, write_timeout=1, exclusive=True)
     try:
-        ppk.ser.set_buffer_size(rx_size=4 * 1024 * 1024)   # ~10 s of data if the reader stalls
-    except Exception:
-        pass
-    if not ppk.get_modifiers():
-        sys.exit(f"{port}: could not read PPK2 calibration data.")
+        ppk, port = connect_ppk2(port)     # stops a leftover stream, reads the calibration
+    except RuntimeError as e:
+        sys.exit(f"{e}\nRun scripts\\check_setup.py to list the serial ports.")
     ppk.use_ampere_meter()
     # In ampere-meter mode this does not power anything: ppk2-api needs the
     # input voltage for its calibration (and refuses to measure without it).
