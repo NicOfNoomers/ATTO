@@ -28,6 +28,8 @@ Flow sensor:
 from __future__ import annotations
 
 import os
+import sys
+import atexit
 import json
 import time
 import csv
@@ -35,21 +37,66 @@ import copy
 import math
 import threading
 import queue
+import logging
 from datetime import datetime
 from collections import deque
 from typing import Optional, Dict, Any, List, Tuple
+
+# ---------------- logging utils ----------------
+LOG = logging.getLogger("pump_test_dashboard")
+if not LOG.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+    LOG.addHandler(_handler)
+LOG.setLevel(logging.INFO)
+LOG.propagate = False
+
+_LOG_THROTTLE: Dict[str, float] = {}
+
+def log_exception(context: str) -> None:
+    LOG.exception(context)
+
+def log_exception_limited(key: str, context: str, interval_s: float = 5.0) -> None:
+    now = time.monotonic()
+    last = _LOG_THROTTLE.get(key, 0.0)
+    if now - last >= interval_s:
+        _LOG_THROTTLE[key] = now
+        LOG.exception(context)
+
+def log_warning(context: str) -> None:
+    LOG.warning(context)
+
+def log_warning_limited(key: str, context: str, interval_s: float = 5.0) -> None:
+    now = time.monotonic()
+    last = _LOG_THROTTLE.get(key, 0.0)
+    if now - last >= interval_s:
+        _LOG_THROTTLE[key] = now
+        LOG.warning(context)
+
+def log_error(context: str) -> None:
+    LOG.error(context)
 
 # ---- optional deps ----
 try:
     import serial  # pyserial
 except Exception:
     serial = None
+    log_exception("Optional import failed: pyserial not available; serial features disabled.")
 
 try:
     import cv2  # opencv for video capture
     CV2_AVAILABLE = True
 except Exception:
     CV2_AVAILABLE = False
+    log_exception("Optional import failed: OpenCV (cv2) not available; camera features disabled.")
+
+try:
+    import psutil  # optional: system/process memory monitoring for crash-safety
+    PSUTIL_AVAILABLE = True
+except Exception:
+    psutil = None
+    PSUTIL_AVAILABLE = False
+    log_warning("Optional import failed: psutil not available; memory watchdog disabled (data flushing still active).")
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -66,6 +113,22 @@ try:
     FLUIGENT_AVAILABLE = True
 except Exception:
     FLUIGENT_AVAILABLE = False
+    log_exception("Optional import failed: Fluigent SDK not available; Fluigent backend disabled.")
+
+NETWORK_FLOW_AVAILABLE = False
+try:
+    from flow_client import FlowClient, parse_server  # shared flow server client (needs websockets)
+    NETWORK_FLOW_AVAILABLE = True
+except Exception:
+    NETWORK_FLOW_AVAILABLE = False
+    log_exception("Optional import failed: flow_client/websockets not available; network flow backend disabled.")
+
+
+# ---------------- crash-safety / memory config ----------------
+FSYNC_INTERVAL_S = 2.0     # force logged data to physical disk at least this often
+MEM_POLL_MS = 3000         # memory watchdog poll interval (ms)
+MEM_WARN_MB = 800.0        # flush data + warn when system free memory drops below this
+MEM_CRITICAL_MB = 400.0    # flush data + shed load (stop video) below this
 
 
 # ---------------- util ----------------
@@ -79,16 +142,38 @@ def ensure_dir(p: str) -> str:
     os.makedirs(p, exist_ok=True)
     return p
 
+def sanitize_run_name(raw_name: str, default: str) -> str:
+    base = str(raw_name).strip().replace(" ", "_")[:40]
+    if not base:
+        base = default
+    return "".join(ch if (ch.isalnum() or ch in ("_", "-")) else "_" for ch in base)
+
+def create_unique_run_dir(out_dir: str, run_name: str, suffix: str = "") -> str:
+    # Include microseconds, then fall back to a numeric suffix if needed.
+    run_tag = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    base_name = f"{run_tag}_{run_name}{suffix}"
+    idx = 0
+    while True:
+        suffix_part = "" if idx == 0 else f"_{idx:02d}"
+        candidate = os.path.join(out_dir, f"{base_name}{suffix_part}")
+        try:
+            os.makedirs(candidate, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            idx += 1
+
 def safe_int(s: str, default: int) -> int:
     try:
         return int(float(str(s).strip()))
     except Exception:
+        log_warning(f"safe_int: could not parse {s!r}; using default {default}")
         return default
 
 def safe_float(s: str, default: float) -> float:
     try:
         return float(str(s).strip())
     except Exception:
+        log_warning(f"safe_float: could not parse {s!r}; using default {default}")
         return default
 
 def linspace_int(a: int, b: int, n: int) -> List[int]:
@@ -108,7 +193,7 @@ def serial_open(port: str, baud: int, timeout_s: float = 0.2):
         if ser.in_waiting:
             ser.read(ser.in_waiting)
     except Exception:
-        pass
+        log_exception("serial_open: failed to flush input buffer")
     return ser
 
 def serial_send_freq(ser, hz: int, protocol: str):
@@ -146,7 +231,7 @@ class FluigentFlowSensor(FlowSensorBase):
         try:
             fgt_set_errorReportMode("None")
         except Exception:
-            pass
+            log_exception("FluigentFlowSensor.open: failed to set error report mode")
         self._opened = True
 
     def close(self):
@@ -154,7 +239,7 @@ class FluigentFlowSensor(FlowSensorBase):
             try:
                 fgt_close()
             except Exception:
-                pass
+                log_exception("FluigentFlowSensor.close: failed to close SDK")
         self._opened = False
 
     def read(self):
@@ -170,6 +255,7 @@ class FluigentFlowSensor(FlowSensorBase):
                 return False, None
             return True, float(value)
         except Exception:
+            log_exception_limited("fluigent_read", "FluigentFlowSensor.read: failed to read sensor value")
             return False, None
 
 class DummyFlowSensor(FlowSensorBase):
@@ -182,9 +268,129 @@ class DummyFlowSensor(FlowSensorBase):
         t = time.time() - self.t0
         return True, 2.0 + 0.35*math.sin(2*math.pi*0.2*t) + 0.06*math.sin(2*math.pi*1.7*t)
 
+class NetworkFlowSensor(FlowSensorBase):
+    """One channel of the shared flow server (flow_server.py), read over the network.
+
+    read() never blocks: it returns the newest sample the background client has
+    received, or (False, None) if the server is unreachable, the sensor reports an
+    error, or nothing new arrived within stale_s. The client reconnects on its own,
+    so a server restart mid-run shows up as a gap in the data, not an exception.
+    """
+    def __init__(self, channel: int = 0, server: str = "localhost:8765", stale_s: float = 2.0):
+        self.channel = int(channel)
+        self.server = str(server).strip() or "localhost:8765"
+        self.stale_s = float(stale_s)
+        self._client = None
+        self._had_data = False
+        self._gap_since: Optional[float] = None
+
+    def open(self):
+        if not NETWORK_FLOW_AVAILABLE:
+            raise RuntimeError("Network flow backend needs flow_client.py next to the dashboard and the "
+                               "'websockets' package. Install with: pip install websockets")
+        host, port = parse_server(self.server)
+        addr = f"{host}:{port}"
+        client = FlowClient(host=host, port=port, channels=[self.channel], rate="max", mode="latest")
+        client.start()
+        connected = client.wait_connected(3.0)
+        channels = client.channels_info
+        available = sorted(c["ch"] for c in channels or [] if isinstance(c.get("ch"), int))
+        if channels is not None and self.channel not in available:
+            client.close()
+            raise RuntimeError(f"Flow server at {addr} has no channel {self.channel}; "
+                               f"available channels: {available}")
+        if not connected:
+            error = client.last_error
+            client.close(timeout=0.2)  # open() runs on the Tk thread; don't wait out a pending connect
+            if channels is not None:
+                raise RuntimeError(f"Flow server at {addr} did not accept the subscription to channel "
+                                   f"{self.channel}: {error or 'no reply within 3 s'}")
+            raise RuntimeError(f"Flow server at {addr} not reachable - is flow_server.py running? "
+                               f"({error or 'no reply within 3 s'})")
+        self._client = client
+        self._had_data = False
+        self._gap_since = None
+
+    def close(self):
+        client, self._client = self._client, None
+        if client is not None:
+            client.close()
+
+    def read(self):
+        client = self._client
+        if client is None:
+            return False, None
+        connected = client.connected
+        s = client.latest(self.channel) if connected else None
+        fresh = (s is not None and bool(s.get("ok")) and isinstance(s.get("v"), (int, float))
+                 and time.monotonic() - s["rx_mono"] <= self.stale_s)
+        if not fresh:
+            if self._had_data and self._gap_since is None:
+                self._gap_since = time.monotonic()
+                reason = ("connection to server lost" if not connected
+                          else "sensor reports an error" if s is not None and not s.get("ok")
+                          else "no new samples")
+                log_warning(f"NetworkFlowSensor: no flow data on channel {self.channel} from "
+                            f"{self.server} ({reason}); waiting for it to resume")
+            return False, None
+        if self._gap_since is not None:
+            log_warning(f"NetworkFlowSensor: channel {self.channel} data resumed after a "
+                        f"{time.monotonic() - self._gap_since:.1f} s gap")
+            self._gap_since = None
+        self._had_data = True
+        return True, float(s["v"])
+
+def make_flow_sensor(flow_cfg: Dict[str, Any], who: str) -> FlowSensorBase:
+    """Flow backend selected by cfg['flow_sensor']; `who` prefixes error messages."""
+    backend = (flow_cfg.get("backend") or ("fluigent" if FLUIGENT_AVAILABLE else "dummy")).lower()
+    if backend == "fluigent":
+        if not FLUIGENT_AVAILABLE:
+            raise RuntimeError(f"{who}: Fluigent backend requested but SDK not available.")
+        return FluigentFlowSensor(channel=int(flow_cfg.get("channel", 0)))
+    if backend == "network":
+        if not NETWORK_FLOW_AVAILABLE:
+            raise RuntimeError(f"{who}: network flow backend requested but flow_client/websockets is not "
+                               "available. Install with: pip install websockets")
+        return NetworkFlowSensor(channel=int(flow_cfg.get("channel", 0)),
+                                 server=str(flow_cfg.get("server") or "localhost:8765"))
+    return DummyFlowSensor()
+
 
 # ---------------- logging ----------------
+# Registry of every open DataLogger so crash handlers / the memory watchdog can
+# flush all in-flight data to disk from any thread.
+_OPEN_LOGGERS: "set[DataLogger]" = set()
+_OPEN_LOGGERS_LOCK = threading.Lock()
+
+def _register_logger(lg: "DataLogger") -> None:
+    with _OPEN_LOGGERS_LOCK:
+        _OPEN_LOGGERS.add(lg)
+
+def _unregister_logger(lg: "DataLogger") -> None:
+    with _OPEN_LOGGERS_LOCK:
+        _OPEN_LOGGERS.discard(lg)
+
+def flush_all_loggers(sync: bool = True) -> None:
+    """Best-effort flush (and optional fsync) of every open logger.
+
+    Safe to call from crash handlers, excepthooks and the memory watchdog.
+    """
+    with _OPEN_LOGGERS_LOCK:
+        loggers = list(_OPEN_LOGGERS)
+    for lg in loggers:
+        try:
+            lg.flush(sync=sync)
+        except Exception:
+            pass  # never raise from a crash/flush path
+
+
 class DataLogger:
+    """Crash-safe CSV logger.
+
+    Every row is flushed to the OS immediately, so a Python-level crash
+    (including MemoryError) or a hard process kill loses no acknowledged data.
+    A throttled fsync (see maybe_sync) additionally guards against power loss.
+    """
     def __init__(self, run_dir: str):
         self.run_dir = run_dir
         self.events_f = None
@@ -193,33 +399,82 @@ class DataLogger:
         self.events_w = None
         self.flow_w = None
         self.merged_w = None
+        self._lock = threading.Lock()
+        self._last_sync = 0.0
+        self._closed = False
 
     def open(self):
-        self.events_f = open(os.path.join(self.run_dir, "events.csv"), "w", newline="", encoding="utf-8")
-        self.flow_f   = open(os.path.join(self.run_dir, "flow.csv"), "w", newline="", encoding="utf-8")
-        self.merged_f = open(os.path.join(self.run_dir, "merged.csv"), "w", newline="", encoding="utf-8")
+        self.events_f = open(os.path.join(self.run_dir, "events.csv"), "x", newline="", encoding="utf-8")
+        self.flow_f   = open(os.path.join(self.run_dir, "flow.csv"), "x", newline="", encoding="utf-8")
+        self.merged_f = open(os.path.join(self.run_dir, "merged.csv"), "x", newline="", encoding="utf-8")
         self.events_w = csv.writer(self.events_f); self.events_w.writerow(["t_s", "freq_set_hz", "duty_set"])
         self.flow_w   = csv.writer(self.flow_f);   self.flow_w.writerow(["t_s", "flow"])
         self.merged_w = csv.writer(self.merged_f); self.merged_w.writerow(["t_s", "freq_set_hz", "duty_set", "flow"])
+        self._last_sync = time.monotonic()
+        self.flush(sync=True)   # make headers durable immediately
+        _register_logger(self)
+
+    def _flush_file(self, f, sync: bool):
+        if not f:
+            return
+        try:
+            f.flush()                     # Python buffer -> OS (survives app crash)
+            if sync:
+                os.fsync(f.fileno())      # OS buffer -> disk (survives power loss)
+        except Exception:
+            log_exception_limited("datalogger_flush",
+                                  f"DataLogger: failed to flush {getattr(f, 'name', '<unknown>')}")
+
+    def flush(self, sync: bool = False):
+        with self._lock:
+            for f in (self.events_f, self.flow_f, self.merged_f):
+                self._flush_file(f, sync)
+            if sync:
+                self._last_sync = time.monotonic()
+
+    def maybe_sync(self, interval: float = FSYNC_INTERVAL_S):
+        """Throttled fsync so a power loss loses at most `interval` seconds of data."""
+        if time.monotonic() - self._last_sync >= interval:
+            self.flush(sync=True)
 
     def close(self):
-        for f in (self.events_f, self.flow_f, self.merged_f):
-            try:
-                if f: f.close()
-            except Exception:
-                pass
+        _unregister_logger(self)
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            for f in (self.events_f, self.flow_f, self.merged_f):
+                try:
+                    if f:
+                        f.flush()
+                        try:
+                            os.fsync(f.fileno())
+                        except Exception:
+                            pass
+                        f.close()
+                except Exception:
+                    fname = getattr(f, "name", "<unknown>")
+                    log_exception(f"DataLogger.close: failed to close {fname}")
+            # prevent any late writes from a straggling thread hitting a closed file
+            self.events_w = self.flow_w = self.merged_w = None
 
     def log_event(self, t_s: float, freq: int, duty: float):
-        if self.events_w:
-            self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"])
+        with self._lock:
+            if self.events_w:
+                self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"])
+                self._flush_file(self.events_f, False)
 
     def log_flow(self, t_s: float, flow: float):
-        if self.flow_w:
-            self.flow_w.writerow([f"{t_s:.6f}", f"{float(flow):.6f}"])
+        with self._lock:
+            if self.flow_w:
+                self.flow_w.writerow([f"{t_s:.6f}", f"{float(flow):.6f}"])
+                self._flush_file(self.flow_f, False)
 
     def log_merged(self, t_s: float, freq: int, duty: float, flow: float):
-        if self.merged_w:
-            self.merged_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}", f"{float(flow):.6f}"])
+        with self._lock:
+            if self.merged_w:
+                self.merged_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}", f"{float(flow):.6f}"])
+                self._flush_file(self.merged_f, False)
 
 
 # ---------------- runtime sessions ----------------
@@ -272,14 +527,7 @@ class ManualSession(LiveSessionBase):
             self._emit("status", f"Manual: opening serial {port} @ {baud} ...")
             self.ser = serial_open(port, baud, timeout_s)
 
-        flow_cfg = self.cfg.get("flow_sensor", {})
-        backend = (flow_cfg.get("backend") or ("fluigent" if FLUIGENT_AVAILABLE else "dummy")).lower()
-        if backend == "fluigent":
-            if not FLUIGENT_AVAILABLE:
-                raise RuntimeError("Manual: Fluigent backend requested but SDK not available.")
-            self.sensor = FluigentFlowSensor(channel=int(flow_cfg.get("channel", 0)))
-        else:
-            self.sensor = DummyFlowSensor()
+        self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Manual")
         self.sensor.open()
 
         if self.logger:
@@ -294,21 +542,21 @@ class ManualSession(LiveSessionBase):
                 self._set_freq_internal(0)
                 self._set_duty_internal(0.0)
         except Exception:
-            pass
+            log_exception("ManualSession teardown: failed to send zero on exit")
         try:
             if self.ser:
                 self.ser.close()
         except Exception:
-            pass
+            log_exception("ManualSession teardown: failed to close serial port")
         try:
             self.sensor.close()
         except Exception:
-            pass
+            log_exception("ManualSession teardown: failed to close flow sensor")
         try:
             if self.logger:
                 self.logger.close()
         except Exception:
-            pass
+            log_exception("ManualSession teardown: failed to close logger")
 
     def _set_freq_internal(self, hz: int):
         hz = int(hz)
@@ -360,20 +608,33 @@ class ManualSession(LiveSessionBase):
         sr = float(self.cfg.get("flow_sensor", {}).get("sample_rate_hz", 25.0))
         sr = 10.0 if sr <= 0 else sr
         dt = 1.0 / sr
-        while not self.stop_flag.is_set():
-            ok, val = self.sensor.read()
-            t_s = time.monotonic() - self.t0
-            if ok and val is not None:
-                with self.lock:
-                    f = self.freq_set if self.output_enabled else 0
-                    d = self.duty_set
-                    self.buf_t.append(t_s)
-                    self.buf_freq.append(f)
-                    self.buf_flow.append(float(val))
+        try:
+            while not self.stop_flag.is_set():
+                ok, val = self.sensor.read()
+                t_s = time.monotonic() - self.t0
+                if ok and val is not None:
+                    with self.lock:
+                        f = self.freq_set if self.output_enabled else 0
+                        d = self.duty_set
+                        self.buf_t.append(t_s)
+                        self.buf_freq.append(f)
+                        self.buf_flow.append(float(val))
+                    if self.logger:
+                        self.logger.log_flow(t_s, float(val))
+                        self.logger.log_merged(t_s, f, d, float(val))
+                        self.logger.maybe_sync()
+                time.sleep(dt)
+        except Exception:
+            # Includes MemoryError: don't let the thread die silently and drop data.
+            log_exception("ManualSession sampling loop crashed; flushing data to disk")
+            try:
                 if self.logger:
-                    self.logger.log_flow(t_s, float(val))
-                    self.logger.log_merged(t_s, f, d, float(val))
-            time.sleep(dt)
+                    self.logger.flush(sync=True)
+            except Exception:
+                log_exception("ManualSession: failed to flush after sampling crash")
+            self.stop_flag.set()
+            self._emit("error", "Sampling stopped due to an error (possibly low memory). "
+                                "Data collected so far has been saved to disk.")
 
     def _video_loop(self):
         """Background thread for capturing video frames with overlay."""
@@ -385,7 +646,7 @@ class ManualSession(LiveSessionBase):
             # Will be set by UI
             pass
         except ImportError:
-            pass
+            log_warning_limited("video_loop_import", "ManualSession._video_loop: failed to import DashboardApp")
         
         while not self.stop_flag.is_set():
             if self.video_recorder and self.video_recorder.is_recording():
@@ -423,7 +684,7 @@ class ManualSession(LiveSessionBase):
             if self.t_sample:
                 self.t_sample.join(timeout=timeout)
         except Exception:
-            pass
+            log_exception("ManualSession.join: failed while joining sampling thread")
         self._teardown_hardware()
         self._emit("status", "Manual: disconnected.")
 
@@ -475,14 +736,7 @@ class PumpTestRunner(LiveSessionBase):
             self._emit("status", f"Runner: opening serial {port} @ {baud} ...")
             self.ser = serial_open(port, baud, timeout_s)
 
-        flow_cfg = self.cfg.get("flow_sensor", {})
-        backend = (flow_cfg.get("backend") or ("fluigent" if FLUIGENT_AVAILABLE else "dummy")).lower()
-        if backend == "fluigent":
-            if not FLUIGENT_AVAILABLE:
-                raise RuntimeError("Runner: Fluigent backend requested but SDK not available.")
-            self.sensor = FluigentFlowSensor(channel=int(flow_cfg.get("channel", 0)))
-        else:
-            self.sensor = DummyFlowSensor()
+        self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Runner")
         self.sensor.open()
 
         self.logger.open()
@@ -495,20 +749,20 @@ class PumpTestRunner(LiveSessionBase):
                 self._set_freq(0)
                 self._set_duty(0.0)
         except Exception:
-            pass
+            log_exception("PumpTestRunner teardown: failed to send zero on exit")
         try:
             if self.ser:
                 self.ser.close()
         except Exception:
-            pass
+            log_exception("PumpTestRunner teardown: failed to close serial port")
         try:
             self.sensor.close()
         except Exception:
-            pass
+            log_exception("PumpTestRunner teardown: failed to close flow sensor")
         try:
             self.logger.close()
         except Exception:
-            pass
+            log_exception("PumpTestRunner teardown: failed to close logger")
 
     def _set_freq(self, hz: int):
         hz = int(hz)
@@ -528,19 +782,31 @@ class PumpTestRunner(LiveSessionBase):
         sr = float(self.cfg.get("flow_sensor", {}).get("sample_rate_hz", 25.0))
         sr = 10.0 if sr <= 0 else sr
         dt = 1.0 / sr
-        while not self.stop_flag.is_set():
-            ok, val = self.sensor.read()
-            t_s = time.monotonic() - self.t0
-            if ok and val is not None:
-                with self.lock:
-                    f = self.freq_set
-                    d = self.duty_set
-                    self.buf_t.append(t_s)
-                    self.buf_freq.append(f)
-                    self.buf_flow.append(float(val))
-                self.logger.log_flow(t_s, float(val))
-                self.logger.log_merged(t_s, f, d, float(val))
-            time.sleep(dt)
+        try:
+            while not self.stop_flag.is_set():
+                ok, val = self.sensor.read()
+                t_s = time.monotonic() - self.t0
+                if ok and val is not None:
+                    with self.lock:
+                        f = self.freq_set
+                        d = self.duty_set
+                        self.buf_t.append(t_s)
+                        self.buf_freq.append(f)
+                        self.buf_flow.append(float(val))
+                    self.logger.log_flow(t_s, float(val))
+                    self.logger.log_merged(t_s, f, d, float(val))
+                    self.logger.maybe_sync()
+                time.sleep(dt)
+        except Exception:
+            # Includes MemoryError: don't let the thread die silently and drop data.
+            log_exception("PumpTestRunner sampling loop crashed; flushing data to disk")
+            try:
+                self.logger.flush(sync=True)
+            except Exception:
+                log_exception("PumpTestRunner: failed to flush after sampling crash")
+            self.stop_flag.set()
+            self._emit("error", "Sampling stopped due to an error (possibly low memory). "
+                                "Data collected so far has been saved to disk.")
 
     def _video_loop(self):
         """Background thread for capturing video frames with overlay."""
@@ -652,27 +918,37 @@ class PumpTestRunner(LiveSessionBase):
         def log_event():
             self.logger.log_event(time.monotonic() - self.t0, self.freq_set, self.duty_set)
 
-        for i, test in enumerate(tests, 1):
-            if self.stop_flag.is_set():
-                break
+        try:
+            for i, test in enumerate(tests, 1):
+                if self.stop_flag.is_set():
+                    break
 
-            ttype = (test.get("type") or "constant").lower()
-            repeat = int(test.get("repeat", 1))
-            self._emit("status", f"Running block {i}/{len(tests)}: {ttype} x{repeat if repeat > 0 else 'inf'}")
+                ttype = (test.get("type") or "constant").lower()
+                repeat = int(test.get("repeat", 1))
+                self._emit("status", f"Running block {i}/{len(tests)}: {ttype} x{repeat if repeat > 0 else 'inf'}")
 
-            self._exec_block(test, log_event, status_prefix=f"Block {i}/{len(tests)}: ")
+                self._exec_block(test, log_event, status_prefix=f"Block {i}/{len(tests)}: ")
 
-            if self.stop_flag.is_set():
-                break
+                if self.stop_flag.is_set():
+                    break
 
-            if i < len(tests) and break_between > 0:
-                self._emit("status", f"Break {break_between:.1f}s ...")
-                t_end = time.monotonic() + break_between
-                while time.monotonic() < t_end and not self.stop_flag.is_set():
-                    time.sleep(0.05)
+                if i < len(tests) and break_between > 0:
+                    self._emit("status", f"Break {break_between:.1f}s ...")
+                    t_end = time.monotonic() + break_between
+                    while time.monotonic() < t_end and not self.stop_flag.is_set():
+                        time.sleep(0.05)
 
-        self._emit("status", "Test sequence complete.")
-        self.stop_flag.set()
+            self._emit("status", "Test sequence complete.")
+        except Exception:
+            log_exception("PumpTestRunner run loop crashed; flushing data to disk")
+            try:
+                self.logger.flush(sync=True)
+            except Exception:
+                log_exception("PumpTestRunner: failed to flush after run crash")
+            self._emit("error", "Test run stopped due to an error. "
+                                "Data collected so far has been saved to disk.")
+        finally:
+            self.stop_flag.set()
 
     def start(self):
         self._setup_hardware()
@@ -697,7 +973,7 @@ class PumpTestRunner(LiveSessionBase):
                 if t:
                     t.join(timeout=timeout)
             except Exception:
-                pass
+                log_exception("PumpTestRunner.join: failed while joining worker thread")
         self._teardown_hardware()
 
     def get_plot_data(self):
@@ -707,89 +983,187 @@ class PumpTestRunner(LiveSessionBase):
 
 # ---------------- video recording ----------------
 class VideoRecorder:
-    """USB camera video recorder with overlay support."""
+    """USB camera video recorder with overlay support and shared frame buffer."""
     
     def __init__(self):
         self.cap = None
         self.writer = None
         self.recording = False
         self.output_path = None
-        self.frame_width = 640
-        self.frame_height = 480
+        self.base_output_path = None
+        self.frame_width = 1920
+        self.frame_height = 1080
         self.fps = 30.0
+        self.chunk_duration_s = 60.0
+        self.chunk_index = 0
+        self.chunk_start_t = 0.0
+        self.chunk_paths: List[str] = []
+        
+        self._writer_lock = threading.Lock()
+        self._cap_lock = threading.Lock()
+        self._last_frame = None
+        self._last_frame_lock = threading.Lock()
+
+    def _release_writer_locked(self):
+        if self.writer:
+            self.writer.release()
+            self.writer = None
+
+    def _build_chunk_path(self, chunk_index: int) -> Optional[str]:
+        if not self.base_output_path:
+            return None
+        stem, ext = os.path.splitext(self.base_output_path)
+        if not ext:
+            ext = ".mp4"
+        return f"{stem}_part{chunk_index:04d}{ext}"
+
+    def _open_next_chunk_locked(self) -> bool:
+        self.chunk_index += 1
+        chunk_path = self._build_chunk_path(self.chunk_index)
+        if not chunk_path:
+            return False
+
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(
+            chunk_path,
+            fourcc,
+            self.fps,
+            (self.frame_width, self.frame_height),
+        )
+        if not writer.isOpened():
+            writer.release()
+            log_error(f"VideoRecorder: failed to open video chunk {chunk_path}")
+            return False
+
+        self._release_writer_locked()
+        self.writer = writer
+        self.output_path = chunk_path
+        self.chunk_paths.append(chunk_path)
+        self.chunk_start_t = time.monotonic()
+        return True
         
     def open(self, camera_index: int = 0) -> bool:
         """Open a USB camera."""
         if not CV2_AVAILABLE:
+            log_warning("VideoRecorder.open: OpenCV not available; cannot open camera.")
             return False
-        try:
-            self.cap = cv2.VideoCapture(camera_index)
-            if not self.cap.isOpened():
+        with self._cap_lock:
+            try:
+                self.cap = cv2.VideoCapture(camera_index)
+                if not self.cap.isOpened():
+                    log_error(f"VideoRecorder.open: failed to open camera index {camera_index}")
+                    self.cap = None
+                    return False
+                # Get actual frame dimensions; fall back to 1080p if unavailable
+                width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                if width > 0 and height > 0:
+                    self.frame_width = width
+                    self.frame_height = height
+                else:
+                    self.frame_width = 1920
+                    self.frame_height = 1080
+                    log_warning(
+                        f"VideoRecorder.open: camera reported invalid resolution {width}x{height}; "
+                        f"using fallback {self.frame_width}x{self.frame_height}"
+                    )
+                return True
+            except Exception:
+                log_exception(f"VideoRecorder.open: exception opening camera index {camera_index}")
                 self.cap = None
                 return False
-            # Get actual frame dimensions
-            self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            return True
-        except Exception:
-            self.cap = None
-            return False
     
     def close(self):
         """Close the camera and writer."""
-        if self.writer:
-            self.writer.release()
-            self.writer = None
-        if self.cap:
-            self.cap.release()
-            self.cap = None
-        self.recording = False
+        with self._writer_lock:
+            self._release_writer_locked()
+            self.recording = False
+            self.output_path = None
+            self.base_output_path = None
+            self.chunk_paths = []
+            self.chunk_index = 0
+            self.chunk_start_t = 0.0
+        
+        with self._cap_lock:
+            if self.cap:
+                self.cap.release()
+                self.cap = None
+        
+        with self._last_frame_lock:
+            self._last_frame = None
     
-    def start_recording(self, output_path: str) -> bool:
-        """Start recording video to a file."""
-        if not self.cap:
+    def start_recording(self, output_path: str, chunk_duration_s: float = 60.0) -> bool:
+        """Start recording video to chunked files."""
+        if not self.is_opened():
+            log_error("VideoRecorder.start_recording: camera not opened")
             return False
         try:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.writer = cv2.VideoWriter(output_path, fourcc, self.fps, 
-                                          (self.frame_width, self.frame_height))
-            if not self.writer.isOpened():
-                self.writer = None
-                return False
-            self.output_path = output_path
-            self.recording = True
-            return True
+            with self._writer_lock:
+                self._release_writer_locked()
+                self.recording = False
+                self.base_output_path = output_path
+                self.output_path = None
+                self.chunk_duration_s = max(float(chunk_duration_s), 1.0)
+                self.chunk_paths = []
+                self.chunk_index = 0
+                self.chunk_start_t = 0.0
+                if not self._open_next_chunk_locked():
+                    self.base_output_path = None
+                    return False
+                self.recording = True
+                return True
         except Exception:
-            self.writer = None
+            log_exception(f"VideoRecorder.start_recording: exception creating writer for {output_path}")
+            with self._writer_lock:
+                self._release_writer_locked()
+                self.base_output_path = None
+                self.output_path = None
+                self.recording = False
             return False
     
     def stop_recording(self):
         """Stop recording."""
-        self.recording = False
-        if self.writer:
-            self.writer.release()
-            self.writer = None
+        with self._writer_lock:
+            self.recording = False
+            self._release_writer_locked()
+            self.output_path = None
+            self.base_output_path = None
+            self.chunk_paths = []
+            self.chunk_index = 0
+            self.chunk_start_t = 0.0
     
     def is_recording(self) -> bool:
         """Check if currently recording."""
-        return self.recording and self.writer is not None
+        with self._writer_lock:
+            return self.recording and self.writer is not None
     
     def is_opened(self) -> bool:
         """Check if camera is open."""
-        return self.cap is not None and self.cap.isOpened()
+        with self._cap_lock:
+            return self.cap is not None and self.cap.isOpened()
     
-    def read_frame(self) -> Optional["np.ndarray"]:
-        """Read a frame from the camera."""
-        if self.cap:
-            ret, frame = self.cap.read()
-            if ret:
-                return frame
-        return None
+    def read_frame(self, fresh: bool = True) -> Optional["np.ndarray"]:
+        """
+        Read a frame from the camera.
+        If fresh is True, grabs a new frame from hardware and caches it.
+        If fresh is False, returns the last cached frame.
+        """
+        if fresh:
+            with self._cap_lock:
+                if self.cap:
+                    ret, frame = self.cap.read()
+                    if ret:
+                        with self._last_frame_lock:
+                            self._last_frame = frame
+                        return frame
+            return None
+        else:
+            with self._last_frame_lock:
+                return self._last_frame.copy() if self._last_frame is not None else None
     
     def add_overlay(self, frame, t_s: float, freq: float, flow: float) -> "np.ndarray":
         """Add overlay text to frame."""
         try:
-            import numpy as np
             # Add semi-transparent overlay rectangle
             overlay = frame.copy()
             cv2.rectangle(overlay, (5, 5), (250, 90), (0, 0, 0), -1)
@@ -803,16 +1177,24 @@ class VideoRecorder:
             cv2.putText(frame, f"Flow: {flow:.4f}", (10, 80), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
             return frame
-        except ImportError:
-            # numpy not available, just return frame
+        except Exception:
+            log_exception_limited("video_overlay_error", "VideoRecorder.add_overlay: failed to add overlay")
             return frame
     
     def record_frame(self, frame) -> bool:
         """Record a frame if recording is active."""
-        if self.writer and self.recording:
+        with self._writer_lock:
+            if not self.writer or not self.recording:
+                return False
+
+            if self.chunk_start_t and (time.monotonic() - self.chunk_start_t) >= self.chunk_duration_s:
+                if not self._open_next_chunk_locked():
+                    self.recording = False
+                    self._release_writer_locked()
+                    return False
+
             self.writer.write(frame)
             return True
-        return False
 
 
 # ---------------- UI ----------------
@@ -833,16 +1215,23 @@ class DashboardApp:
         self._build_layout()
         self._build_plot()
 
-        self.ani = animation.FuncAnimation(self.fig, self._update_plot, interval=150, blit=False)
+        # cache_frame_data=False prevents matplotlib from retaining returned artists
+        # for every frame of an unbounded live animation (a known slow memory growth).
+        self.ani = animation.FuncAnimation(self.fig, self._update_plot, interval=150,
+                                           blit=False, cache_frame_data=False)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if initial_config_path:
             try:
                 self.load_config(initial_config_path)
             except Exception as e:
+                log_exception(f"DashboardApp.__init__: failed to load config {initial_config_path}")
                 messagebox.showwarning("Load config", f"Could not load config:\n{e}")
 
+        self._mem_critical_warned = False
         self._poll_ui_events()
+        if PSUTIL_AVAILABLE:
+            self._poll_memory()
 
     # ---- layout ----
     def _build_layout(self):
@@ -889,6 +1278,7 @@ class DashboardApp:
 
         self.var_sensor_backend = tk.StringVar(value="fluigent" if FLUIGENT_AVAILABLE else "dummy")
         self.var_sensor_channel = tk.StringVar(value="0")
+        self.var_flow_server    = tk.StringVar(value="localhost:8765")
         self.var_sample_rate    = tk.StringVar(value="25")
         self.var_break_between  = tk.StringVar(value="0")
 
@@ -910,7 +1300,7 @@ class DashboardApp:
         proto.bind("<<ComboboxSelected>>", lambda *_: self._refresh_manual_duty_state())
 
         ttk.Label(hw, text="Flow backend:").grid(row=3, column=0, sticky="w", padx=4, pady=2)
-        ttk.Combobox(hw, state="readonly", width=10, values=["fluigent", "dummy"], textvariable=self.var_sensor_backend)\
+        ttk.Combobox(hw, state="readonly", width=10, values=["fluigent", "dummy", "network"], textvariable=self.var_sensor_backend)\
             .grid(row=3, column=1, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Channel:").grid(row=3, column=2, sticky="e", padx=4, pady=2)
@@ -922,8 +1312,11 @@ class DashboardApp:
         ttk.Label(hw, text="Break between blocks (s):").grid(row=4, column=2, sticky="e", padx=4, pady=2)
         ttk.Entry(hw, textvariable=self.var_break_between, width=10).grid(row=4, column=3, sticky="w", padx=4, pady=2)
 
+        ttk.Label(hw, text="Flow server:").grid(row=5, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_flow_server, width=24).grid(row=5, column=1, sticky="w", padx=4, pady=2)
+
         mode_row = ttk.Frame(hw)
-        mode_row.grid(row=5, column=0, columnspan=4, sticky="w", padx=4, pady=(8, 2))
+        mode_row.grid(row=6, column=0, columnspan=4, sticky="w", padx=4, pady=(8, 2))
         ttk.Label(mode_row, text="Mode:").pack(side=tk.LEFT)
         ttk.Radiobutton(mode_row, text="Scheduled tests", variable=self.var_mode, value="scheduled", command=self._update_mode_ui)\
             .pack(side=tk.LEFT, padx=6)
@@ -1029,6 +1422,7 @@ class DashboardApp:
         """Initialize video recorder."""
         if not CV2_AVAILABLE:
             self.var_video_status.set("Camera: OpenCV not available (pip install opencv-python)")
+            log_warning("Video init: OpenCV not available; camera disabled.")
             return
         
         # Create video recorder instance
@@ -1046,11 +1440,13 @@ class DashboardApp:
             self.var_video_status.set("Camera: Not connected (click Connect to try)")
             self.btn_video_connect.config(state=tk.NORMAL)
             self.btn_video_disconnect.config(state=tk.DISABLED)
+            log_warning(f"Video init: could not open camera index {camera_idx}")
 
     def _connect_camera(self):
         """Connect to USB camera."""
         if not CV2_AVAILABLE:
             messagebox.showwarning("Camera", "OpenCV is not installed. Run: pip install opencv-python")
+            log_warning("Connect camera: OpenCV not installed.")
             return
         
         if self.video_recorder is None:
@@ -1065,6 +1461,7 @@ class DashboardApp:
             self._start_video_preview()
         else:
             self.var_video_status.set(f"Camera: Failed to connect (index {camera_idx})")
+            log_error(f"Connect camera: failed to open camera index {camera_idx}")
             messagebox.showerror("Camera", f"Could not open camera at index {camera_idx}. Check USB connection.")
 
     def _disconnect_camera(self):
@@ -1096,17 +1493,24 @@ class DashboardApp:
         if not self.video_recorder or not self.video_recorder.is_opened():
             # Camera not connected, disable video for this run
             self.var_video_enabled.set(False)
+            log_warning("Video recording: camera not connected; disabling video for this run.")
             return False
         
         if self.video_recorder.is_recording():
             return True
         
-        # Start recording
+        if not self.run_dir:
+            out_dir = ensure_dir(self.var_out_dir.get().strip())
+            run_name = sanitize_run_name(self.var_test_name.get(), "video")
+            self.run_dir = create_unique_run_dir(out_dir, run_name, "_VIDEO")
+
+        # Start recording in chunked files
         video_path = os.path.join(self.run_dir, "video_recording.mp4")
-        if self.video_recorder.start_recording(video_path):
+        if self.video_recorder.start_recording(video_path, chunk_duration_s=60.0):
             self.var_video_rec_status.set("recording")
             return True
         else:
+            log_error(f"Video recording: failed to start recording at {video_path}")
             messagebox.showerror("Video", "Failed to start video recording")
             return False
 
@@ -1178,21 +1582,34 @@ class DashboardApp:
         self._video_preview_running = True
         self._update_video_preview()
 
+    def _stop_video_preview(self):
+        """Stop updating the video preview in the UI."""
+        self._video_preview_running = False
+        if hasattr(self, "video_preview_label"):
+            self.video_preview_label.image = None
+        if getattr(self, "video_popout_label", None) is not None and self.video_popout.winfo_exists():
+            self.video_popout_label.configure(image="", text="Camera not connected\nConnect camera to see the feed")
+            self.video_popout_label.image = None
+
     def _update_video_preview(self):
         """Update the video preview with the latest camera frame."""
         if not self._video_preview_running:
             return
         
         if self.video_recorder and self.video_recorder.is_opened():
-            frame = self.video_recorder.read_frame()
+            # Use cached frame from the recorder to avoid thread competition
+            # If recording is OFF, we need to grab a fresh frame here
+            is_recording = self.video_recorder.is_recording()
+            frame = self.video_recorder.read_frame(fresh=not is_recording)
+            
             if frame is not None:
                 # Convert frame to RGB for display
                 try:
-                    import numpy as np
+                    from PIL import Image, ImageTk
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    # Resize frame to fit in preview (max 320x240)
                     h, w = frame_rgb.shape[:2]
+
+                    # Resize frame to fit in preview (max 240px height)
                     max_size = 240
                     scale = min(max_size / h, max_size / w)
                     new_h = int(h * scale)
@@ -1200,12 +1617,11 @@ class DashboardApp:
                     small = cv2.resize(frame_rgb, (new_w, new_h))
 
                     # Convert to PIL Image and then to PhotoImage
-                    from PIL import Image, ImageTk
                     pil_image = Image.fromarray(small)
                     photo = ImageTk.PhotoImage(pil_image)
-                    
+
                     self.video_preview_label.configure(image=photo, text="")
-                    self.video_preview_label.image = photo  # Keep reference
+                    self.video_preview_label.image = photo  # Keep reference to prevent GC
 
                     # Feed the pop-out window at its own (larger) size
                     if self.video_popout_label is not None:
@@ -1222,18 +1638,14 @@ class DashboardApp:
                                 self.video_popout_label.image = pphoto
                 except ImportError:
                     self.video_preview_label.configure(text="PIL not available for preview")
+                    log_warning_limited("video_preview_pil", "Video preview: PIL not available; preview disabled.")
                 except Exception:
-                    pass
+                    log_exception_limited("video_preview_error", "Video preview: failed to update frame")
         
-        # Schedule next update
-        self.root.after(33, self._update_video_preview)  # ~30 fps
-
-    def _stop_video_preview(self):
-        """Stop updating the video preview."""
-        self._video_preview_running = False
-        if getattr(self, "video_popout_label", None) is not None and self.video_popout.winfo_exists():
-            self.video_popout_label.configure(image="", text="Camera not connected\nConnect camera to see the feed")
-            self.video_popout_label.image = None
+        # Schedule next update (~15 fps). Lower than the recording rate on purpose:
+        # the preview rebuilds a PhotoImage each tick, so a slower cadence roughly
+        # halves that allocation churn without affecting the recorded video.
+        self.root.after(66, self._update_video_preview)
 
     def _apply_ui_scaling(self):
         """Scale UI based on screen size to avoid scroll-only layouts."""
@@ -1245,7 +1657,7 @@ class DashboardApp:
             scale = clamp(scale, 0.85, 1.15)
             self.root.tk.call("tk", "scaling", scale)
         except Exception:
-            pass
+            log_exception("UI scaling: failed to apply scaling")
 
     def _set_default_geometry(self):
         """Set a sensible starting size based on screen resolution."""
@@ -1259,6 +1671,7 @@ class DashboardApp:
             self.root.geometry(f"{w}x{h}+{x}+{y}")
             self.root.minsize(900, 640)
         except Exception:
+            log_exception("UI geometry: failed to set default geometry")
             self.root.geometry("1250x840")
 
     def _build_config_builder(self, parent):
@@ -1499,7 +1912,7 @@ class DashboardApp:
                 self.ax1.set_ylim(ymin, ymax)
                 self.canvas.draw()
         except Exception:
-            pass
+            log_exception("Plot: failed to set frequency Y range")
 
     def _set_flow_y_range(self):
         """Set custom Y range for flow plot."""
@@ -1512,7 +1925,7 @@ class DashboardApp:
                 self.ax2.set_ylim(ymin, ymax)
                 self.canvas.draw()
         except Exception:
-            pass
+            log_exception("Plot: failed to set flow Y range")
 
     def _auto_y_range(self):
         """Enable auto Y range for both plots."""
@@ -1556,7 +1969,7 @@ class DashboardApp:
                     fmin -= 1; fmax += 1
                 self.ax1.set_ylim(fmin, fmax)
             except Exception:
-                pass
+                log_exception_limited("plot_freq_ylim", "Plot update: failed to auto-scale frequency Y range")
 
         if self._user_flow_y_range is not None:
             self.ax2.set_ylim(self._user_flow_y_range)
@@ -1567,9 +1980,8 @@ class DashboardApp:
                     ymin -= 0.1; ymax += 0.1
                 self.ax2.set_ylim(ymin, ymax)
             except Exception:
-                pass
+                log_exception_limited("plot_flow_ylim", "Plot update: failed to auto-scale flow Y range")
 
-        self.canvas.draw()
         return self.line_freq, self.line_flow
 
     # ---- config IO ----
@@ -1601,6 +2013,7 @@ class DashboardApp:
         if isinstance(flow_cfg, dict):
             self.var_sensor_backend.set(flow_cfg.get("backend", self.var_sensor_backend.get()))
             self.var_sensor_channel.set(str(flow_cfg.get("channel", self.var_sensor_channel.get())))
+            self.var_flow_server.set(str(flow_cfg.get("server", self.var_flow_server.get())))
             self.var_sample_rate.set(str(flow_cfg.get("sample_rate_hz", self.var_sample_rate.get())))
 
         meta = self.cfg.get("meta", {})
@@ -1631,11 +2044,13 @@ class DashboardApp:
                 "description": self.txt_desc.get("1.0", tk.END).strip(),
                 "operator": self.var_operator.get().strip(),
                 "created": iso_now(),
+                "output_dir": self.var_out_dir.get().strip(),
             },
             "serial": {"protocol": self.var_protocol.get().strip()},
             "flow_sensor": {
                 "backend": self.var_sensor_backend.get().strip(),
                 "channel": safe_int(self.var_sensor_channel.get(), 0),
+                "server": self.var_flow_server.get().strip(),
                 "sample_rate_hz": safe_float(self.var_sample_rate.get(), 25.0),
             },
         }
@@ -1948,20 +2363,26 @@ class DashboardApp:
             return
 
         out_dir = ensure_dir(self.var_out_dir.get().strip())
-        run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = (self.var_test_name.get().strip().replace(" ", "_")[:40] or "run")
-        self.run_dir = ensure_dir(os.path.join(out_dir, f"{run_tag}_{run_name}"))
+        run_name = sanitize_run_name(self.var_test_name.get(), "run")
+        run_dir = create_unique_run_dir(out_dir, run_name)
+        self.run_dir = run_dir
 
-        with open(os.path.join(self.run_dir, "meta.json"), "w", encoding="utf-8") as f:
+        cfg.setdefault("meta", {})
+        cfg["meta"]["output_dir"] = out_dir
+        cfg["meta"]["run_dir"] = run_dir
+
+        with open(os.path.join(run_dir, "meta.json"), "x", encoding="utf-8") as f:
             json.dump(cfg.get("meta", {}), f, indent=2)
-        with open(os.path.join(self.run_dir, "config.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(run_dir, "config.json"), "x", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
 
         # Pass video recorder to the runner
-        runner = PumpTestRunner(cfg, self.run_dir, self.ui_events, self.video_recorder)
+        runner = PumpTestRunner(cfg, run_dir, self.ui_events, self.video_recorder)
         try:
             runner.start()
         except Exception as e:
+            log_exception("Start scheduled run: runner.start failed")
+            self.run_dir = None
             messagebox.showerror("Start failed", str(e))
             return
 
@@ -1973,9 +2394,9 @@ class DashboardApp:
         
         # Start video recording if enabled
         if self._start_video_recording():
-            self.var_status.set(f"Running. Folder: {self.run_dir} (Video recording on)")
+            self.var_status.set(f"Running. Folder: {run_dir} (Video recording on)")
         else:
-            self.var_status.set(f"Running. Folder: {self.run_dir}")
+            self.var_status.set(f"Running. Folder: {run_dir}")
 
     def manual_connect(self):
         if self.active_stream is not None:
@@ -1984,20 +2405,29 @@ class DashboardApp:
         cfg["protocol"] = cfg.get("serial", {}).get("protocol", "freq_only")
 
         run_dir = None
+        out_dir = None
         if bool(self.var_log_manual.get()):
             out_dir = ensure_dir(self.var_out_dir.get().strip())
-            run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-            run_name = (self.var_test_name.get().strip().replace(" ", "_")[:40] or "manual")
-            run_dir = ensure_dir(os.path.join(out_dir, f"{run_tag}_{run_name}_MANUAL"))
-            with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
+            run_name = sanitize_run_name(self.var_test_name.get(), "manual")
+            run_dir = create_unique_run_dir(out_dir, run_name, "_MANUAL")
+
+        if run_dir:
+            cfg.setdefault("meta", {})
+            cfg["meta"]["output_dir"] = out_dir
+            cfg["meta"]["run_dir"] = run_dir
+
+            with open(os.path.join(run_dir, "meta.json"), "x", encoding="utf-8") as f:
                 json.dump(cfg.get("meta", {}), f, indent=2)
-            with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(run_dir, "config.json"), "x", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
 
+        self.run_dir = run_dir
         sess = ManualSession(cfg, run_dir, self.ui_events, self.video_recorder)
         try:
             sess.start()
         except Exception as e:
+            log_exception("Manual connect: sess.start failed")
+            self.run_dir = None
             messagebox.showerror("Manual connect failed", str(e))
             return
 
@@ -2037,6 +2467,7 @@ class DashboardApp:
             self.active_stream.join(timeout=5.0)
         finally:
             self.active_stream = None
+            self.run_dir = None
             self.btn_stop.config(state=tk.DISABLED)
             self.btn_start.config(state=tk.NORMAL if self.var_mode.get() == "scheduled" else tk.DISABLED)
             self.btn_manual_connect.config(state=tk.NORMAL)
@@ -2092,6 +2523,7 @@ class DashboardApp:
             fig.savefig(plot_path, dpi=150, bbox_inches='tight')
             self.var_status.set(f"Test complete. Plot saved to: {os.path.basename(plot_path)}")
         except Exception as e:
+            log_exception(f"Summary plot: failed to save {plot_path}")
             self.var_status.set(f"Test complete. Failed to save plot: {e}")
         finally:
             plt.close(fig)
@@ -2118,9 +2550,55 @@ class DashboardApp:
                 kind, payload = self.ui_events.get_nowait()
                 if kind == "status":
                     self.var_status.set(payload)
+                elif kind == "error":
+                    self.var_status.set(payload)
+                    try:
+                        messagebox.showerror("Run error", payload)
+                    except Exception:
+                        log_exception("UI: failed to show error dialog")
         except queue.Empty:
             pass
         self.root.after(120, self._poll_ui_events)
+
+    def _poll_memory(self):
+        """Watchdog: flush data and shed load before the process runs out of memory."""
+        try:
+            avail_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
+            if avail_mb < MEM_CRITICAL_MB:
+                # Critical: get every byte to disk, then relieve pressure.
+                flush_all_loggers(sync=True)
+                if self.video_recorder and self.video_recorder.is_recording():
+                    self._stop_video_recording()
+                    self.var_status.set(
+                        f"LOW MEMORY ({avail_mb:.0f} MB free): data flushed and video recording "
+                        f"stopped to protect data. Please stop the run and free memory."
+                    )
+                else:
+                    self.var_status.set(
+                        f"LOW MEMORY ({avail_mb:.0f} MB free): data flushed to disk. "
+                        f"Please stop the run and free memory."
+                    )
+                if not self._mem_critical_warned:
+                    self._mem_critical_warned = True
+                    try:
+                        messagebox.showwarning(
+                            "Low memory",
+                            f"System memory is critically low ({avail_mb:.0f} MB free).\n\n"
+                            f"All collected data has been flushed to disk, and video recording "
+                            f"(if any) was stopped to reduce memory use.\n\n"
+                            f"Please stop the current run and close other applications to avoid a crash."
+                        )
+                    except Exception:
+                        log_exception("Memory watchdog: failed to show warning dialog")
+            elif avail_mb < MEM_WARN_MB:
+                flush_all_loggers(sync=True)
+                log_warning_limited("mem_warn", f"Low memory: {avail_mb:.0f} MB free; flushed data to disk.")
+            else:
+                self._mem_critical_warned = False
+        except Exception:
+            log_exception_limited("mem_poll", "Memory watchdog poll failed")
+        finally:
+            self.root.after(MEM_POLL_MS, self._poll_memory)
 
     def on_close(self):
         try:
@@ -2128,11 +2606,40 @@ class DashboardApp:
                 self.active_stream.stop()
                 self.active_stream.join(timeout=2.0)
         except Exception:
-            pass
+            log_exception("App close: failed to stop active stream cleanly")
         self.root.after(200, self.root.destroy)
 
     def run(self):
         self.root.mainloop()
+
+
+def _install_crash_handlers():
+    """Flush all open data logs to disk before the process goes down for any reason."""
+    _orig_excepthook = sys.excepthook
+    def _hook(exc_type, exc, tb):
+        try:
+            flush_all_loggers(sync=True)
+            LOG.error("Uncaught exception; flushed open data logs before exit.")
+        except Exception:
+            pass
+        _orig_excepthook(exc_type, exc, tb)
+    sys.excepthook = _hook
+
+    # Threads (e.g. the daemon sampling thread) that die on an unhandled exception.
+    try:
+        _orig_threadhook = threading.excepthook
+        def _thook(hook_args):
+            try:
+                flush_all_loggers(sync=True)
+                LOG.error("Uncaught exception in worker thread; flushed open data logs.")
+            except Exception:
+                pass
+            _orig_threadhook(hook_args)
+        threading.excepthook = _thook
+    except Exception:
+        log_exception("Crash handler: failed to install threading excepthook")
+
+    atexit.register(lambda: flush_all_loggers(sync=True))
 
 
 def main():
@@ -2140,6 +2647,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None, help="Optional config JSON to load at startup")
     args = ap.parse_args()
+    _install_crash_handlers()
     DashboardApp(initial_config_path=args.config).run()
 
 if __name__ == "__main__":
