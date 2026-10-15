@@ -20,6 +20,14 @@ Adds:
    - Move Up / Move Down (organize order)
    - Save config JSON (compatible with tests[] schema)
 
+3) Power meter (optional, "Power meter (PPK2)" panel / cfg["power"]):
+   - Nordic PPK2 as an ammeter between the bench supply and the pump driver
+     (power_ppk2.py); starts and stops with each run or manual session
+   - logs current, power and energy to <run>/power/ (10 ms bins in rotating,
+     gzipped files, 1 s summary, raw snapshots); live readout + current trace
+   - stops the run (pump to 0 Hz) if the current sits at the bench supply's
+     limit, i.e. the supply is clamping
+
 Serial protocol:
 - freq_only (default): sends "<int_hz>\n"
 - freq_duty (optional): sends "F <hz>\n" and "D <duty>\n"
@@ -125,6 +133,14 @@ try:
 except Exception:
     NETWORK_FLOW_AVAILABLE = False
     log_exception("Optional import failed: flow_client/websockets not available; network flow backend disabled.")
+
+POWER_AVAILABLE = False
+try:
+    from power_ppk2 import PowerMeter, POWER_DEFAULTS, find_ppk2_ports  # PPK2 power meter (needs numpy)
+    POWER_AVAILABLE = True
+except Exception:
+    POWER_DEFAULTS = {"enabled": False}
+    log_exception("Optional import failed: power_ppk2 not available; power meter disabled.")
 
 
 # ---------------- crash-safety / memory config ----------------
@@ -377,7 +393,8 @@ def format_schedule(total_s: float, proj: List[Tuple[Dict[str, Any], datetime, b
     if not proj:
         lines.append("No voltage changes left in this sequence.")
         return "\n".join(lines)
-    lines.append(f"Voltage changes (bench supply current limit {supply.get('current_limit_ma', '?')} mA):")
+    lines.append(f"Voltage changes (bench supply current limit "
+                 f"{safe_float(supply.get('current_limit_ma', 0), 0.0):g} mA):")
     lines.append(f"  {'#':>4}  {'due':<18}  {'set supply to':<13}  where")
     for c, due, moved in proj:
         mark = " *" if moved else "  "
@@ -718,10 +735,41 @@ class DataLogger:
 
 # ---------------- runtime sessions ----------------
 class LiveSessionBase:
+    meter: Optional["PowerMeter"] = None      # PPK2 power meter when enabled
+
     def get_plot_data(self) -> Tuple[List[float], List[float], List[float]]:
         return [], [], []
     def stop(self): ...
     def join(self, timeout: Optional[float] = None): ...
+
+    def get_power_live(self) -> Optional[Dict[str, Any]]:
+        return self.meter.get_live() if self.meter else None
+
+    def get_power_plot_data(self) -> Tuple[List[float], List[float]]:
+        return self.meter.get_plot_data() if self.meter else ([], [])
+
+    def _make_meter(self, who: str, get_state, on_trip, on_fatal) -> Optional["PowerMeter"]:
+        """PowerMeter from cfg['power'] (None when disabled). The supply voltage
+        starts at supply.initial_mv; watch_ma defaults to 95 % of the bench
+        supply's current limit."""
+        pcfg = dict(self.cfg.get("power") or {})
+        if not pcfg.get("enabled"):
+            return None
+        if not POWER_AVAILABLE:
+            raise RuntimeError(f"{who}: power meter enabled but power_ppk2.py could not be imported.")
+        supply = {**SUPPLY_DEFAULTS, **(self.cfg.get("supply") or {})}
+        if pcfg.get("watch_ma") in (None, ""):
+            pcfg["watch_ma"] = 0.95 * float(supply.get("current_limit_ma") or 0)
+        vdd = float(supply.get("initial_mv") or 2500)
+        return PowerMeter(pcfg, self.run_dir, vdd, emit=lambda k, m: self.ui_events.put((k, m)),
+                          get_state=get_state, on_trip=on_trip, on_fatal=on_fatal)
+
+    def _close_meter(self, who: str):
+        if self.meter:
+            try:
+                self.meter.close()
+            except Exception:
+                log_exception(f"{who}: failed to close power meter")
 
 
 class ManualSession(LiveSessionBase):
@@ -750,24 +798,52 @@ class ManualSession(LiveSessionBase):
         self.t0 = None
         self.t_sample = None
         self.t_video = None
+        self.meter = None
+        self._ser_lock = threading.Lock()   # the power meter's trip handler also writes to the Arduino
 
-    def _emit(self, kind: str, msg: str):
+    def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
+
+    def _meter_state(self):
+        with self.lock:
+            return (self.freq_set if self.output_enabled else 0), None
+
+    def _on_power_trip(self, info: Dict[str, Any]):
+        self.set_output_enabled(False)
+        self._emit("manual_output_off", None)
+        cut = " The PPK2 output was switched off too." if info.get("power_cut") is True else ""
+        self._emit("error", f"Current {info['i_ma']:.1f} mA stayed at or above {info['watch_ma']:.1f} mA for "
+                            f"{info['hold_ms']:.0f} ms: the bench supply is probably limiting. "
+                            f"Output switched OFF (0 Hz).{cut} Details: power/power_events.csv")
+
+    def _on_power_fatal(self, msg: str):
+        self.set_output_enabled(False)
+        self._emit("manual_output_off", None)
+        self._emit("error", msg + " Output switched OFF (0 Hz).")
 
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
         baud = int(self.cfg.get("baud", 115200))
         timeout_s = float(self.cfg.get("read_timeout_s", 0.2))
 
-        if bool(self.cfg.get("dry_run", False)):
-            self.ser = None
-            self._emit("status", "Manual: dry_run enabled (no serial).")
-        else:
-            self._emit("status", f"Manual: opening serial {port} @ {baud} ...")
-            self.ser = serial_open(port, baud, timeout_s)
+        # Power meter first: if it fails, nothing else has been opened yet
+        self.meter = self._make_meter("Manual", self._meter_state, self._on_power_trip, self._on_power_fatal)
+        if self.meter:
+            self._emit("status", "Manual: connecting power meter ...")
+            self.meter.open()
+        try:
+            if bool(self.cfg.get("dry_run", False)):
+                self.ser = None
+                self._emit("status", "Manual: dry_run enabled (no serial).")
+            else:
+                self._emit("status", f"Manual: opening serial {port} @ {baud} ...")
+                self.ser = serial_open(port, baud, timeout_s)
 
-        self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Manual")
-        self.sensor.open()
+            self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Manual")
+            self.sensor.open()
+        except Exception:
+            self._close_meter("Manual")
+            raise
 
         if self.logger:
             self.logger.open()
@@ -796,13 +872,15 @@ class ManualSession(LiveSessionBase):
                 self.logger.close()
         except Exception:
             log_exception("ManualSession teardown: failed to close logger")
+        self._close_meter("ManualSession teardown")
 
     def _set_freq_internal(self, hz: int):
         hz = int(hz)
         with self.lock:
             self.freq_set = hz
         if self.ser:
-            serial_send_freq(self.ser, hz, self.protocol)
+            with self._ser_lock:
+                serial_send_freq(self.ser, hz, self.protocol)
 
     def _set_duty_internal(self, duty: float):
         duty = clamp(float(duty), 0.0, 1.0)
@@ -906,6 +984,8 @@ class ManualSession(LiveSessionBase):
         self._setup_hardware()
         self.t0 = time.monotonic()
         self.stop_flag.clear()
+        if self.meter:
+            self.meter.start(self.t0)
         self._emit("status", "Manual: connected. Sampling started.")
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_sample.start()
@@ -976,9 +1056,35 @@ class PumpTestRunner(LiveSessionBase):
         self.t_sample = None
         self.t_run = None
         self.t_video = None
+        self.meter = None
+        self._ser_lock = threading.Lock()   # the power meter's trip handler also writes to the Arduino
+        self._force_zero = False            # after a power trip every frequency command becomes 0 Hz
 
     def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
+
+    def _meter_state(self):
+        with self.lock:
+            return self.freq_set, self.v_set_mv
+
+    def _power_stop(self, msg: str):
+        """Power trip / meter lost: pump to 0 Hz now, end the run, tell the operator."""
+        self._force_zero = True
+        self.stop_flag.set()
+        try:
+            self._set_freq(0)
+        except Exception:
+            log_exception("PumpTestRunner: failed to send 0 Hz after power stop")
+        self._emit("error", msg)
+
+    def _on_power_trip(self, info: Dict[str, Any]):
+        cut = " The PPK2 output was switched off too." if info.get("power_cut") is True else ""
+        self._power_stop(f"Current {info['i_ma']:.1f} mA stayed at or above {info['watch_ma']:.1f} mA for "
+                         f"{info['hold_ms']:.0f} ms: the bench supply is probably limiting. "
+                         f"Run stopped, pump at 0 Hz.{cut} Details: power/power_events.csv")
+
+    def _on_power_fatal(self, msg: str):
+        self._power_stop(msg + " Run stopped, pump at 0 Hz.")
 
     def _nominal_begin(self, t_start: float, dur_s: float):
         with self.lock:
@@ -1063,6 +1169,8 @@ class PumpTestRunner(LiveSessionBase):
         with self.lock:
             self.v_set_mv = confirmed
             self.changes_done = index
+        if self.meter:
+            self.meter.set_voltage(confirmed)
         self.logger.log_voltage_change({
             "index": index, "t_s": f"{time.monotonic() - self.t0:.3f}", "requested_mv": mv,
             "confirmed_mv": confirmed, "asked_at": req["asked_at"],
@@ -1084,15 +1192,24 @@ class PumpTestRunner(LiveSessionBase):
         baud = int(self.cfg.get("baud", 115200))
         timeout_s = float(self.cfg.get("read_timeout_s", 0.2))
 
-        if bool(self.cfg.get("dry_run", False)):
-            self.ser = None
-            self._emit("status", "Runner: dry_run enabled (no serial).")
-        else:
-            self._emit("status", f"Runner: opening serial {port} @ {baud} ...")
-            self.ser = serial_open(port, baud, timeout_s)
+        # Power meter first: if it fails, nothing else has been opened yet
+        self.meter = self._make_meter("Runner", self._meter_state, self._on_power_trip, self._on_power_fatal)
+        if self.meter:
+            self._emit("status", "Runner: connecting power meter ...")
+            self.meter.open()
+        try:
+            if bool(self.cfg.get("dry_run", False)):
+                self.ser = None
+                self._emit("status", "Runner: dry_run enabled (no serial).")
+            else:
+                self._emit("status", f"Runner: opening serial {port} @ {baud} ...")
+                self.ser = serial_open(port, baud, timeout_s)
 
-        self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Runner")
-        self.sensor.open()
+            self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Runner")
+            self.sensor.open()
+        except Exception:
+            self._close_meter("Runner")
+            raise
 
         self.logger.open()
         self._set_freq(0)
@@ -1105,6 +1222,7 @@ class PumpTestRunner(LiveSessionBase):
                 self._set_duty(0.0)
         except Exception:
             log_exception("PumpTestRunner teardown: failed to send zero on exit")
+        self._close_meter("PumpTestRunner teardown")
         try:
             if self.ser:
                 self.ser.close()
@@ -1120,11 +1238,12 @@ class PumpTestRunner(LiveSessionBase):
             log_exception("PumpTestRunner teardown: failed to close logger")
 
     def _set_freq(self, hz: int):
-        hz = int(hz)
+        hz = 0 if self._force_zero else int(hz)
         with self.lock:
             self.freq_set = hz
         if self.ser:
-            serial_send_freq(self.ser, hz, self.protocol)
+            with self._ser_lock:
+                serial_send_freq(self.ser, hz, self.protocol)
 
     def _set_duty(self, duty: float):
         duty = clamp(float(duty), 0.0, 1.0)
@@ -1328,6 +1447,8 @@ class PumpTestRunner(LiveSessionBase):
         self._setup_hardware()
         self.t0 = time.monotonic()
         self.stop_flag.clear()
+        if self.meter:
+            self.meter.start(self.t0)
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_run = threading.Thread(target=self._run_tests, daemon=True)
         self.t_sample.start()
@@ -1738,11 +1859,15 @@ class DashboardApp:
         right_pane.add(controls, weight=1)
 
         controls.columnconfigure(0, weight=1)
-        controls.rowconfigure(2, weight=1)
+        controls.rowconfigure(3, weight=1)
 
         self.manual_frame = ttk.LabelFrame(controls, text="Manual control")
         self.manual_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self._build_manual_panel(self.manual_frame)
+
+        self.power_frame = ttk.LabelFrame(controls, text="Power meter (PPK2 as ammeter: bench supply -> PPK2 -> pump driver)")
+        self.power_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self._build_power_panel(self.power_frame)
 
         # Initialize video recorder
         self.video_recorder = None
@@ -1752,8 +1877,8 @@ class DashboardApp:
         self.var_video_status = tk.StringVar(value="Camera: Not connected")
 
         # Build video controls and preview
-        self._build_video_controls(controls).grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self._build_video_preview(controls).grid(row=2, column=0, sticky="nsew")
+        self._build_video_controls(controls).grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        self._build_video_preview(controls).grid(row=3, column=0, sticky="nsew")
 
         self._update_mode_ui()
         self._refresh_manual_duty_state()
@@ -1801,7 +1926,96 @@ class DashboardApp:
         self.root.after(1000, self._tick_progress)
 
     def _supply_cfg(self) -> Dict[str, Any]:
-        return {**SUPPLY_DEFAULTS, **(self.cfg.get("supply") or {})}
+        """Bench supply settings: config file values, overridden by the power panel fields."""
+        s = {**SUPPLY_DEFAULTS, **(self.cfg.get("supply") or {})}
+        if hasattr(self, "var_supply_v"):
+            v = self.var_supply_v.get().strip().replace(",", ".")
+            if v:
+                s["initial_mv"] = int(round(safe_float(v, 2.5) * 1000))
+            s["current_limit_ma"] = safe_float(self.var_supply_limit.get(), float(s.get("current_limit_ma") or 60))
+        return s
+
+    def _power_cfg(self) -> Dict[str, Any]:
+        p = {**POWER_DEFAULTS, **(self.cfg.get("power") or {})}
+        if hasattr(self, "var_pw_enabled"):
+            watch = self.var_pw_watch.get().strip()
+            p.update(enabled=bool(self.var_pw_enabled.get()), backend=self.var_pw_backend.get().strip() or "ppk2",
+                     port=self.var_pw_port.get().strip() or "auto",
+                     bin_ms=max(1.0, safe_float(self.var_pw_bin.get(), 10.0)),
+                     watch_ma=None if watch == "" else safe_float(watch, 0.0))
+        return p
+
+    # ---- power meter panel ----
+    def _build_power_panel(self, parent):
+        p = {**POWER_DEFAULTS}
+        s = {**SUPPLY_DEFAULTS}
+        self.var_pw_enabled = tk.BooleanVar(value=False)
+        self.var_pw_backend = tk.StringVar(value=str(p.get("backend", "ppk2")))
+        self.var_pw_port = tk.StringVar(value=str(p.get("port", "auto")))
+        self.var_pw_bin = tk.StringVar(value=str(p.get("bin_ms", 10)))
+        self.var_pw_watch = tk.StringVar(value="")
+        self.var_supply_v = tk.StringVar(value="2.500")
+        self.var_supply_limit = tk.StringVar(value=str(s.get("current_limit_ma", 60)))
+        self.var_pw_live = tk.StringVar(value="Power meter off." if POWER_AVAILABLE
+                                        else "Power meter unavailable (power_ppk2.py / numpy missing).")
+
+        r0 = ttk.Frame(parent); r0.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
+        ttk.Checkbutton(r0, text="Measure power", variable=self.var_pw_enabled,
+                        state=tk.NORMAL if POWER_AVAILABLE else tk.DISABLED).pack(side=tk.LEFT)
+        ttk.Label(r0, text="Backend:").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Combobox(r0, state="readonly", width=7, values=["ppk2", "dummy"],
+                     textvariable=self.var_pw_backend).pack(side=tk.LEFT)
+        ttk.Label(r0, text="Port:").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r0, textvariable=self.var_pw_port, width=8).pack(side=tk.LEFT)
+        ttk.Button(r0, text="Detect", command=self._detect_ppk2).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r0, text="Bin (ms):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r0, textvariable=self.var_pw_bin, width=5).pack(side=tk.LEFT)
+
+        r1 = ttk.Frame(parent); r1.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r1, text="Supply voltage at start (V):").pack(side=tk.LEFT)
+        ttk.Entry(r1, textvariable=self.var_supply_v, width=7).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="Bench supply limit (mA):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r1, textvariable=self.var_supply_limit, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="Stop if current ≥ (mA, blank = 95% of limit):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r1, textvariable=self.var_pw_watch, width=6).pack(side=tk.LEFT, padx=4)
+
+        r2 = ttk.Frame(parent); r2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(2, 6))
+        self.lbl_pw_live = tk.Label(r2, textvariable=self.var_pw_live, anchor="w")
+        self.lbl_pw_live.pack(side=tk.LEFT)
+        self._pw_live_fg = self.lbl_pw_live.cget("fg")
+
+    def _detect_ppk2(self):
+        ports = find_ppk2_ports() if POWER_AVAILABLE else []
+        if ports:
+            self.var_pw_port.set(ports[0])
+            self.var_pw_live.set(f"PPK2 found on {', '.join(ports)}.")
+        else:
+            self.var_pw_live.set("No PPK2 found (plugged in, switched on, nRF Connect app closed?).")
+
+    def _update_power_ui(self):
+        s = self.active_stream
+        live = s.get_power_live() if s is not None else None
+        if live is None:
+            # Session ended: keep the last reading on screen, marked as such
+            if getattr(self, "_pw_last_txt", None):
+                self.var_pw_live.set("Stopped. Last reading: " + self._pw_last_txt)
+                self._pw_last_txt = None
+                self.lbl_pw_live.configure(fg=self._pw_live_fg)
+            return None
+        state = live.get("state", "?")
+        if "i_ma" in live:
+            txt = (f"{live['i_ma']:.3f} mA (peak {live['i_max_ma']:.1f}) · {live['p_mw']:.2f} mW · "
+                   f"{live['v_mv'] / 1000:.3f} V · {live['energy_j']:.3f} J so far · port {live.get('port')}")
+            if live.get("lost"):
+                txt += f" · {live['lost']} samples lost"
+        else:
+            txt = f"port {live.get('port')}: waiting for data"
+        bad = state in ("tripped", "lost", "reconnecting")
+        txt = ("" if state == "measuring" else f"{state.upper()} · ") + txt
+        self.var_pw_live.set(txt)
+        self._pw_last_txt = txt
+        self.lbl_pw_live.configure(fg="#b00000" if bad else self._pw_live_fg)
+        return live
 
     def _active_runner(self) -> Optional["PumpTestRunner"]:
         s = self.active_stream
@@ -1812,6 +2026,10 @@ class DashboardApp:
             self._update_progress_ui()
         except Exception:
             log_exception_limited("progress_tick", "Run timer: progress update failed")
+        try:
+            self._update_power_ui()
+        except Exception:
+            log_exception_limited("power_tick", "Power meter: live update failed")
         self.root.after(1000, self._tick_progress)
 
     def _update_progress_ui(self):
@@ -1891,7 +2109,7 @@ class DashboardApp:
         pump = (f"The pump keeps running at {req['freq_hz']} Hz" if req["hold"]
                 else "The pump is at 0 Hz")
         self.var_vprompt_info.set(
-            f"Bench supply current limit: {req.get('limit_ma', '?')} mA. {pump} until you confirm. "
+            f"Bench supply current limit: {safe_float(req.get('limit_ma') or 0, 0.0):g} mA. {pump} until you confirm. "
             f"Asked at {req['asked_at'][11:16]} ({fmt_duration(waited)} ago)."
             + (f"\nNote: {req['note']}" if req.get("note") else ""))
         if self._vprompt_index == req["index"]:
@@ -1954,6 +2172,7 @@ class DashboardApp:
             "waiting_for_voltage": None if not req else {"index": req["index"], "mv": req["mv"], "asked_at": req["asked_at"]},
             "next_voltage_changes": [{"index": c["index"], "mv": c["mv"], "due": due.isoformat(timespec="seconds")}
                                      for c, due, _ in proj[:10]],
+            "power": self.active_stream.get_power_live() if self.active_stream is not None else None,
         }
         path = os.path.join(run_dir, "status.json")
         try:
@@ -2457,6 +2676,12 @@ class DashboardApp:
 
         self.line_freq, = self.ax1.plot([], [], lw=1)
         self.line_flow, = self.ax2.plot([], [], lw=1)
+        # Supply current from the PPK2 on a second y-axis of the frequency plot (hidden without a meter)
+        self.ax1_cur = self.ax1.twinx()
+        self.line_cur, = self.ax1_cur.plot([], [], lw=0.8, color="tab:red")
+        self.ax1_cur.set_ylabel("mA", color="tab:red")
+        self.ax1_cur.tick_params(axis="y", labelcolor="tab:red")
+        self.ax1_cur.set_visible(False)
 
         self.ax1.set_title("Frequency setpoint (Hz)")
         self.ax1.set_xlabel("t (s)")
@@ -2601,6 +2826,22 @@ class DashboardApp:
         self.ax1.set_xlim(tmin, tmin + window)
         self.ax2.set_xlim(tmin, tmin + window)
 
+        pt, pi = self.active_stream.get_power_plot_data()
+        if pt:
+            self.line_cur.set_data(pt, pi)
+            if not self.ax1_cur.get_visible():
+                self.ax1_cur.set_visible(True)
+                self.ax1.set_title("Frequency setpoint (Hz) and supply current (mA, red)")
+            vis = [i for t, i in zip(pt, pi) if t >= tmin]
+            if vis:
+                lo, hi = min(vis), max(vis)
+                pad = max(0.05 * (hi - lo), 0.1)
+                self.ax1_cur.set_ylim(lo - pad, hi + pad)
+        elif self.ax1_cur.get_visible():
+            self.line_cur.set_data([], [])
+            self.ax1_cur.set_visible(False)
+            self.ax1.set_title("Frequency setpoint (Hz)")
+
         # Apply user-defined Y ranges or auto-scale
         if self._user_freq_y_range is not None:
             self.ax1.set_ylim(self._user_freq_y_range)
@@ -2658,6 +2899,20 @@ class DashboardApp:
             self.var_flow_server.set(str(flow_cfg.get("server", self.var_flow_server.get())))
             self.var_sample_rate.set(str(flow_cfg.get("sample_rate_hz", self.var_sample_rate.get())))
 
+        supply = self.cfg.get("supply")
+        if isinstance(supply, dict):
+            if supply.get("initial_mv") is not None:
+                self.var_supply_v.set(f"{safe_float(supply['initial_mv'], 2500.0) / 1000:.3f}")
+            if supply.get("current_limit_ma") is not None:
+                self.var_supply_limit.set(str(supply["current_limit_ma"]))
+        power = self.cfg.get("power")
+        if isinstance(power, dict):
+            self.var_pw_enabled.set(bool(power.get("enabled", False)) and POWER_AVAILABLE)
+            self.var_pw_backend.set(str(power.get("backend") or "ppk2"))
+            self.var_pw_port.set(str(power.get("port") or "auto"))
+            self.var_pw_bin.set(str(power.get("bin_ms", 10)))
+            self.var_pw_watch.set("" if power.get("watch_ma") in (None, "") else str(power["watch_ma"]))
+
         meta = self.cfg.get("meta", {})
         if not isinstance(meta, dict):
             meta = {}
@@ -2695,8 +2950,9 @@ class DashboardApp:
                 "server": self.var_flow_server.get().strip(),
                 "sample_rate_hz": safe_float(self.var_sample_rate.get(), 25.0),
             },
-            # Bench supply for voltage steps (no UI fields yet; kept from the loaded config)
+            # Bench supply (voltage steps, power calculation) and the PPK2 power meter
             "supply": self._supply_cfg(),
+            "power": self._power_cfg(),
         }
 
     def save_config_as(self):
@@ -3035,6 +3291,12 @@ class DashboardApp:
             messagebox.showerror("No tests", "No test blocks. Add at least one block in the Config builder.")
             return
 
+        supply_now = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
+        if safe_float(supply_now.get("initial_mv") or 0, 0.0) > safe_float(supply_now.get("max_mv"), 2500.0):
+            messagebox.showerror("Supply voltage", f"Supply voltage at start ({supply_now['initial_mv'] / 1000:.3f} V) "
+                                                   f"is above the {supply_now['max_mv'] / 1000:.3f} V maximum.")
+            return
+
         # Voltage steps: refuse voltages above the pump's maximum, then show the
         # schedule so the operator can set alarms before anything starts.
         schedule_txt = None
@@ -3257,6 +3519,8 @@ class DashboardApp:
                     self.var_status.set(payload)
                 elif kind == "voltage_prompt":
                     self._show_voltage_banner(payload)
+                elif kind == "manual_output_off":
+                    self.var_manual_enabled.set(False)
                 elif kind == "error":
                     self.var_status.set(payload)
                     try:

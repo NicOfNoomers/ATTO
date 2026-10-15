@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Bench probe for the Nordic PPK2 as an ammeter between the bench supply and the pump driver.
 
+For bench testing only: in normal operation the dashboard runs the PPK2 itself
+("Power meter (PPK2)" panel). Close the dashboard before running this.
+
 Answers the questions the dashboard integration depends on:
   * Is the numpy decoder right? (compared against ppk2-api's own decoder)
   * Does the stream keep up at 100 kS/s, and can lost samples be detected
@@ -33,55 +36,9 @@ from datetime import datetime
 
 import numpy as np
 
-SAMPLE_RATE = 100_000          # PPK2 streams 100 kS/s, 4 bytes per sample
-ADC_MULT = 1.8 / 163840        # same constant as ppk2-api
-
-
-# ---------------- decoding (vectorised; candidate for the dashboard's PPK2 module) ----------------
-def modifier_arrays(mods):
-    """ppk2-api's per-range calibration dicts -> numpy arrays indexed by range 0..4."""
-    return {k: np.array([float(mods[k][str(i)]) for i in range(5)]) for k in ("R", "GS", "GI", "O", "S", "I", "UG")}
-
-
-def best_alignment(data: bytes) -> int:
-    """Byte offset (0-3) at which the stream splits into valid sample words.
-
-    Valid words have range bits <= 4 and bit 17 clear, and (if the firmware
-    fills it) a counter in bits 18-23 that steps by 1 per sample.
-    """
-    best, best_score = 0, -1.0
-    for off in range(4):
-        n = (len(data) - off) // 4
-        if n < 16:
-            continue
-        w = np.frombuffer(data[off:off + 4 * n], dtype="<u4")
-        rng_ok = np.mean((((w >> 14) & 0x7) <= 4) & (((w >> 17) & 1) == 0))
-        cnt = ((w >> 18) & 0x3F).astype(np.int16)
-        step_ok = np.mean((np.diff(cnt) % 64) == 1)
-        score = rng_ok + step_ok
-        if score > best_score:
-            best, best_score = off, score
-    return best
-
-
-def decode_words(w: np.ndarray, marr, vdd_mv: float):
-    """Sample words -> (current in uA, range, counter, logic bits). No spike filter."""
-    adc = (w & 0x3FFF).astype(np.float64) * 4
-    rng = np.minimum((w >> 14) & 0x7, 4).astype(np.intp)
-    counter = ((w >> 18) & 0x3F).astype(np.uint8)
-    logic = (w >> 24).astype(np.uint8)
-    rwg = (adc - marr["O"][rng]) * (ADC_MULT / marr["R"][rng])
-    amps = marr["UG"][rng] * (rwg * (marr["GS"][rng] * rwg + marr["GI"][rng])
-                              + (marr["S"][rng] * (vdd_mv / 1000.0) + marr["I"][rng]))
-    return amps * 1e6, rng, counter, logic
-
-
-def counter_gaps(counter: np.ndarray) -> int:
-    """Samples missing according to the 6-bit counter (0 if the counter is unused)."""
-    if counter.size < 2 or not np.any(counter):
-        return 0
-    steps = np.diff(counter.astype(np.int16)) % 64
-    return int(np.sum(np.where(steps == 0, 63, steps - 1)))
+# The decoder is shared with the dashboard's power meter (power_ppk2.py, repo root)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from power_ppk2 import FS as SAMPLE_RATE, best_alignment, counter_gaps, decode_words, modifier_arrays  # noqa: E402
 
 
 # ---------------- hardware ----------------
