@@ -148,7 +148,13 @@ class PPK2Source:
         self.modifiers = None
 
     def open(self):
-        from ppk2_api.ppk2_api import PPK2_API
+        try:
+            from ppk2_api.ppk2_api import PPK2_API
+        except ImportError:
+            import sys
+            raise RuntimeError(f"The ppk2-api package is not installed for the Python running the dashboard "
+                               f"({sys.executable}). Run install.bat and start with run_dashboard.bat, or: "
+                               f"\"{sys.executable}\" -m pip install -r requirements.txt") from None
         port = self.port_cfg
         if not port or str(port).lower() == "auto":
             found = find_ppk2_ports()

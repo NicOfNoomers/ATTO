@@ -130,9 +130,13 @@ NETWORK_FLOW_AVAILABLE = False
 try:
     from flow_client import FlowClient, parse_server  # shared flow server client (needs websockets)
     NETWORK_FLOW_AVAILABLE = True
-except Exception:
+except Exception as _e:
     NETWORK_FLOW_AVAILABLE = False
-    log_exception("Optional import failed: flow_client/websockets not available; network flow backend disabled.")
+    # Not an error: only the "network" flow backend needs it. Name the Python that
+    # is running, since a missing package usually means a different Python than
+    # the one install.bat installed into.
+    log_warning(f"Network flow backend disabled ({_e}). This dashboard runs on {sys.executable}; "
+                f"install with: \"{sys.executable}\" -m pip install -r requirements.txt")
 
 POWER_AVAILABLE = False
 try:
