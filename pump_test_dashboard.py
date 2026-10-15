@@ -12,6 +12,9 @@ Adds:
 2) Config builder UI (no hand-editing JSON):
    - Add Constant / Add Sweep blocks
    - Add Group / Group Selected: repeat a sequence of blocks N times or forever
+   - Add Voltage Step: pause the run until the operator has set the bench
+     supply to a new voltage and confirmed it (the "Voltage schedule..."
+     button lists when each change falls due, for setting alarms)
    - Edit selected block
    - Duplicate / Remove
    - Move Up / Move Down (organize order)
@@ -38,7 +41,7 @@ import math
 import threading
 import queue
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -181,6 +184,214 @@ def linspace_int(a: int, b: int, n: int) -> List[int]:
         return [int(round(a))]
     step = (b - a) / (n - 1)
     return [int(round(a + i * step)) for i in range(n)]
+
+
+# ---------------- schedule / manual voltage steps ----------------
+# A "voltage" block pauses the run until the operator has set the bench supply
+# to voltage_mv and confirmed it in the dashboard:
+#   {"type": "voltage", "voltage_mv": 2000,
+#    "while_waiting": "zero",        # "zero": pump at 0 Hz; "hold": keep the last setpoint running
+#    "settle_s": 30,                 # after confirming, wait this long before the next block
+#    "window": ["08:00", "20:00"]}   # optional: only ask during these hours
+# Its nominal duration is settle_s. The operator's delay is unknown in advance,
+# so run ETAs are "nominal time + window waits + your confirmation delays".
+SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10}
+MAX_PLANNED_CHANGES = 2000   # cap for voltage steps inside long or endless groups
+
+
+def block_type(t: Dict[str, Any]) -> str:
+    return (t.get("type") or "constant").lower()
+
+
+def block_duration_s(t: Dict[str, Any]) -> float:
+    """Nominal run time of one block including its repeats (inf for an endless group)."""
+    ttype = block_type(t)
+    repeat = safe_int(t.get("repeat", 1), 1)
+    settle_s = max(0, safe_int(t.get("settle_ms", 0), 0)) / 1000.0
+    if ttype == "group":
+        if repeat <= 0:
+            return math.inf
+        return repeat * sum(block_duration_s(b) for b in t.get("blocks", []))
+    if ttype == "voltage":
+        return max(0.0, safe_float(t.get("settle_s", 0), 0.0))
+    repeat = max(1, repeat)
+    if ttype == "constant":
+        return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
+    steps = max(1, safe_int(t.get("steps", 1), 1))
+    if "step_duration_s" in t:
+        step_dur = safe_float(t.get("step_duration_s"), 0.0)
+    else:
+        step_dur = safe_float(t.get("total_duration_s", 0), 0.0) / steps
+    return repeat * steps * (step_dur + settle_s)
+
+
+def contains_voltage_block(blocks: List[Dict[str, Any]]) -> bool:
+    for b in blocks:
+        tt = block_type(b)
+        if tt == "voltage" or (tt == "group" and contains_voltage_block(b.get("blocks", []))):
+            return True
+    return False
+
+
+def _parse_hhmm(s: Any) -> Optional[int]:
+    """'08:30' -> minutes after midnight (24:00 allowed as an end), else None."""
+    try:
+        h, m = str(s).strip().split(":")
+        mins = int(h) * 60 + int(m)
+        return mins if 0 <= int(m) < 60 and 0 <= mins <= 24 * 60 else None
+    except Exception:
+        return None
+
+
+def voltage_window(t: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    """Daily (start, end) window in minutes for a voltage block, or None for any time."""
+    w = t.get("window")
+    if not isinstance(w, (list, tuple)) or len(w) != 2:
+        return None
+    a, b = _parse_hhmm(w[0]), _parse_hhmm(w[1])
+    if a is None or b is None or a == b:
+        return None
+    return a, b
+
+
+def next_in_window(dt: datetime, window: Optional[Tuple[int, int]]) -> datetime:
+    """Earliest time >= dt inside the daily window (windows may run past midnight)."""
+    if window is None:
+        return dt
+    a, b = window
+    m = dt.hour * 60 + dt.minute + (dt.second + dt.microsecond / 1e6) / 60.0
+    inside = (a <= m < b) if a < b else (m >= a or m < b)
+    if inside:
+        return dt
+    opens = dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=a)
+    return opens if opens > dt else opens + timedelta(days=1)
+
+
+def plan_schedule(tests: List[Dict[str, Any]], break_between: float = 0.0
+                  ) -> Tuple[float, List[Dict[str, Any]], bool]:
+    """Nominal timeline of a test sequence -> (total_s, voltage changes, truncated).
+
+    total_s is inf if the sequence reaches an endless group. Each change has
+    t_nom: the nominal running time before it (window waits and confirmation
+    delays excluded), the same quantity PumpTestRunner counts in nominal_done,
+    so a live ETA is now + (t_nom - nominal_done) + waits (project_changes).
+    """
+    changes: List[Dict[str, Any]] = []
+    t = 0.0
+    endless = False
+
+    def walk(blocks, where: str, cycle: str, first: int = 1) -> bool:
+        nonlocal t, endless
+        for j, b in enumerate(blocks):
+            if len(changes) >= MAX_PLANNED_CHANGES:
+                return False
+            tt = block_type(b)
+            label = f"{where}{j + first}"
+            if tt == "voltage":
+                changes.append({
+                    "index": len(changes) + 1, "t_nom": t,
+                    "mv": int(round(safe_float(b.get("voltage_mv", 0), 0.0))),
+                    "window": voltage_window(b),
+                    "hold": str(b.get("while_waiting", "zero")).lower() == "hold",
+                    "where": f"block {label}{cycle}",
+                })
+                t += block_duration_s(b)
+            elif tt == "group":
+                kids = b.get("blocks", [])
+                if not kids:
+                    continue
+                rep = safe_int(b.get("repeat", 1), 1)
+                if not contains_voltage_block(kids):
+                    t += block_duration_s(b)
+                    if math.isinf(t):
+                        endless = True
+                        return False
+                    continue
+                n = 0
+                while rep <= 0 or n < rep:
+                    n += 1
+                    if not walk(kids, f"{label}.", f", cycle {n}/{rep if rep > 0 else 'inf'}"):
+                        if rep <= 0:
+                            endless = True
+                        return False
+            else:
+                t += block_duration_s(b)
+        return True
+
+    # Top-level blocks one at a time: the runner pauses between them, not inside groups
+    for i, b in enumerate(tests):
+        if not walk([b], "", "", first=i + 1):
+            break
+        if i < len(tests) - 1 and break_between > 0:
+            t += break_between
+    total = math.inf if endless else t
+    return total, changes, len(changes) >= MAX_PLANNED_CHANGES
+
+
+def project_changes(changes: List[Dict[str, Any]], now: datetime, nominal_now: float, done: int
+                    ) -> Tuple[List[Tuple[Dict[str, Any], datetime, bool]], float]:
+    """Clock time of each change not yet done, applying window waits in order.
+
+    Returns ([(change, due, moved_by_window)], total window wait in s). Each
+    window wait pushes every later change back by the same amount.
+    """
+    out = []
+    shift = 0.0
+    for c in changes[done:]:
+        due = now + timedelta(seconds=max(0.0, c["t_nom"] - nominal_now) + shift)
+        opens = next_in_window(due, c["window"])
+        moved = opens > due
+        if moved:
+            shift += (opens - due).total_seconds()
+        out.append((c, opens, moved))
+    return out, shift
+
+
+def fmt_duration(s: Optional[float]) -> str:
+    if s is None or math.isinf(s):
+        return "until Stop"
+    s = int(round(max(0.0, s)))
+    d, r = divmod(s, 86400)
+    h, r = divmod(r, 3600)
+    m, sec = divmod(r, 60)
+    return f"{d} d {h:02d}:{m:02d}:{sec:02d}" if d else f"{h}:{m:02d}:{sec:02d}"
+
+
+def fmt_clock(dt: datetime) -> str:
+    return dt.strftime("%a %d %b %H:%M")
+
+
+def format_schedule(total_s: float, proj: List[Tuple[Dict[str, Any], datetime, bool]], shift_s: float,
+                    now: datetime, nominal_now: float, supply: Dict[str, Any], truncated: bool,
+                    heading: str) -> str:
+    """Human-readable voltage-change schedule (also saved as schedule.txt)."""
+    lines = [heading, ""]
+    if math.isinf(total_s):
+        lines.append(f"Runs until Stop (endless group). Now: {fmt_clock(now)}")
+    else:
+        remaining = max(0.0, total_s - nominal_now) + shift_s
+        extra = " + your confirmation delays" if proj else ""
+        lines.append(f"Run time left: {fmt_duration(remaining)}{extra}")
+        lines.append(f"Now: {fmt_clock(now)}    Earliest end: {fmt_clock(now + timedelta(seconds=remaining))}")
+    lines.append("")
+    if not proj:
+        lines.append("No voltage changes left in this sequence.")
+        return "\n".join(lines)
+    lines.append(f"Voltage changes (bench supply current limit {supply.get('current_limit_ma', '?')} mA):")
+    lines.append(f"  {'#':>4}  {'due':<18}  {'set supply to':<13}  where")
+    for c, due, moved in proj:
+        mark = " *" if moved else "  "
+        pump = "pump holds" if c["hold"] else "pump 0 Hz"
+        lines.append(f"  {c['index']:>4}  {fmt_clock(due):<16}{mark}  {c['mv'] / 1000:>8.3f} V     "
+                     f"{c['where']} ({pump})")
+    if truncated:
+        lines.append(f"  ... list capped at {MAX_PLANNED_CHANGES} changes")
+    lines.append("")
+    if any(m for _, _, m in proj):
+        lines.append("* moved to the start of its allowed time window.")
+    lines.append("Each change waits for your confirmation; any delay pushes all later changes back")
+    lines.append("by the same amount. The dashboard keeps this list up to date.")
+    return "\n".join(lines)
 
 
 # ---------------- serial ----------------
@@ -390,26 +601,42 @@ class DataLogger:
     Every row is flushed to the OS immediately, so a Python-level crash
     (including MemoryError) or a hard process kill loses no acknowledged data.
     A throttled fsync (see maybe_sync) additionally guards against power loss.
+
+    with_voltage (runs with manual voltage steps) appends a v_set_mv column to
+    events.csv and merged.csv and opens voltage_changes.csv.
     """
-    def __init__(self, run_dir: str):
+    VOLTAGE_CHANGE_COLS = ["index", "t_s", "requested_mv", "confirmed_mv", "asked_at", "confirmed_at",
+                           "wait_s", "pump_while_waiting"]
+
+    def __init__(self, run_dir: str, with_voltage: bool = False):
         self.run_dir = run_dir
+        self.with_voltage = bool(with_voltage)
         self.events_f = None
         self.flow_f = None
         self.merged_f = None
+        self.volt_f = None
         self.events_w = None
         self.flow_w = None
         self.merged_w = None
+        self.volt_w = None
         self._lock = threading.Lock()
         self._last_sync = 0.0
         self._closed = False
 
+    def _all_files(self):
+        return (self.events_f, self.flow_f, self.merged_f, self.volt_f)
+
     def open(self):
+        vcol = ["v_set_mv"] if self.with_voltage else []
         self.events_f = open(os.path.join(self.run_dir, "events.csv"), "x", newline="", encoding="utf-8")
         self.flow_f   = open(os.path.join(self.run_dir, "flow.csv"), "x", newline="", encoding="utf-8")
         self.merged_f = open(os.path.join(self.run_dir, "merged.csv"), "x", newline="", encoding="utf-8")
-        self.events_w = csv.writer(self.events_f); self.events_w.writerow(["t_s", "freq_set_hz", "duty_set"])
+        self.events_w = csv.writer(self.events_f); self.events_w.writerow(["t_s", "freq_set_hz", "duty_set"] + vcol)
         self.flow_w   = csv.writer(self.flow_f);   self.flow_w.writerow(["t_s", "flow"])
-        self.merged_w = csv.writer(self.merged_f); self.merged_w.writerow(["t_s", "freq_set_hz", "duty_set", "flow"])
+        self.merged_w = csv.writer(self.merged_f); self.merged_w.writerow(["t_s", "freq_set_hz", "duty_set", "flow"] + vcol)
+        if self.with_voltage:
+            self.volt_f = open(os.path.join(self.run_dir, "voltage_changes.csv"), "x", newline="", encoding="utf-8")
+            self.volt_w = csv.writer(self.volt_f); self.volt_w.writerow(self.VOLTAGE_CHANGE_COLS)
         self._last_sync = time.monotonic()
         self.flush(sync=True)   # make headers durable immediately
         _register_logger(self)
@@ -427,7 +654,7 @@ class DataLogger:
 
     def flush(self, sync: bool = False):
         with self._lock:
-            for f in (self.events_f, self.flow_f, self.merged_f):
+            for f in self._all_files():
                 self._flush_file(f, sync)
             if sync:
                 self._last_sync = time.monotonic()
@@ -443,7 +670,7 @@ class DataLogger:
             if self._closed:
                 return
             self._closed = True
-            for f in (self.events_f, self.flow_f, self.merged_f):
+            for f in self._all_files():
                 try:
                     if f:
                         f.flush()
@@ -456,13 +683,24 @@ class DataLogger:
                     fname = getattr(f, "name", "<unknown>")
                     log_exception(f"DataLogger.close: failed to close {fname}")
             # prevent any late writes from a straggling thread hitting a closed file
-            self.events_w = self.flow_w = self.merged_w = None
+            self.events_w = self.flow_w = self.merged_w = self.volt_w = None
 
-    def log_event(self, t_s: float, freq: int, duty: float):
+    def _vcol(self, v_mv: Optional[float]) -> List[str]:
+        if not self.with_voltage:
+            return []
+        return ["" if v_mv is None else str(int(round(v_mv)))]
+
+    def log_event(self, t_s: float, freq: int, duty: float, v_mv: Optional[float] = None):
         with self._lock:
             if self.events_w:
-                self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"])
+                self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"] + self._vcol(v_mv))
                 self._flush_file(self.events_f, False)
+
+    def log_voltage_change(self, row: Dict[str, Any]):
+        with self._lock:
+            if self.volt_w:
+                self.volt_w.writerow([row.get(k, "") for k in self.VOLTAGE_CHANGE_COLS])
+                self._flush_file(self.volt_f, True)   # rare and important: make it durable now
 
     def log_flow(self, t_s: float, flow: float):
         with self._lock:
@@ -470,10 +708,11 @@ class DataLogger:
                 self.flow_w.writerow([f"{t_s:.6f}", f"{float(flow):.6f}"])
                 self._flush_file(self.flow_f, False)
 
-    def log_merged(self, t_s: float, freq: int, duty: float, flow: float):
+    def log_merged(self, t_s: float, freq: int, duty: float, flow: float, v_mv: Optional[float] = None):
         with self._lock:
             if self.merged_w:
-                self.merged_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}", f"{float(flow):.6f}"])
+                self.merged_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}", f"{float(flow):.6f}"]
+                                       + self._vcol(v_mv))
                 self._flush_file(self.merged_f, False)
 
 
@@ -715,14 +954,130 @@ class PumpTestRunner(LiveSessionBase):
         self.buf_freq = deque(maxlen=5000)
         self.buf_flow = deque(maxlen=5000)
 
-        self.logger = DataLogger(run_dir)
+        # Manual bench-supply voltage steps and run progress. nominal_done counts
+        # the same nominal seconds as plan_schedule, so ETAs line up with the plan.
+        tests = cfg.get("tests", [])
+        self.tracks_voltage = contains_voltage_block(tests)
+        self.supply_cfg = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
+        init_mv = self.supply_cfg.get("initial_mv")
+        self.v_set_mv: Optional[int] = int(init_mv) if init_mv is not None else None
+        self.plan_total_s, self.plan_changes, _ = plan_schedule(
+            tests, float(cfg.get("break_seconds_between_tests", 0.0)))
+        self.nominal_done = 0.0
+        self._nominal_step: Optional[Tuple[float, float]] = None   # (monotonic start, nominal s)
+        self.changes_done = 0
+        self.voltage_request: Optional[Dict[str, Any]] = None
+        self._voltage_confirmed = threading.Event()
+        self._voltage_value_mv: Optional[int] = None
+        self.t_end: Optional[float] = None
+
+        self.logger = DataLogger(run_dir, with_voltage=self.tracks_voltage)
         self.t0 = None
         self.t_sample = None
         self.t_run = None
         self.t_video = None
 
-    def _emit(self, kind: str, msg: str):
+    def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
+
+    def _nominal_begin(self, t_start: float, dur_s: float):
+        with self.lock:
+            self._nominal_step = (t_start, dur_s)
+
+    def _nominal_end(self, dur_s: float):
+        with self.lock:
+            self._nominal_step = None
+            self.nominal_done += dur_s
+
+    def get_progress(self) -> Dict[str, Any]:
+        """Snapshot for the UI timer (thread-safe)."""
+        now = time.monotonic()
+        with self.lock:
+            nominal = self.nominal_done
+            if self._nominal_step is not None:
+                t_start, dur = self._nominal_step
+                nominal += min(max(0.0, now - t_start), dur)
+            return {
+                "elapsed_s": ((self.t_end or now) - self.t0) if self.t0 is not None else 0.0,
+                "nominal_done_s": nominal,
+                "total_s": self.plan_total_s,
+                "changes_done": self.changes_done,
+                "voltage_request": dict(self.voltage_request) if self.voltage_request else None,
+                "v_set_mv": self.v_set_mv,
+                "finished": self.t_end is not None,
+            }
+
+    def confirm_voltage(self, mv: float) -> bool:
+        """Called from the UI when the operator has set the supply. False if nothing was asked."""
+        with self.lock:
+            if self.voltage_request is None:
+                return False
+            self._voltage_value_mv = int(round(mv))
+        self._voltage_confirmed.set()
+        return True
+
+    def _exec_voltage(self, test, log_event):
+        """Manual voltage step: (pump to 0 Hz) -> wait for the allowed window ->
+        ask the operator -> wait for confirmation -> log -> settle."""
+        mv = int(round(safe_float(test.get("voltage_mv", 0), 0.0)))
+        hold = str(test.get("while_waiting", "zero")).lower() == "hold"
+        settle_s = max(0.0, safe_float(test.get("settle_s", 0), 0.0))
+        index = self.changes_done + 1
+        if not hold:
+            self._set_freq(0)
+            log_event()
+
+        now = datetime.now()
+        opens = next_in_window(now, voltage_window(test))
+        if opens > now:
+            self._emit("status", f"Voltage change #{index} ({mv / 1000:.3f} V) waits for its time window; "
+                                 f"asking at {fmt_clock(opens)}.")
+            self._wait_until(time.monotonic() + (opens - now).total_seconds())
+            if self.stop_flag.is_set():
+                return
+
+        self._voltage_confirmed.clear()
+        asked_wall = datetime.now()
+        asked_mono = time.monotonic()
+        with self.lock:
+            self._voltage_value_mv = None
+            self.voltage_request = {
+                "index": index, "mv": mv, "hold": hold, "freq_hz": self.freq_set,
+                "asked_at": asked_wall.isoformat(timespec="seconds"), "asked_mono": asked_mono,
+                "limit_ma": self.supply_cfg.get("current_limit_ma"),
+                "max_mv": self.supply_cfg.get("max_mv"), "note": str(test.get("note", "")),
+            }
+            req = dict(self.voltage_request)
+        self._emit("voltage_prompt", req)
+        self._emit("status", f"Waiting for you: set the bench supply to {mv / 1000:.3f} V "
+                             f"(voltage change #{index}).")
+        while not self.stop_flag.is_set() and not self._voltage_confirmed.wait(0.1):
+            pass
+        with self.lock:
+            self.voltage_request = None
+            confirmed = self._voltage_value_mv
+        if self.stop_flag.is_set() or confirmed is None:
+            return
+
+        wait_s = time.monotonic() - asked_mono
+        with self.lock:
+            self.v_set_mv = confirmed
+            self.changes_done = index
+        self.logger.log_voltage_change({
+            "index": index, "t_s": f"{time.monotonic() - self.t0:.3f}", "requested_mv": mv,
+            "confirmed_mv": confirmed, "asked_at": req["asked_at"],
+            "confirmed_at": datetime.now().isoformat(timespec="seconds"),
+            "wait_s": f"{wait_s:.1f}", "pump_while_waiting": "hold" if hold else "zero",
+        })
+        log_event()
+        self._emit("status", f"Voltage change #{index} confirmed: {confirmed / 1000:.3f} V after "
+                             f"{fmt_duration(wait_s)}" + (f"; settling {settle_s:g} s" if settle_s > 0 else ""))
+        if settle_s > 0:
+            t_start = time.monotonic()
+            self._nominal_begin(t_start, settle_s)
+            self._wait_until(t_start + settle_s)
+            if not self.stop_flag.is_set():
+                self._nominal_end(settle_s)
 
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
@@ -790,11 +1145,12 @@ class PumpTestRunner(LiveSessionBase):
                     with self.lock:
                         f = self.freq_set
                         d = self.duty_set
+                        v = self.v_set_mv
                         self.buf_t.append(t_s)
                         self.buf_freq.append(f)
                         self.buf_flow.append(float(val))
                     self.logger.log_flow(t_s, float(val))
-                    self.logger.log_merged(t_s, f, d, float(val))
+                    self.logger.log_merged(t_s, f, d, float(val), v)
                     self.logger.maybe_sync()
                 time.sleep(dt)
         except Exception:
@@ -826,11 +1182,15 @@ class PumpTestRunner(LiveSessionBase):
             time.sleep(1.0 / 30.0)  # ~30 fps for video
 
     def _exec_block(self, test, log_event, status_prefix: str = ""):
-        """Execute one test block. Supports 'constant', 'sweep', and 'group'
-        (a list of child blocks repeated 'repeat' times; repeat <= 0 loops
-        forever until Stop)."""
+        """Execute one test block. Supports 'constant', 'sweep', 'voltage' (manual
+        supply change, see _exec_voltage) and 'group' (a list of child blocks
+        repeated 'repeat' times; repeat <= 0 loops forever until Stop)."""
         ttype = (test.get("type") or "constant").lower()
         settle_ms = max(0, int(test.get("settle_ms", 0)))
+
+        if ttype == "voltage":
+            self._exec_voltage(test, log_event)
+            return
 
         if ttype == "group":
             sub_blocks = test.get("blocks", [])
@@ -864,11 +1224,14 @@ class PumpTestRunner(LiveSessionBase):
                 hz = int(test["frequency_hz"])
                 dur = float(test["duration_s"])
                 t_start = self._step_start()
+                self._nominal_begin(t_start, settle_s + dur)
                 self._set_freq(hz)
                 self._wait_until(t_start + settle_s)
                 log_event()
                 self._step_deadline = t_start + settle_s + dur
                 self._wait_until(self._step_deadline)
+                if not self.stop_flag.is_set():
+                    self._nominal_end(settle_s + dur)
 
             elif ttype == "sweep":
                 a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
@@ -883,11 +1246,14 @@ class PumpTestRunner(LiveSessionBase):
                     if self.stop_flag.is_set():
                         break
                     t_start = self._step_start()
+                    self._nominal_begin(t_start, settle_s + step_dur)
                     self._set_freq(hz)
                     self._wait_until(t_start + settle_s)
                     log_event()
                     self._step_deadline = t_start + settle_s + step_dur
                     self._wait_until(self._step_deadline)
+                    if not self.stop_flag.is_set():
+                        self._nominal_end(settle_s + step_dur)
             else:
                 raise ValueError(f"Unknown block type: {ttype}")
 
@@ -916,7 +1282,7 @@ class PumpTestRunner(LiveSessionBase):
         break_between = float(self.cfg.get("break_seconds_between_tests", 0.0))
 
         def log_event():
-            self.logger.log_event(time.monotonic() - self.t0, self.freq_set, self.duty_set)
+            self.logger.log_event(time.monotonic() - self.t0, self.freq_set, self.duty_set, self.v_set_mv)
 
         try:
             for i, test in enumerate(tests, 1):
@@ -934,11 +1300,16 @@ class PumpTestRunner(LiveSessionBase):
 
                 if i < len(tests) and break_between > 0:
                     self._emit("status", f"Break {break_between:.1f}s ...")
-                    t_end = time.monotonic() + break_between
+                    t_break = time.monotonic()
+                    self._nominal_begin(t_break, break_between)
+                    t_end = t_break + break_between
                     while time.monotonic() < t_end and not self.stop_flag.is_set():
                         time.sleep(0.05)
+                    if not self.stop_flag.is_set():
+                        self._nominal_end(break_between)
 
-            self._emit("status", "Test sequence complete.")
+            if not self.stop_flag.is_set():
+                self._emit("status", "Test sequence complete.")
         except Exception:
             log_exception("PumpTestRunner run loop crashed; flushing data to disk")
             try:
@@ -948,6 +1319,9 @@ class PumpTestRunner(LiveSessionBase):
             self._emit("error", "Test run stopped due to an error. "
                                 "Data collected so far has been saved to disk.")
         finally:
+            with self.lock:
+                self.t_end = time.monotonic()
+                self.voltage_request = None
             self.stop_flag.set()
 
     def start(self):
@@ -1340,6 +1714,8 @@ class DashboardApp:
         self.var_status = tk.StringVar(value="Idle.")
         ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
 
+        self._build_progress_row()
+
         # Main split (responsive, no scrollbars)
         main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
@@ -1384,6 +1760,246 @@ class DashboardApp:
 
         # Start video preview if camera is connected
         self._init_video()
+
+    # ---- run timer + manual voltage steps ----
+    def _build_progress_row(self):
+        prog = ttk.Frame(self.root)
+        prog.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 4))
+        self._progress_row = prog
+        self.pbar = ttk.Progressbar(prog, mode="determinate", maximum=1000, length=220)
+        self.pbar.pack(side=tk.LEFT, padx=4)
+        self.var_progress = tk.StringVar(value="")
+        ttk.Label(prog, textvariable=self.var_progress).pack(side=tk.LEFT, padx=8)
+        ttk.Button(prog, text="Voltage schedule...", command=self.show_voltage_schedule)\
+            .pack(side=tk.RIGHT, padx=4)
+        self.var_next_change = tk.StringVar(value="")
+        self.lbl_next_change = tk.Label(prog, textvariable=self.var_next_change)
+        self.lbl_next_change.pack(side=tk.RIGHT, padx=8)
+        self._next_change_fg = self.lbl_next_change.cget("fg")
+
+        # Shown only while a run waits for the operator to change the supply voltage
+        bg = "#ffd966"
+        self.voltage_banner = tk.Frame(self.root, bg=bg, bd=2, relief=tk.RIDGE)
+        self.var_vprompt_title = tk.StringVar(value="")
+        self.var_vprompt_info = tk.StringVar(value="")
+        self.var_vprompt_read = tk.StringVar(value="")
+        tk.Label(self.voltage_banner, textvariable=self.var_vprompt_title, bg=bg,
+                 font=("Segoe UI", 14, "bold")).pack(side=tk.TOP, anchor="w", padx=10, pady=(6, 0))
+        tk.Label(self.voltage_banner, textvariable=self.var_vprompt_info, bg=bg, justify=tk.LEFT)\
+            .pack(side=tk.TOP, anchor="w", padx=10)
+        row = tk.Frame(self.voltage_banner, bg=bg)
+        row.pack(side=tk.TOP, anchor="w", padx=10, pady=(4, 8))
+        tk.Label(row, text="Voltage read on the supply (V):", bg=bg).pack(side=tk.LEFT)
+        self.ent_vprompt = ttk.Entry(row, textvariable=self.var_vprompt_read, width=10)
+        self.ent_vprompt.pack(side=tk.LEFT, padx=6)
+        self.ent_vprompt.bind("<Return>", lambda _e: self.confirm_voltage_change())
+        ttk.Button(row, text="Confirm voltage set", command=self.confirm_voltage_change).pack(side=tk.LEFT, padx=6)
+        self._vprompt_index: Optional[int] = None
+        self._last_bell = 0.0
+        self._last_status_json = 0.0
+
+        self.root.after(1000, self._tick_progress)
+
+    def _supply_cfg(self) -> Dict[str, Any]:
+        return {**SUPPLY_DEFAULTS, **(self.cfg.get("supply") or {})}
+
+    def _active_runner(self) -> Optional["PumpTestRunner"]:
+        s = self.active_stream
+        return s if isinstance(s, PumpTestRunner) else None
+
+    def _tick_progress(self):
+        try:
+            self._update_progress_ui()
+        except Exception:
+            log_exception_limited("progress_tick", "Run timer: progress update failed")
+        self.root.after(1000, self._tick_progress)
+
+    def _update_progress_ui(self):
+        now = datetime.now()
+        runner = self._active_runner()
+        lead_s = 60.0 * safe_float(self._supply_cfg().get("lead_min", 10), 10.0)
+
+        if runner is None:
+            self._show_voltage_banner(None)
+            tests = self.cfg.get("tests", [])
+            if not tests:
+                self.var_progress.set("")
+                self.var_next_change.set("")
+                self.pbar["value"] = 0
+                return
+            total, changes, _ = plan_schedule(tests, safe_float(self.var_break_between.get(), 0.0))
+            proj, shift = project_changes(changes, now, 0.0, 0)
+            self.pbar["value"] = 0
+            if math.isinf(total):
+                self.var_progress.set("Planned: runs until Stop (endless group)")
+            else:
+                extra = " + your confirmations" if changes else ""
+                self.var_progress.set(f"Planned: {fmt_duration(total + shift)}{extra} · "
+                                      f"ends ~{fmt_clock(now + timedelta(seconds=total + shift))} if started now")
+            self.var_next_change.set(f"{len(changes)} voltage change(s) planned" if changes else "")
+            self.lbl_next_change.configure(fg=self._next_change_fg)
+            return
+
+        p = runner.get_progress()
+        total, nominal, elapsed = p["total_s"], p["nominal_done_s"], p["elapsed_s"]
+        proj, shift = project_changes(runner.plan_changes, now, nominal, p["changes_done"])
+        req = p["voltage_request"]
+
+        if p["finished"]:
+            self.var_progress.set(f"Finished · ran {fmt_duration(elapsed)}")
+            self.pbar["value"] = 1000 if not math.isinf(total) else 0
+        elif math.isinf(total):
+            self.var_progress.set(f"Elapsed {fmt_duration(elapsed)} · runs until Stop")
+            self.pbar["value"] = 0
+        else:
+            remaining = max(0.0, total - nominal) + shift
+            extra = " + your confirmations" if proj else ""
+            frac = min(1.0, nominal / total) if total > 0 else 1.0
+            self.var_progress.set(f"Elapsed {fmt_duration(elapsed)} · Remaining {fmt_duration(remaining)}{extra} · "
+                                  f"Ends ~{fmt_clock(now + timedelta(seconds=remaining))} · {100 * frac:.0f}%")
+            self.pbar["value"] = int(1000 * frac)
+
+        if req:
+            self.var_next_change.set(f"Waiting for you: voltage change #{req['index']}")
+            self.lbl_next_change.configure(fg="#b00000")
+        elif proj and not p["finished"]:
+            c, due, _moved = proj[0]
+            until = (due - now).total_seconds()
+            self.var_next_change.set(f"Next voltage change #{c['index']} → {c['mv'] / 1000:.3f} V "
+                                     f"at {fmt_clock(due)} (in {fmt_duration(until)})")
+            self.lbl_next_change.configure(fg="#b00000" if until <= lead_s else self._next_change_fg)
+        else:
+            self.var_next_change.set("")
+            self.lbl_next_change.configure(fg=self._next_change_fg)
+
+        self._show_voltage_banner(req)
+        if req and time.monotonic() - self._last_bell >= 60.0:
+            self._last_bell = time.monotonic()
+            self.root.bell()
+
+        if self.run_dir and time.monotonic() - self._last_status_json >= 10.0:
+            self._last_status_json = time.monotonic()
+            self._write_status_json(self.run_dir, now, p, proj, shift)
+
+    def _show_voltage_banner(self, req: Optional[Dict[str, Any]]):
+        if not req:
+            if self._vprompt_index is not None:
+                self.voltage_banner.pack_forget()
+                self._vprompt_index = None
+            return
+        waited = time.monotonic() - req["asked_mono"]
+        pump = (f"The pump keeps running at {req['freq_hz']} Hz" if req["hold"]
+                else "The pump is at 0 Hz")
+        self.var_vprompt_info.set(
+            f"Bench supply current limit: {req.get('limit_ma', '?')} mA. {pump} until you confirm. "
+            f"Asked at {req['asked_at'][11:16]} ({fmt_duration(waited)} ago)."
+            + (f"\nNote: {req['note']}" if req.get("note") else ""))
+        if self._vprompt_index == req["index"]:
+            return
+        # New request: show the banner, prefill the requested value, get attention
+        self._vprompt_index = req["index"]
+        self.var_vprompt_title.set(f"VOLTAGE CHANGE #{req['index']}: set the bench supply to {req['mv'] / 1000:.3f} V")
+        self.var_vprompt_read.set(f"{req['mv'] / 1000:.3f}")
+        self.voltage_banner.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6), after=self._progress_row)
+        self._last_bell = time.monotonic()
+        self.root.bell()
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.ent_vprompt.focus_set()
+            self.ent_vprompt.select_range(0, tk.END)
+        except Exception:
+            log_exception_limited("vprompt_focus", "Voltage prompt: could not raise the window")
+
+    def confirm_voltage_change(self):
+        runner = self._active_runner()
+        req = runner.get_progress()["voltage_request"] if runner else None
+        if not req:
+            return
+        try:
+            read_mv = float(self.var_vprompt_read.get().strip().replace(",", ".")) * 1000.0
+        except ValueError:
+            messagebox.showerror("Voltage", "Type the voltage shown on the supply, in volts (e.g. 2.0).")
+            return
+        max_mv = safe_float(req.get("max_mv") or SUPPLY_DEFAULTS["max_mv"], SUPPLY_DEFAULTS["max_mv"])
+        if read_mv > max_mv:
+            messagebox.showerror("Voltage too high",
+                                 f"{read_mv / 1000:.3f} V is above the {max_mv / 1000:.3f} V maximum for the pump "
+                                 f"(supply.max_mv in the config). Lower the supply first.")
+            return
+        if abs(read_mv - req["mv"]) > 50.0 and not messagebox.askyesno(
+                "Voltage differs",
+                f"This step asks for {req['mv'] / 1000:.3f} V, but you entered {read_mv / 1000:.3f} V.\n\n"
+                f"Log {read_mv / 1000:.3f} V and continue?"):
+            return
+        if runner.confirm_voltage(read_mv):
+            self._show_voltage_banner(None)
+
+    def _write_status_json(self, run_dir: str, now: datetime, p: Dict[str, Any],
+                           proj: List[Tuple[Dict[str, Any], datetime, bool]], shift: float):
+        """Heartbeat file so a long run can be checked from another PC (atomic replace)."""
+        total, nominal = p["total_s"], p["nominal_done_s"]
+        remaining = None if math.isinf(total) else max(0.0, total - nominal) + shift
+        req = p["voltage_request"]
+        doc = {
+            "updated": now.isoformat(timespec="seconds"),
+            "status": self.var_status.get(),
+            "finished": p["finished"],
+            "elapsed_s": round(p["elapsed_s"], 1),
+            "nominal_done_s": round(nominal, 1),
+            "nominal_total_s": None if math.isinf(total) else round(total, 1),
+            "remaining_s": None if remaining is None else round(remaining, 1),
+            "earliest_end": None if remaining is None else (now + timedelta(seconds=remaining)).isoformat(timespec="seconds"),
+            "v_set_mv": p["v_set_mv"],
+            "waiting_for_voltage": None if not req else {"index": req["index"], "mv": req["mv"], "asked_at": req["asked_at"]},
+            "next_voltage_changes": [{"index": c["index"], "mv": c["mv"], "due": due.isoformat(timespec="seconds")}
+                                     for c, due, _ in proj[:10]],
+        }
+        path = os.path.join(run_dir, "status.json")
+        try:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(doc, f, indent=2)
+            os.replace(path + ".tmp", path)
+        except Exception:
+            log_exception_limited("status_json", f"Could not write {path}")
+
+    def _schedule_text(self) -> str:
+        now = datetime.now()
+        runner = self._active_runner()
+        if runner is not None:
+            p = runner.get_progress()
+            proj, shift = project_changes(runner.plan_changes, now, p["nominal_done_s"], p["changes_done"])
+            return format_schedule(runner.plan_total_s, proj, shift, now, p["nominal_done_s"],
+                                   runner.supply_cfg, False, "Voltage schedule (live, from now)")
+        total, changes, truncated = plan_schedule(self.cfg.get("tests", []),
+                                                  safe_float(self.var_break_between.get(), 0.0))
+        proj, shift = project_changes(changes, now, 0.0, 0)
+        return format_schedule(total, proj, shift, now, 0.0, self._supply_cfg(), truncated,
+                               "Voltage schedule (if the run starts now)")
+
+    def show_voltage_schedule(self):
+        win = tk.Toplevel(self.root)
+        win.title("Voltage schedule")
+        win.geometry("760x480")
+        txt = tk.Text(win, wrap=tk.NONE, font=("Consolas", 10))
+        txt.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        def fill():
+            txt.configure(state=tk.NORMAL)
+            txt.delete("1.0", tk.END)
+            txt.insert("1.0", self._schedule_text())
+            txt.configure(state=tk.DISABLED)
+
+        def copy_all():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(txt.get("1.0", tk.END))
+
+        btns = ttk.Frame(win)
+        btns.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
+        ttk.Button(btns, text="Refresh", command=fill).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Copy", command=copy_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btns, text="Close", command=win.destroy).pack(side=tk.RIGHT, padx=2)
+        fill()
 
     # ---- video controls ----
     def _build_video_controls(self, parent):
@@ -1703,10 +2319,12 @@ class DashboardApp:
         actions2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
         ttk.Button(actions2, text="Group Selected", command=self.group_selected_blocks).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions2, text="Ungroup", command=self.ungroup_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(actions2, text="Add Voltage Step", command=self.add_voltage_block).pack(side=tk.LEFT, padx=(14, 2))
         ttk.Label(listf, wraplength=420, justify=tk.LEFT,
                   text="A group repeats its blocks back-to-back (Repeat 0 = loop until Stop). "
-                       "With a group row selected, Add Constant/Sweep adds inside the group; "
-                       "Esc clears the selection so Add appends at the end.")\
+                       "With a group row selected, Add Constant/Sweep/Voltage adds inside the group; "
+                       "Esc clears the selection so Add appends at the end. "
+                       "A voltage step pauses the run until you set the bench supply and confirm.")\
             .pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6))
 
         editf = ttk.LabelFrame(parent, text="Edit selected block")
@@ -1718,7 +2336,7 @@ class DashboardApp:
 
         row0 = ttk.Frame(editf); row0.pack(side=tk.TOP, fill=tk.X, padx=6, pady=4)
         ttk.Label(row0, text="Type:").pack(side=tk.LEFT)
-        self.cmb_edit_type = ttk.Combobox(row0, state="readonly", width=12, values=["constant", "sweep"],
+        self.cmb_edit_type = ttk.Combobox(row0, state="readonly", width=12, values=["constant", "sweep", "voltage"],
                                           textvariable=self.var_edit_type)
         self.cmb_edit_type.pack(side=tk.LEFT, padx=6)
         ttk.Label(row0, text="Repeat:").pack(side=tk.LEFT, padx=(14, 2))
@@ -1764,6 +2382,27 @@ class DashboardApp:
                   text="Group: child blocks run in order, repeated 'Repeat' times (0 = loop until Stop).")\
             .pack(side=tk.LEFT)
 
+        # Voltage-step editor (Repeat / Settle ms above don't apply)
+        self.var_edit_volt = tk.StringVar(value="2.500")
+        self.var_edit_vwait = tk.StringVar(value="zero")
+        self.var_edit_vsettle = tk.StringVar(value="30")
+        self.var_edit_vfrom = tk.StringVar(value="")
+        self.var_edit_vto = tk.StringVar(value="")
+        self.edit_voltage = ttk.Frame(editf)
+        vrow1 = ttk.Frame(self.edit_voltage); vrow1.pack(side=tk.TOP, fill=tk.X, pady=2)
+        ttk.Label(vrow1, text="Supply voltage (V):").pack(side=tk.LEFT)
+        ttk.Entry(vrow1, textvariable=self.var_edit_volt, width=8).pack(side=tk.LEFT, padx=4)
+        ttk.Label(vrow1, text="Pump while waiting:").pack(side=tk.LEFT, padx=(10, 2))
+        ttk.Combobox(vrow1, state="readonly", width=6, values=["zero", "hold"],
+                     textvariable=self.var_edit_vwait).pack(side=tk.LEFT, padx=4)
+        ttk.Label(vrow1, text="Settle after (s):").pack(side=tk.LEFT, padx=(10, 2))
+        ttk.Entry(vrow1, textvariable=self.var_edit_vsettle, width=6).pack(side=tk.LEFT, padx=4)
+        vrow2 = ttk.Frame(self.edit_voltage); vrow2.pack(side=tk.TOP, fill=tk.X, pady=2)
+        ttk.Label(vrow2, text="Only ask between (HH:MM, blank = any time):").pack(side=tk.LEFT)
+        ttk.Entry(vrow2, textvariable=self.var_edit_vfrom, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Label(vrow2, text="and").pack(side=tk.LEFT)
+        ttk.Entry(vrow2, textvariable=self.var_edit_vto, width=6).pack(side=tk.LEFT, padx=4)
+
         ttk.Button(editf, text="Apply changes", command=self.apply_edit_to_selected)\
             .pack(side=tk.TOP, padx=6, pady=(6, 8))
 
@@ -1775,10 +2414,13 @@ class DashboardApp:
         self.edit_constant.pack_forget()
         self.edit_sweep.pack_forget()
         self.edit_group.pack_forget()
+        self.edit_voltage.pack_forget()
         if ttype == "constant":
             self.edit_constant.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
         elif ttype == "group":
             self.edit_group.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
+        elif ttype == "voltage":
+            self.edit_voltage.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
         else:
             self.edit_sweep.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
 
@@ -2053,6 +2695,8 @@ class DashboardApp:
                 "server": self.var_flow_server.get().strip(),
                 "sample_rate_hz": safe_float(self.var_sample_rate.get(), 25.0),
             },
+            # Bench supply for voltage steps (no UI fields yet; kept from the loaded config)
+            "supply": self._supply_cfg(),
         }
 
     def save_config_as(self):
@@ -2076,28 +2720,20 @@ class DashboardApp:
     @staticmethod
     def _block_duration_s(t) -> float:
         """Nominal run time of one block including its repeats (inf for an endless group)."""
-        ttype = (t.get("type") or "constant").lower()
-        repeat = safe_int(t.get("repeat", 1), 1)
-        settle_s = max(0, safe_int(t.get("settle_ms", 0), 0)) / 1000.0
-        if ttype == "group":
-            if repeat <= 0:
-                return math.inf
-            return repeat * sum(DashboardApp._block_duration_s(b) for b in t.get("blocks", []))
-        repeat = max(1, repeat)
-        if ttype == "constant":
-            return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
-        steps = max(1, safe_int(t.get("steps", 1), 1))
-        if "step_duration_s" in t:
-            step_dur = safe_float(t.get("step_duration_s"), 0.0)
-        else:
-            step_dur = safe_float(t.get("total_duration_s", 0), 0.0) / steps
-        return repeat * steps * (step_dur + settle_s)
+        return block_duration_s(t)
 
     @staticmethod
     def _describe_block(t) -> str:
         ttype = (t.get("type") or "constant").lower()
         if ttype == "constant":
             return f"constant: {t.get('frequency_hz')} Hz for {t.get('duration_s')} s (x{t.get('repeat', 1)})"
+        if ttype == "voltage":
+            mv = safe_float(t.get("voltage_mv", 0), 0.0)
+            pump = "pump holds" if str(t.get("while_waiting", "zero")).lower() == "hold" else "pump 0 Hz"
+            w = t.get("window")
+            when = f", ask {w[0]}-{w[1]}" if voltage_window(t) else ""
+            return (f"VOLTAGE STEP → {mv / 1000:.3f} V (wait for you, {pump}, "
+                    f"settle {safe_float(t.get('settle_s', 0), 0.0):g} s{when})")
         if ttype == "group":
             children = t.get("blocks", [])
             repeat = safe_int(t.get("repeat", 1), 1)
@@ -2112,14 +2748,18 @@ class DashboardApp:
     def refresh_blocks_list(self):
         self.lst_blocks.delete(0, tk.END)
         self._row_paths = []
+        volt_bg = "#fff2cc"
         for i, t in enumerate(self.cfg.get("tests", [])):
             self.lst_blocks.insert(tk.END, f"{i + 1:02d}. {self._describe_block(t)}")
             self._row_paths.append((i,))
+            if block_type(t) == "voltage":
+                self.lst_blocks.itemconfig(tk.END, background=volt_bg)
             if self._is_group(t):
                 self.lst_blocks.itemconfig(tk.END, background="#e3ebfa")
                 for j, child in enumerate(t.get("blocks", [])):
                     self.lst_blocks.insert(tk.END, f"        {i + 1}.{j + 1}  {self._describe_block(child)}")
-                    self.lst_blocks.itemconfig(tk.END, background="#f3f6fc")
+                    self.lst_blocks.itemconfig(tk.END, background=volt_bg if block_type(child) == "voltage"
+                                               else "#f3f6fc")
                     self._row_paths.append((i, j))
 
     def _selected_paths(self) -> List[tuple]:
@@ -2154,7 +2794,7 @@ class DashboardApp:
         ttype = (t.get("type") or "constant").lower()
 
         # A group can't be turned into a constant/sweep (its children would be lost)
-        self.cmb_edit_type.configure(values=["group"] if ttype == "group" else ["constant", "sweep"])
+        self.cmb_edit_type.configure(values=["group"] if ttype == "group" else ["constant", "sweep", "voltage"])
         self.var_edit_type.set(ttype)
         self.var_edit_repeat.set(str(t.get("repeat", 1)))
         self.var_edit_settle_ms.set(str(t.get("settle_ms", 0)))
@@ -2162,7 +2802,14 @@ class DashboardApp:
         if ttype == "constant":
             self.var_edit_freq.set(str(t.get("frequency_hz", 500)))
             self.var_edit_dur.set(str(t.get("duration_s", 10)))
-        else:
+        elif ttype == "voltage":
+            self.var_edit_volt.set(f"{safe_float(t.get('voltage_mv', 2500), 2500.0) / 1000:.3f}")
+            self.var_edit_vwait.set("hold" if str(t.get("while_waiting", "zero")).lower() == "hold" else "zero")
+            self.var_edit_vsettle.set(str(t.get("settle_s", 0)))
+            w = t.get("window") if voltage_window(t) else None
+            self.var_edit_vfrom.set(str(w[0]) if w else "")
+            self.var_edit_vto.set(str(w[1]) if w else "")
+        elif ttype != "group":
             self.var_edit_start.set(str(t.get("start_hz", 100)))
             self.var_edit_end.set(str(t.get("end_hz", 1000)))
             self.var_edit_steps.set(str(t.get("steps", 10)))
@@ -2198,6 +2845,29 @@ class DashboardApp:
                 "repeat": repeat,
                 "settle_ms": settle,
             }
+        elif ttype == "voltage":
+            mv = int(round(safe_float(self.var_edit_volt.get().replace(",", "."), 2.5) * 1000))
+            max_mv = safe_float(self._supply_cfg().get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
+            if mv > max_mv:
+                messagebox.showerror("Voltage step", f"{mv / 1000:.3f} V is above the {max_mv / 1000:.3f} V "
+                                                     f"maximum (supply.max_mv in the config).")
+                return
+            block = {
+                "type": "voltage",
+                "voltage_mv": mv,
+                "while_waiting": self.var_edit_vwait.get().strip() or "zero",
+                "settle_s": max(0.0, safe_float(self.var_edit_vsettle.get(), 0.0)),
+            }
+            frm, to = self.var_edit_vfrom.get().strip(), self.var_edit_vto.get().strip()
+            if frm or to:
+                if _parse_hhmm(frm) is None or _parse_hhmm(to) is None or _parse_hhmm(frm) == _parse_hhmm(to):
+                    messagebox.showerror("Voltage step", "Time window: give both times as HH:MM "
+                                                         "(e.g. 08:00 and 20:00), or leave both blank.")
+                    return
+                block["window"] = [frm, to]
+            old = self._block_at(path)
+            if block_type(old) == "voltage" and old.get("note"):
+                block["note"] = old["note"]
         else:
             step_dur = self.var_edit_step_dur.get().strip()
             total_dur = self.var_edit_total_dur.get().strip()
@@ -2250,6 +2920,9 @@ class DashboardApp:
     def add_sweep_block(self):
         self._insert_new_block({"type": "sweep", "start_hz": 100, "end_hz": 1000, "steps": 10,
                                 "step_duration_s": 1.5, "repeat": 1, "settle_ms": 0})
+
+    def add_voltage_block(self):
+        self._insert_new_block({"type": "voltage", "voltage_mv": 2500, "while_waiting": "zero", "settle_s": 30})
 
     def add_group_block(self):
         tests = self.cfg.setdefault("tests", [])
@@ -2362,10 +3035,42 @@ class DashboardApp:
             messagebox.showerror("No tests", "No test blocks. Add at least one block in the Config builder.")
             return
 
+        # Voltage steps: refuse voltages above the pump's maximum, then show the
+        # schedule so the operator can set alarms before anything starts.
+        schedule_txt = None
+        if contains_voltage_block(cfg["tests"]):
+            supply = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
+            total, changes, truncated = plan_schedule(cfg["tests"], float(cfg.get("break_seconds_between_tests", 0.0)))
+            max_mv = safe_float(supply.get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
+            too_high = sorted({c["mv"] for c in changes if c["mv"] > max_mv})
+            if too_high:
+                messagebox.showerror("Voltage too high",
+                                     f"Voltage step(s) above the {max_mv / 1000:.3f} V maximum: "
+                                     + ", ".join(f"{mv / 1000:.3f} V" for mv in too_high)
+                                     + "\n\nFix the blocks (or supply.max_mv in the config) first.")
+                return
+            now = datetime.now()
+            proj, shift = project_changes(changes, now, 0.0, 0)
+            schedule_txt = format_schedule(total, proj, shift, now, 0.0, supply, truncated,
+                                           f"Voltage schedule for run '{self.var_test_name.get().strip()}'")
+            preview = "\n".join(schedule_txt.splitlines()[:28])
+            if len(schedule_txt.splitlines()) > 28:
+                preview += "\n  ... (full list: 'Voltage schedule...' button, and schedule.txt in the run folder)"
+            if not messagebox.askokcancel(
+                    "Voltage schedule - set your alarms",
+                    preview + "\n\nThe run pauses at each change until you confirm the new voltage. Start the run?"):
+                return
+
         out_dir = ensure_dir(self.var_out_dir.get().strip())
         run_name = sanitize_run_name(self.var_test_name.get(), "run")
         run_dir = create_unique_run_dir(out_dir, run_name)
         self.run_dir = run_dir
+        if schedule_txt is not None:
+            try:
+                with open(os.path.join(run_dir, "schedule.txt"), "x", encoding="utf-8") as f:
+                    f.write(schedule_txt + "\n")
+            except Exception:
+                log_exception("Start scheduled run: failed to write schedule.txt")
 
         cfg.setdefault("meta", {})
         cfg["meta"]["output_dir"] = out_dir
@@ -2550,6 +3255,8 @@ class DashboardApp:
                 kind, payload = self.ui_events.get_nowait()
                 if kind == "status":
                     self.var_status.set(payload)
+                elif kind == "voltage_prompt":
+                    self._show_voltage_banner(payload)
                 elif kind == "error":
                     self.var_status.set(payload)
                     try:
