@@ -18,7 +18,9 @@ ATTO TEAM repo
 install.bat
 install.bat C:\Python313\python.exe   (to pick a specific Python)
 ```
-`install.bat` uses the first working Python 3.8+ (a working `.venv`, the `py` launcher, `python`, `python3`, `python3.10`; see `find_python.bat`), installs `requirements.txt` into it, installs the Fluigent SDK from `fluigent_sdk-23.0.0/` if it isn't installed yet, and runs `scripts\check_setup.py`, which lists missing packages and the serial ports (PPK2 and Arduino marked). Start the dashboard with `run_dashboard.bat`, which uses the same Python.
+`install.bat` picks Python **3.10** first (the test PC has to run 3.10), then a working `.venv`, `py -3`, `python`, `python3` (see `find_python.bat`). It installs `requirements.txt` into that Python, installs the Fluigent SDK from `fluigent_sdk-23.0.0/` if it isn't installed yet, and runs `scripts\check_setup.py`, which lists missing packages and the serial ports (PPK2 and Arduino marked). Start the dashboard with `run_dashboard.bat`, which uses the same Python.
+
+Packages are per Python: if you start the dashboard some other way (e.g. `python3.10 pump_test_dashboard.py`) and it reports a missing package such as `ppk2_api`, click **Install missing packages** in the Power meter panel. It installs into exactly the Python the dashboard is running on.
 
 **Linux/Mac:**
 ```bash

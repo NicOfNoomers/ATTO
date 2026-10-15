@@ -49,6 +49,8 @@ import math
 import threading
 import queue
 import logging
+import subprocess
+import importlib.util
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict, Any, List, Tuple
@@ -137,6 +139,21 @@ except Exception as _e:
     # the one install.bat installed into.
     log_warning(f"Network flow backend disabled ({_e}). This dashboard runs on {sys.executable}; "
                 f"install with: \"{sys.executable}\" -m pip install -r requirements.txt")
+
+# Packages a feature needs at run time: (import name, pip name, what for). The
+# dashboard can install missing ones into the Python it runs on (Install button).
+FEATURE_PACKAGES = [("ppk2_api", "ppk2-api", "PPK2 power meter"),
+                    ("websockets", "websockets", "network flow backend")]
+FLUIGENT_SDK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fluigent_sdk-23.0.0")
+
+
+def missing_feature_packages() -> List[Tuple[str, str, str]]:
+    importlib.invalidate_caches()
+    missing = [p for p in FEATURE_PACKAGES if importlib.util.find_spec(p[0]) is None]
+    if importlib.util.find_spec("Fluigent") is None and os.path.isdir(FLUIGENT_SDK_DIR):
+        missing.append(("Fluigent", "fluigent_sdk-23.0.0", "Fluigent flow sensor"))
+    return missing
+
 
 POWER_AVAILABLE = False
 try:
@@ -1988,6 +2005,66 @@ class DashboardApp:
         self.lbl_pw_live.pack(side=tk.LEFT)
         self._pw_live_fg = self.lbl_pw_live.cget("fg")
 
+        # Missing packages (e.g. ppk2-api): install into exactly the Python running this window
+        self._pip_running = False
+        self.btn_pw_install = ttk.Button(r2, text="Install missing packages", command=self._install_packages)
+        self._refresh_missing_packages()
+
+    def _refresh_missing_packages(self):
+        missing = missing_feature_packages()
+        if missing:
+            self.btn_pw_install.pack(side=tk.RIGHT, padx=4)
+            names = ", ".join(f"{pip} ({why})" for _, pip, why in missing)
+            self.var_pw_live.set(f"Not installed for this Python ({sys.version.split()[0]}): {names}. "
+                                 f"Click 'Install missing packages'.")
+            self.lbl_pw_live.configure(fg="#b00000")
+        else:
+            self.btn_pw_install.pack_forget()
+        return missing
+
+    def _install_packages(self):
+        """pip install requirements.txt (+ the bundled Fluigent SDK if missing) into
+        sys.executable, i.e. the Python this dashboard runs on, in the background."""
+        if self._pip_running:
+            return
+        self._pip_running = True
+        self.btn_pw_install.configure(state=tk.DISABLED)
+        self.var_pw_live.set(f"Installing packages into {sys.executable} ... (can take a few minutes)")
+        here = os.path.dirname(os.path.abspath(__file__))
+        cmds = [[sys.executable, "-m", "pip", "install", "-r", os.path.join(here, "requirements.txt")]]
+        if importlib.util.find_spec("Fluigent") is None and os.path.isdir(FLUIGENT_SDK_DIR):
+            cmds.append([sys.executable, "-m", "pip", "install", FLUIGENT_SDK_DIR])
+
+        def work():
+            ok, out = True, []
+            for cmd in cmds:
+                try:
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800,
+                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    out.append((r.stdout or "") + (r.stderr or ""))
+                    ok = ok and r.returncode == 0
+                except Exception as e:
+                    out.append(f"{' '.join(cmd)}: {e!r}")
+                    ok = False
+            self.ui_events.put(("pip_done", (ok, "\n".join(out))))
+
+        threading.Thread(target=work, name="pip-install", daemon=True).start()
+
+    def _on_pip_done(self, ok: bool, out: str):
+        self._pip_running = False
+        self.btn_pw_install.configure(state=tk.NORMAL)
+        missing = self._refresh_missing_packages()
+        if ok and not missing:
+            self.var_pw_live.set("Packages installed.")
+            self.lbl_pw_live.configure(fg=self._pw_live_fg)
+            messagebox.showinfo("Packages installed",
+                                f"Installed into {sys.executable}.\n\nThe PPK2 power meter works right away. "
+                                f"Restart the dashboard to enable the network flow backend / Fluigent sensor "
+                                f"if they were missing.")
+        else:
+            tail = "\n".join(out.strip().splitlines()[-15:])
+            messagebox.showerror("Install failed", f"pip reported a problem (Python: {sys.executable}).\n\n{tail}")
+
     def _detect_ppk2(self):
         ports = find_ppk2_ports() if POWER_AVAILABLE else []
         if ports:
@@ -3525,6 +3602,8 @@ class DashboardApp:
                     self._show_voltage_banner(payload)
                 elif kind == "manual_output_off":
                     self.var_manual_enabled.set(False)
+                elif kind == "pip_done":
+                    self._on_pip_done(*payload)
                 elif kind == "error":
                     self.var_status.set(payload)
                     try:
