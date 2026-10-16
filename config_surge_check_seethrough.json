@@ -1,0 +1,437 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 200,
+    "max_mv": 2500,
+    "initial_mv": 2500
+  },
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 3000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 0.5,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 1.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 2.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 4.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 8.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 16.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "group",
+      "repeat": 20,
+      "blocks": [
+        {
+          "type": "constant",
+          "frequency_hz": 600,
+          "duration_s": 0.1,
+          "repeat": 1,
+          "settle_ms": 0
+        },
+        {
+          "type": "constant",
+          "frequency_hz": 0,
+          "duration_s": 1.9,
+          "repeat": 1,
+          "settle_ms": 0
+        }
+      ]
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 3000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Surge check see-through pump",
+    "description": "PUMP: see-through October pump. MEASURE POWER ON, 2.5 V, supply limit 200 mA. Does every drive start draw ~90 mA for 1.4-4.4 s? Continuous 12 s blocks at 1-3000 Hz (twice), 600 Hz recovery pairs (rest 0.5-16 s), 20 x 0.1 s pulses at 600 Hz. Write the coil resistance in the notes.",
+    "operator": "",
+    "pump_number": ""
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "protocol": "freq_only"
+}
