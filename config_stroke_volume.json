@@ -1,0 +1,281 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 1/10: set the bench supply to 2.500 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 2/10: set the bench supply to 2.000 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 3/10: set the bench supply to 1.500 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 4/10: set the bench supply to 1.000 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 5/10: set the bench supply to 0.800 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 6/10: set the bench supply to 0.600 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 7/10: set the bench supply to 0.400 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 300,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 8/10: set the bench supply to 0.300 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 200,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 9/10: set the bench supply to 0.200 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 100,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Step 10/10: set the bench supply to 0.100 V, keep the meniscus in view (move the stage), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 19.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 20,
+      "edges_commanded": 40
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Stroke volume 1 Hz voltage ladder",
+    "description": "Smallest stroke volume. 1 Hz, 20 strokes per step, bench-supply voltage 2500-100 mV (10 steps, operator-confirmed), 20 s rest at 0 Hz before each drive. Microscope video on the meniscus, frames.csv for timing. PPK2 out of the supply path (power off).",
+    "operator": "",
+    "pump_id": ""
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": false
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}

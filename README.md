@@ -109,15 +109,32 @@ The dashboard supports recording video from a USB camera during tests. Video rec
 
 ### Setup
 1. Connect your USB camera before starting the dashboard
-2. Note the camera index (default is 0 for the first camera)
+2. Note the camera index (default is 0 for the first camera; `dummy` gives a synthetic test camera)
 3. Click "Connect Camera" in the "USB Camera (optional)" section
 4. Once connected, enable video recording with the checkbox
 
 ### Usage
 - During a test, video will automatically record if enabled and camera is connected
-- Each frame displays: Time since test start, current frequency, and current flow rate
-- Video is saved as `video_recording.mp4` in the test run folder
+- A capture thread reads the camera as fast as it delivers frames; a separate writer thread encodes them, so encoding never slows capture. The status line shows the camera's real frame rate, frames written and frames dropped
+- **Overlay** (time, frequency, flow in the top-left corner) is a checkbox; turn it off when the image itself is measured
+- **Codec:** `mjpg` (default, quality 95), `ffv1` (lossless, much larger) or `mp4v` (the old default)
+- Files in the run folder:
+  - `video_partNNNN.avi`: a new file every 60 s (`video.chunk_s` in the config), with the measured frame rate in the header
+  - `frames.csv`: one row per written frame: `frame_index`, `t_s` (same clock as events.csv), `t_perf_s`, `cam_pos_msec`, `dropped_before`, `video_file`, `video_frame` (frame number inside that file)
+  - `video_summary.json`: frames written and dropped, header and measured fps, largest frame gap
+- Optional in the config: `"video": {"crop": [x, y, w, h]}` records only that strip of the image
 - Recording automatically stops when the test ends
+
+### Run timing
+All run times (events.csv, merged.csv, power, frames.csv) use `time.perf_counter`. On Python 3.10 `time.monotonic` only ticks every 15.6 ms on Windows and a 1 ms sleep takes ~15 ms, so steps used to run up to ~16 ms off; during a run the dashboard now asks Windows for a 1 ms timer and waits the last few ms precisely. `meta.json` records both clocks (`clock`). During runs the GIL switch interval is 0.5 ms (the plot redraw holds the GIL for 50-70 ms and used to delay commands by up to ~15-40 ms), and the process opts out of Windows 11's timer throttling (otherwise the 1 ms timer is ignored while the dashboard window is covered or minimized). Scheduled commands are typically within 0.5 ms of nominal with the window, plots and 1080p video running; a few times a minute a long call on the UI thread or the OS still delays a wake-up by tens of ms, so use `t_cmd_s` for exact command times. `events.csv` has `t_cmd_s` / `t_cmd_done_s`: the run clock just before and after each frequency command's serial write.
+
+## Stroke-volume run (1 Hz voltage ladder, microscope video)
+
+`make_config_stroke_volume.py` writes `config_stroke_volume.json`: at 1 Hz, bench-supply voltage steps 2.5, 2.0, 1.5, 1.0, 0.8, 0.6, 0.4, 0.3, 0.2, 0.1 V; each step is: confirm the voltage (yellow banner) → 20 s rest at 0 Hz → 19.75 s at 1 Hz (20 strokes; the drive stops a quarter period early so the stop never races the edge that would start stroke 21). About 7 min plus the confirmations.
+- Wiring: bench supply straight to the driver VM, **PPK2 out of the path** (its ammeter mode needs 0.8-5.0 V); power measurement is off in this config. Bench supply current limit 60 mA.
+- The config requires a **Pump ID** (Run details) and sets the overlay off and MJPG quality 95.
+- Volume accounting: the driver bridge sleeps at 0 Hz, so each drive goes neutral → +x (half swing) → 39 full swings → −x → neutral (half swing on stop): 40 swing-equivalents = 20 strokes (`edges_commanded` 40 on each drive block in config.json), whether the last half-cycle lasts 0.25 or 0.5 s. With 41 edges it would be 20.5 strokes, hence the quarter-period margin. The analysis takes the net meniscus advance rest-to-rest (end of the rest after the drive minus the end of the rest before) / 20.
+- Check the video log afterwards: `python scripts\check_video.py <run folder>`.
 
 ### Troubleshooting
 - If camera connection fails, check USB connection and camera index

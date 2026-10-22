@@ -53,7 +53,9 @@ import subprocess
 import importlib.util
 from datetime import datetime, timedelta
 from collections import deque
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Callable
+
+import numpy as np    # matplotlib requires it anyway
 
 # ---------------- logging utils ----------------
 LOG = logging.getLogger("pump_test_dashboard")
@@ -162,6 +164,89 @@ try:
 except Exception:
     POWER_DEFAULTS = {"enabled": False}
     log_exception("Optional import failed: power_ppk2 not available; power meter disabled.")
+
+
+# ---------------- run clock ----------------
+# Every run time (events, merged, flow, power, frames) is CLOCK() - t0. On
+# Python 3.10 / Windows time.monotonic() only ticks every 15.6 ms
+# (GetTickCount64); perf_counter is QueryPerformanceCounter (0.1 us).
+CLOCK = time.perf_counter
+
+
+def clock_info() -> Dict[str, Any]:
+    """Clock details for meta.json (acceptance: both clocks recorded at run start)."""
+    info = {"python": sys.version.split()[0], "run_clock": "perf_counter"}
+    for name in ("monotonic", "perf_counter"):
+        c = time.get_clock_info(name)
+        info[name] = {"implementation": c.implementation, "resolution": c.resolution,
+                      "monotonic": c.monotonic, "adjustable": c.adjustable}
+    return info
+
+
+_HIRES_USERS = 0
+_HIRES_LOCK = threading.Lock()
+_SWITCH_INTERVAL_DEFAULT = sys.getswitchinterval()
+RUN_SWITCH_INTERVAL_S = 0.0005
+
+
+def hires_timer(on: bool) -> None:
+    """While a session runs:
+    * Windows: 1 ms timer resolution. Without it time.sleep(0.001) takes
+      ~15.4 ms on Python 3.10, so short steps run long.
+    * A short GIL switch interval (0.5 ms instead of 5 ms): the plot redraw on
+      the UI thread holds the GIL for tens of ms, and the runner thread would
+      otherwise send its commands up to ~15 ms late."""
+    global _HIRES_USERS
+    with _HIRES_LOCK:
+        if on:
+            if _HIRES_USERS == 0:
+                sys.setswitchinterval(RUN_SWITCH_INTERVAL_S)
+                _winmm_period(True)
+            _HIRES_USERS += 1
+        elif _HIRES_USERS > 0:
+            _HIRES_USERS -= 1
+            if _HIRES_USERS == 0:
+                sys.setswitchinterval(_SWITCH_INTERVAL_DEFAULT)
+                _winmm_period(False)
+
+
+def _winmm_period(on: bool) -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        if on:
+            _keep_timer_when_hidden()
+        winmm = ctypes.WinDLL("winmm")
+        (winmm.timeBeginPeriod if on else winmm.timeEndPeriod)(1)
+    except Exception:
+        log_exception_limited("hires_timer", "Could not change the Windows timer resolution")
+
+
+def _keep_timer_when_hidden() -> None:
+    """Windows 11 ignores timeBeginPeriod for a process whose window is covered or
+    minimized (sleeps fall back to 15.6 ms). Opt out of that power throttling:
+    SetProcessInformation(ProcessPowerThrottling, IGNORE_TIMER_RESOLUTION)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class _ThrottlingState(ctypes.Structure):
+        _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        fn = getattr(k32, "SetProcessInformation", None)
+        if fn is None:                       # before Windows 8
+            return
+        fn.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        fn.restype = wintypes.BOOL
+        state = _ThrottlingState(1, 0x4, 0)  # CURRENT_VERSION, IGNORE_TIMER_RESOLUTION, state off
+        ok = fn(k32.GetCurrentProcess(), 4, ctypes.byref(state), ctypes.sizeof(state))   # 4 = ProcessPowerThrottling
+        if not ok:
+            log_warning_limited("timer_throttle", f"SetProcessInformation failed ({ctypes.get_last_error()}); "
+                                                  f"keep the dashboard window visible for 1 ms timing")
+    except Exception:
+        log_exception_limited("timer_throttle", "Could not opt out of timer throttling")
 
 
 # ---------------- crash-safety / memory config ----------------
@@ -669,7 +754,10 @@ class DataLogger:
         self.events_f = open(os.path.join(self.run_dir, "events.csv"), "x", newline="", encoding="utf-8")
         self.flow_f   = open(os.path.join(self.run_dir, "flow.csv"), "x", newline="", encoding="utf-8")
         self.merged_f = open(os.path.join(self.run_dir, "merged.csv"), "x", newline="", encoding="utf-8")
-        self.events_w = csv.writer(self.events_f); self.events_w.writerow(["t_s", "freq_set_hz", "duty_set"] + vcol)
+        # t_cmd_s / t_cmd_done_s: run clock just before and after the frequency
+        # command's serial write (scheduled runs; empty in manual sessions)
+        self.events_w = csv.writer(self.events_f)
+        self.events_w.writerow(["t_s", "freq_set_hz", "duty_set"] + vcol + ["t_cmd_s", "t_cmd_done_s"])
         self.flow_w   = csv.writer(self.flow_f);   self.flow_w.writerow(["t_s", "flow"])
         self.merged_w = csv.writer(self.merged_f); self.merged_w.writerow(["t_s", "freq_set_hz", "duty_set", "flow"] + vcol)
         if self.with_voltage:
@@ -728,10 +816,12 @@ class DataLogger:
             return []
         return ["" if v_mv is None else str(int(round(v_mv)))]
 
-    def log_event(self, t_s: float, freq: int, duty: float, v_mv: Optional[float] = None):
+    def log_event(self, t_s: float, freq: int, duty: float, v_mv: Optional[float] = None,
+                  t_cmd: Optional[Tuple[float, float]] = None):
+        cmd = [f"{t_cmd[0]:.6f}", f"{t_cmd[1]:.6f}"] if t_cmd else ["", ""]
         with self._lock:
             if self.events_w:
-                self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"] + self._vcol(v_mv))
+                self.events_w.writerow([f"{t_s:.6f}", int(freq), f"{float(duty):.6f}"] + self._vcol(v_mv) + cmd)
                 self._flush_file(self.events_f, False)
 
     def log_voltage_change(self, row: Dict[str, Any]):
@@ -762,6 +852,21 @@ class LiveSessionBase:
         return [], [], []
     def stop(self): ...
     def join(self, timeout: Optional[float] = None): ...
+
+    _hires = False
+
+    def _release_hires(self):
+        if self._hires:
+            hires_timer(False)
+            self._hires = False
+
+    def overlay_info(self) -> Tuple[float, int, float]:
+        """(t_s, frequency, latest flow) for the optional video overlay."""
+        t0 = getattr(self, "t0", None)
+        with self.lock:
+            f = self.freq_set if getattr(self, "output_enabled", True) else 0
+            flow = self.buf_flow[-1] if self.buf_flow else 0.0
+        return (CLOCK() - t0) if t0 is not None else 0.0, f, flow
 
     def get_power_live(self) -> Optional[Dict[str, Any]]:
         return self.meter.get_live() if self.meter else None
@@ -918,7 +1023,7 @@ class ManualSession(LiveSessionBase):
             d = self.duty_set
         self._set_freq_internal(f if enabled else 0)
         if self.logger and self.t0 is not None:
-            self.logger.log_event(time.monotonic() - self.t0, f if enabled else 0, d)
+            self.logger.log_event(CLOCK() - self.t0, f if enabled else 0, d)
 
     def set_frequency(self, hz: int):
         hz = max(0, int(hz))
@@ -929,7 +1034,7 @@ class ManualSession(LiveSessionBase):
         if enabled:
             self._set_freq_internal(hz)
         if self.logger and self.t0 is not None:
-            self.logger.log_event(time.monotonic() - self.t0, hz if enabled else 0, d)
+            self.logger.log_event(CLOCK() - self.t0, hz if enabled else 0, d)
 
     def set_duty(self, duty: float):
         duty = clamp(float(duty), 0.0, 1.0)
@@ -940,7 +1045,7 @@ class ManualSession(LiveSessionBase):
         if enabled:
             self._set_duty_internal(duty)
         if self.logger and self.t0 is not None:
-            self.logger.log_event(time.monotonic() - self.t0, f if enabled else 0, duty)
+            self.logger.log_event(CLOCK() - self.t0, f if enabled else 0, duty)
 
     def _sampling_loop(self):
         sr = float(self.cfg.get("flow_sensor", {}).get("sample_rate_hz", 25.0))
@@ -949,7 +1054,7 @@ class ManualSession(LiveSessionBase):
         try:
             while not self.stop_flag.is_set():
                 ok, val = self.sensor.read()
-                t_s = time.monotonic() - self.t0
+                t_s = CLOCK() - self.t0
                 if ok and val is not None:
                     with self.lock:
                         f = self.freq_set if self.output_enabled else 0
@@ -974,47 +1079,17 @@ class ManualSession(LiveSessionBase):
             self._emit("error", "Sampling stopped due to an error (possibly low memory). "
                                 "Data collected so far has been saved to disk.")
 
-    def _video_loop(self):
-        """Background thread for capturing video frames with overlay."""
-        video_recorder = None
-        
-        # Get video recorder from UI if available
-        try:
-            from pump_test_dashboard import DashboardApp
-            # Will be set by UI
-            pass
-        except ImportError:
-            log_warning_limited("video_loop_import", "ManualSession._video_loop: failed to import DashboardApp")
-        
-        while not self.stop_flag.is_set():
-            if self.video_recorder and self.video_recorder.is_recording():
-                frame = self.video_recorder.read_frame()
-                if frame is not None:
-                    t_s = time.monotonic() - self.t0
-                    with self.lock:
-                        f = self.freq_set if self.output_enabled else 0
-                        flow_val = self.buf_flow[-1] if self.buf_flow else 0.0
-                    
-                    # Add overlay and record
-                    overlay_frame = self.video_recorder.add_overlay(frame, t_s, f, flow_val)
-                    self.video_recorder.record_frame(overlay_frame)
-            
-            time.sleep(1.0 / 30.0)  # ~30 fps for video
-
     def start(self):
         self._setup_hardware()
-        self.t0 = time.monotonic()
+        hires_timer(True)
+        self._hires = True
+        self.t0 = CLOCK()
         self.stop_flag.clear()
         if self.meter:
             self.meter.start(self.t0)
         self._emit("status", "Manual: connected. Sampling started.")
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_sample.start()
-        
-        # Start video recording if enabled and recorder is available
-        if self.video_recorder and self.video_recorder.is_opened():
-            self.t_video = threading.Thread(target=self._video_loop, daemon=True)
-            self.t_video.start()
 
     def stop(self):
         self.stop_flag.set()
@@ -1026,6 +1101,7 @@ class ManualSession(LiveSessionBase):
         except Exception:
             log_exception("ManualSession.join: failed while joining sampling thread")
         self._teardown_hardware()
+        self._release_hires()
         self._emit("status", "Manual: disconnected.")
 
     def get_plot_data(self):
@@ -1080,6 +1156,7 @@ class PumpTestRunner(LiveSessionBase):
         self.meter = None
         self._ser_lock = threading.Lock()   # the power meter's trip handler also writes to the Arduino
         self._force_zero = False            # after a power trip every frequency command becomes 0 Hz
+        self._last_cmd: Optional[Tuple[float, float]] = None   # (t_cmd_s, t_cmd_done_s) of the last frequency command
 
     def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
@@ -1118,7 +1195,7 @@ class PumpTestRunner(LiveSessionBase):
 
     def get_progress(self) -> Dict[str, Any]:
         """Snapshot for the UI timer (thread-safe)."""
-        now = time.monotonic()
+        now = CLOCK()
         with self.lock:
             nominal = self.nominal_done
             if self._nominal_step is not None:
@@ -1159,13 +1236,13 @@ class PumpTestRunner(LiveSessionBase):
         if opens > now:
             self._emit("status", f"Voltage change #{index} ({mv / 1000:.3f} V) waits for its time window; "
                                  f"asking at {fmt_clock(opens)}.")
-            self._wait_until(time.monotonic() + (opens - now).total_seconds())
+            self._wait_until(CLOCK() + (opens - now).total_seconds())
             if self.stop_flag.is_set():
                 return
 
         self._voltage_confirmed.clear()
         asked_wall = datetime.now()
-        asked_mono = time.monotonic()
+        asked_mono = CLOCK()
         with self.lock:
             self._voltage_value_mv = None
             self.voltage_request = {
@@ -1186,14 +1263,14 @@ class PumpTestRunner(LiveSessionBase):
         if self.stop_flag.is_set() or confirmed is None:
             return
 
-        wait_s = time.monotonic() - asked_mono
+        wait_s = CLOCK() - asked_mono
         with self.lock:
             self.v_set_mv = confirmed
             self.changes_done = index
         if self.meter:
             self.meter.set_voltage(confirmed)
         self.logger.log_voltage_change({
-            "index": index, "t_s": f"{time.monotonic() - self.t0:.3f}", "requested_mv": mv,
+            "index": index, "t_s": f"{CLOCK() - self.t0:.3f}", "requested_mv": mv,
             "confirmed_mv": confirmed, "asked_at": req["asked_at"],
             "confirmed_at": datetime.now().isoformat(timespec="seconds"),
             "wait_s": f"{wait_s:.1f}", "pump_while_waiting": "hold" if hold else "zero",
@@ -1202,7 +1279,7 @@ class PumpTestRunner(LiveSessionBase):
         self._emit("status", f"Voltage change #{index} confirmed: {confirmed / 1000:.3f} V after "
                              f"{fmt_duration(wait_s)}" + (f"; settling {settle_s:g} s" if settle_s > 0 else ""))
         if settle_s > 0:
-            t_start = time.monotonic()
+            t_start = CLOCK()
             self._nominal_begin(t_start, settle_s)
             self._wait_until(t_start + settle_s)
             if not self.stop_flag.is_set():
@@ -1262,9 +1339,12 @@ class PumpTestRunner(LiveSessionBase):
         hz = 0 if self._force_zero else int(hz)
         with self.lock:
             self.freq_set = hz
+        t_cmd = CLOCK()
         if self.ser:
             with self._ser_lock:
                 serial_send_freq(self.ser, hz, self.protocol)
+        if self.t0 is not None:
+            self._last_cmd = (t_cmd - self.t0, CLOCK() - self.t0)
 
     def _set_duty(self, duty: float):
         duty = clamp(float(duty), 0.0, 1.0)
@@ -1280,7 +1360,7 @@ class PumpTestRunner(LiveSessionBase):
         try:
             while not self.stop_flag.is_set():
                 ok, val = self.sensor.read()
-                t_s = time.monotonic() - self.t0
+                t_s = CLOCK() - self.t0
                 if ok and val is not None:
                     with self.lock:
                         f = self.freq_set
@@ -1304,23 +1384,6 @@ class PumpTestRunner(LiveSessionBase):
             self._emit("error", "Sampling stopped due to an error (possibly low memory). "
                                 "Data collected so far has been saved to disk.")
 
-    def _video_loop(self):
-        """Background thread for capturing video frames with overlay."""
-        while not self.stop_flag.is_set():
-            if self.video_recorder and self.video_recorder.is_recording():
-                frame = self.video_recorder.read_frame()
-                if frame is not None:
-                    t_s = time.monotonic() - self.t0
-                    with self.lock:
-                        f = self.freq_set
-                        flow_val = self.buf_flow[-1] if self.buf_flow else 0.0
-                    
-                    # Add overlay and record
-                    overlay_frame = self.video_recorder.add_overlay(frame, t_s, f, flow_val)
-                    self.video_recorder.record_frame(overlay_frame)
-            
-            time.sleep(1.0 / 30.0)  # ~30 fps for video
-
     def _exec_block(self, test, log_event, status_prefix: str = ""):
         """Execute one test block. Supports 'constant', 'sweep', 'voltage' (manual
         supply change, see _exec_voltage) and 'group' (a list of child blocks
@@ -1343,7 +1406,7 @@ class PumpTestRunner(LiveSessionBase):
             while not self.stop_flag.is_set() and (infinite or cycle < repeat):
                 cycle += 1
                 # Throttle status updates: short cycles (ms-scale) would flood the UI
-                now = time.monotonic()
+                now = CLOCK()
                 if now - last_status_t >= 0.5:
                     total = "inf" if infinite else str(repeat)
                     self._emit("status", f"{status_prefix}group cycle {cycle}/{total}")
@@ -1401,28 +1464,32 @@ class PumpTestRunner(LiveSessionBase):
         """Start time for the next step. Back-to-back steps start at the previous
         step's deadline instead of 'now', so sleep overshoot (~0.5 ms per step on
         Windows) doesn't accumulate over a long ms-scale group loop."""
-        now = time.monotonic()
+        now = CLOCK()
         prev = self._step_deadline
         if prev is not None and 0.0 <= now - prev < 0.05:
             return prev
         return now
 
     def _wait_until(self, t_end: float):
-        """Sleep until the monotonic deadline t_end, or until Stop."""
+        """Wait until the CLOCK deadline t_end (within ~0.1 ms), or until Stop."""
         while not self.stop_flag.is_set():
-            remaining = t_end - time.monotonic()
+            remaining = t_end - CLOCK()
             if remaining <= 0:
                 return
-            # Cap each sleep so Stop stays responsive, but never sleep past the
-            # deadline: ms-scale group steps would otherwise stretch to 20 ms.
-            time.sleep(min(0.02, remaining))
+            if remaining > 0.003:
+                # Cap each sleep so Stop stays responsive; wake ~2 ms early because
+                # a sleep can overshoot by ~1.5 ms even with the 1 ms timer.
+                time.sleep(min(0.02, remaining - 0.002))
+            else:
+                time.sleep(0)       # last ~3 ms: spin, yielding the GIL
 
     def _run_tests(self):
         tests = self.cfg.get("tests", [])
         break_between = float(self.cfg.get("break_seconds_between_tests", 0.0))
 
         def log_event():
-            self.logger.log_event(time.monotonic() - self.t0, self.freq_set, self.duty_set, self.v_set_mv)
+            self.logger.log_event(CLOCK() - self.t0, self.freq_set, self.duty_set, self.v_set_mv,
+                                  self._last_cmd)
 
         try:
             for i, test in enumerate(tests, 1):
@@ -1440,10 +1507,10 @@ class PumpTestRunner(LiveSessionBase):
 
                 if i < len(tests) and break_between > 0:
                     self._emit("status", f"Break {break_between:.1f}s ...")
-                    t_break = time.monotonic()
+                    t_break = CLOCK()
                     self._nominal_begin(t_break, break_between)
                     t_end = t_break + break_between
-                    while time.monotonic() < t_end and not self.stop_flag.is_set():
+                    while CLOCK() < t_end and not self.stop_flag.is_set():
                         time.sleep(0.05)
                     if not self.stop_flag.is_set():
                         self._nominal_end(break_between)
@@ -1460,25 +1527,29 @@ class PumpTestRunner(LiveSessionBase):
                                 "Data collected so far has been saved to disk.")
         finally:
             with self.lock:
-                self.t_end = time.monotonic()
+                self.t_end = CLOCK()
                 self.voltage_request = None
             self.stop_flag.set()
 
-    def start(self):
+    def start(self, before_run: Optional[Callable[[], Any]] = None):
+        """Open hardware, set t0, start sampling, call before_run (e.g. start the
+        video recording on the same t0), then start the test sequence."""
         self._setup_hardware()
-        self.t0 = time.monotonic()
+        hires_timer(True)
+        self._hires = True
+        self.t0 = CLOCK()
         self.stop_flag.clear()
         if self.meter:
             self.meter.start(self.t0)
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_run = threading.Thread(target=self._run_tests, daemon=True)
         self.t_sample.start()
+        if before_run:
+            try:
+                before_run()
+            except Exception:
+                log_exception("PumpTestRunner.start: before_run hook failed (run continues)")
         self.t_run.start()
-        
-        # Start video recording if enabled and recorder is available
-        if self.video_recorder and self.video_recorder.is_opened():
-            self.t_video = threading.Thread(target=self._video_loop, daemon=True)
-            self.t_video.start()
 
     def stop(self):
         self.stop_flag.set()
@@ -1491,6 +1562,7 @@ class PumpTestRunner(LiveSessionBase):
             except Exception:
                 log_exception("PumpTestRunner.join: failed while joining worker thread")
         self._teardown_hardware()
+        self._release_hires()
 
     def get_plot_data(self):
         with self.lock:
@@ -1498,219 +1570,402 @@ class PumpTestRunner(LiveSessionBase):
 
 
 # ---------------- video recording ----------------
+VIDEO_DEFAULTS: Dict[str, Any] = {
+    "codec": "mjpg",        # "mjpg" (AVI, quality settable), "ffv1" (lossless AVI, large), "mp4v" (old default)
+    "quality": 95,          # MJPG quality 0-100
+    "overlay": True,        # burn time/frequency/flow into the frames (covers the top-left corner)
+    "chunk_s": 60.0,        # a new video file every chunk_s seconds (crash safety)
+    "crop": None,           # [x, y, w, h]: write only this strip (e.g. the tube and the scale)
+    "queue_mb": 256,        # frames waiting for the writer; beyond this frames are dropped and counted
+}
+VIDEO_CODECS = {"mjpg": ("MJPG", ".avi"), "ffv1": ("FFV1", ".avi"), "mp4v": ("mp4v", ".mp4")}
+FRAME_COLS = ["frame_index", "t_s", "t_perf_s", "cam_pos_msec", "dropped_before", "video_file", "video_frame"]
+
+
+class DummyCamera:
+    """Synthetic camera for tests without hardware: a dark meniscus band that
+    oscillates once per stroke and advances a little with every stroke."""
+    PX_PER_STROKE, OSC_PX = 1.5, 3.0
+
+    def __init__(self, width: int = 640, height: int = 240, fps: float = 15.0,
+                 hz_cb: Optional[Callable[[], float]] = None):
+        self.w, self.h, self.fps = int(width), int(height), float(fps)
+        self.hz_cb = hz_cb or (lambda: 0.0)
+        self._t_next = CLOCK()
+        self._t_last = None
+        self._phase = 0.0          # strokes done (fractional)
+        self._open = True
+
+    def isOpened(self):
+        return self._open
+
+    def read(self):
+        if not self._open:
+            return False, None
+        delay = self._t_next - CLOCK()
+        if delay > 0:
+            time.sleep(delay)
+        self._t_next = max(self._t_next + 1.0 / self.fps, CLOCK() - 1.0 / self.fps)
+        now = CLOCK()
+        if self._t_last is not None:
+            self._phase += max(0.0, float(self.hz_cb() or 0.0)) * (now - self._t_last)
+        self._t_last = now
+        x = int(self.w * 0.2 + self.PX_PER_STROKE * self._phase
+                + self.OSC_PX * math.sin(2 * math.pi * self._phase)) % self.w
+        frame = np.full((self.h, self.w, 3), 200, np.uint8)
+        frame[:, max(0, x - 3):x + 3] = 40
+        return True, frame
+
+    def get(self, prop):
+        if CV2_AVAILABLE:
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return float(self.w)
+            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return float(self.h)
+            if prop == cv2.CAP_PROP_FPS:
+                return self.fps
+        return 0.0
+
+    def set(self, prop, value):
+        return False
+
+    def release(self):
+        self._open = False
+
+
 class VideoRecorder:
-    """USB camera video recorder with overlay support and shared frame buffer."""
-    
+    """USB camera with a capture thread and a separate writer thread.
+
+    The capture thread reads frames as fast as the camera delivers them and
+    stamps each with CLOCK() right after read() returns. It feeds the preview
+    (latest frame) and, while recording, a bounded queue to the writer thread,
+    which encodes the video (in chunks) and writes one frames.csv row per
+    written frame. Encoding can therefore never slow down capture; if the
+    writer falls behind by more than queue_mb, frames are dropped and counted
+    (dropped_before). The video header carries the measured frame rate.
+    """
+
     def __init__(self):
         self.cap = None
-        self.writer = None
-        self.recording = False
-        self.output_path = None
-        self.base_output_path = None
+        self.camera = None
         self.frame_width = 1920
         self.frame_height = 1080
-        self.fps = 30.0
-        self.chunk_duration_s = 60.0
-        self.chunk_index = 0
-        self.chunk_start_t = 0.0
-        self.chunk_paths: List[str] = []
-        
-        self._writer_lock = threading.Lock()
         self._cap_lock = threading.Lock()
-        self._last_frame = None
-        self._last_frame_lock = threading.Lock()
+        self._cap_thread: Optional[threading.Thread] = None
+        self._cap_stop = threading.Event()
+        self._latest = None                          # (index, t, frame)
+        self._latest_lock = threading.Lock()
+        self._idx = 0
+        self._times: deque = deque(maxlen=150)      # recent capture times, for the frame rate
+        self._read_fail = 0
+        # recording
+        self.recording = False
+        self._q: Optional["queue.Queue"] = None
+        self._writer_thread: Optional[threading.Thread] = None
+        self._drop_pending = 0
+        self.dropped_total = 0
+        self.frames_written = 0
+        self.rec_fps = None
+        self.video_paths: List[str] = []
+        self.info_cb: Optional[Callable[[], Tuple[float, int, float]]] = None
 
-    def _release_writer_locked(self):
-        if self.writer:
-            self.writer.release()
-            self.writer = None
-
-    def _build_chunk_path(self, chunk_index: int) -> Optional[str]:
-        if not self.base_output_path:
-            return None
-        stem, ext = os.path.splitext(self.base_output_path)
-        if not ext:
-            ext = ".mp4"
-        return f"{stem}_part{chunk_index:04d}{ext}"
-
-    def _open_next_chunk_locked(self) -> bool:
-        self.chunk_index += 1
-        chunk_path = self._build_chunk_path(self.chunk_index)
-        if not chunk_path:
-            return False
-
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(
-            chunk_path,
-            fourcc,
-            self.fps,
-            (self.frame_width, self.frame_height),
-        )
-        if not writer.isOpened():
-            writer.release()
-            log_error(f"VideoRecorder: failed to open video chunk {chunk_path}")
-            return False
-
-        self._release_writer_locked()
-        self.writer = writer
-        self.output_path = chunk_path
-        self.chunk_paths.append(chunk_path)
-        self.chunk_start_t = time.monotonic()
-        return True
-        
-    def open(self, camera_index: int = 0) -> bool:
-        """Open a USB camera."""
-        if not CV2_AVAILABLE:
-            log_warning("VideoRecorder.open: OpenCV not available; cannot open camera.")
-            return False
-        with self._cap_lock:
-            try:
-                self.cap = cv2.VideoCapture(camera_index)
-                if not self.cap.isOpened():
-                    log_error(f"VideoRecorder.open: failed to open camera index {camera_index}")
-                    self.cap = None
+    # ---- camera ----
+    def open(self, camera_index: Any = 0, hz_cb: Optional[Callable[[], float]] = None) -> bool:
+        """Open a camera ("dummy" = synthetic test camera) and start capturing."""
+        self.close()
+        try:
+            if str(camera_index).lower() == "dummy":
+                cap = DummyCamera(hz_cb=hz_cb)
+                self.camera = "dummy"
+            else:
+                if not CV2_AVAILABLE:
+                    log_warning("VideoRecorder.open: OpenCV not available; cannot open camera.")
                     return False
-                # Get actual frame dimensions; fall back to 1080p if unavailable
-                width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                if width > 0 and height > 0:
-                    self.frame_width = width
-                    self.frame_height = height
-                else:
-                    self.frame_width = 1920
-                    self.frame_height = 1080
-                    log_warning(
-                        f"VideoRecorder.open: camera reported invalid resolution {width}x{height}; "
-                        f"using fallback {self.frame_width}x{self.frame_height}"
-                    )
-                return True
+                cap = cv2.VideoCapture(int(camera_index))
+                self.camera = int(camera_index)
+                if not cap.isOpened():
+                    log_error(f"VideoRecorder.open: failed to open camera index {camera_index}")
+                    cap.release()
+                    return False
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if CV2_AVAILABLE else 0
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if CV2_AVAILABLE else 0
+            if width > 0 and height > 0:
+                self.frame_width, self.frame_height = width, height
+            with self._cap_lock:
+                self.cap = cap
+            self._idx = 0
+            self._times.clear()
+            self._cap_stop.clear()
+            self._cap_thread = threading.Thread(target=self._capture_loop, name="camera-capture", daemon=True)
+            self._cap_thread.start()
+            return True
+        except Exception:
+            log_exception(f"VideoRecorder.open: exception opening camera {camera_index}")
+            with self._cap_lock:
+                self.cap = None
+            return False
+
+    def _capture_loop(self):
+        while not self._cap_stop.is_set():
+            with self._cap_lock:
+                cap = self.cap
+            if cap is None:
+                return
+            try:
+                ok, frame = cap.read()
+                t = CLOCK()
             except Exception:
-                log_exception(f"VideoRecorder.open: exception opening camera index {camera_index}")
-                self.cap = None
-                return False
-    
+                log_exception_limited("camera_read", "Camera read failed")
+                ok, frame = False, None
+            if not ok or frame is None:
+                self._read_fail += 1
+                if self._read_fail in (50, 500):
+                    log_warning(f"Camera: {self._read_fail} failed reads in a row")
+                time.sleep(0.01)
+                continue
+            self._read_fail = 0
+            self._idx += 1
+            idx = self._idx
+            self.frame_height, self.frame_width = frame.shape[:2]
+            self._times.append(t)
+            with self._latest_lock:
+                self._latest = (idx, t, frame)
+            if self.recording and self._q is not None:
+                try:
+                    pos = float(cap.get(cv2.CAP_PROP_POS_MSEC)) if CV2_AVAILABLE else 0.0
+                except Exception:
+                    pos = 0.0
+                try:
+                    self._q.put_nowait((idx, t, pos, frame, self._drop_pending))
+                    self._drop_pending = 0
+                except queue.Full:
+                    self._drop_pending += 1
+                    self.dropped_total += 1
+
+    def measured_fps(self) -> Optional[float]:
+        """Capture rate over the recent frames (None until ~1 s of frames)."""
+        ts = list(self._times)
+        if len(ts) < 3 or ts[-1] - ts[0] < 1.0:
+            return None
+        return (len(ts) - 1) / (ts[-1] - ts[0])
+
     def close(self):
-        """Close the camera and writer."""
-        with self._writer_lock:
-            self._release_writer_locked()
-            self.recording = False
-            self.output_path = None
-            self.base_output_path = None
-            self.chunk_paths = []
-            self.chunk_index = 0
-            self.chunk_start_t = 0.0
-        
+        """Stop recording and capturing, release the camera."""
+        self.stop_recording()
+        self._cap_stop.set()
+        if self._cap_thread and self._cap_thread is not threading.current_thread():
+            self._cap_thread.join(timeout=2.0)
+        self._cap_thread = None
         with self._cap_lock:
-            if self.cap:
-                self.cap.release()
-                self.cap = None
-        
-        with self._last_frame_lock:
-            self._last_frame = None
-    
-    def start_recording(self, output_path: str, chunk_duration_s: float = 60.0) -> bool:
-        """Start recording video to chunked files."""
+            cap, self.cap = self.cap, None
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                log_exception("VideoRecorder.close: failed to release camera")
+        with self._latest_lock:
+            self._latest = None
+
+    def is_opened(self) -> bool:
+        with self._cap_lock:
+            return self.cap is not None and self.cap.isOpened()
+
+    def read_frame(self, fresh: bool = False) -> Optional["np.ndarray"]:
+        """Latest captured frame (a copy). The camera itself is only read by the
+        capture thread; `fresh` is kept for compatibility."""
+        with self._latest_lock:
+            return self._latest[2].copy() if self._latest is not None else None
+
+    # ---- recording ----
+    def start_recording(self, run_dir: str, t0: float, video_cfg: Optional[Dict[str, Any]] = None,
+                        info_cb: Optional[Callable[[], Tuple[float, int, float]]] = None) -> bool:
+        """Record into run_dir (video_partNNNN.<ext> + frames.csv), times relative to t0 (CLOCK)."""
         if not self.is_opened():
             log_error("VideoRecorder.start_recording: camera not opened")
             return False
-        try:
-            with self._writer_lock:
-                self._release_writer_locked()
-                self.recording = False
-                self.base_output_path = output_path
-                self.output_path = None
-                self.chunk_duration_s = max(float(chunk_duration_s), 1.0)
-                self.chunk_paths = []
-                self.chunk_index = 0
-                self.chunk_start_t = 0.0
-                if not self._open_next_chunk_locked():
-                    self.base_output_path = None
-                    return False
-                self.recording = True
-                return True
-        except Exception:
-            log_exception(f"VideoRecorder.start_recording: exception creating writer for {output_path}")
-            with self._writer_lock:
-                self._release_writer_locked()
-                self.base_output_path = None
-                self.output_path = None
-                self.recording = False
+        if not CV2_AVAILABLE:
+            log_error("VideoRecorder.start_recording: OpenCV not available")
             return False
-    
-    def stop_recording(self):
-        """Stop recording."""
-        with self._writer_lock:
-            self.recording = False
-            self._release_writer_locked()
-            self.output_path = None
-            self.base_output_path = None
-            self.chunk_paths = []
-            self.chunk_index = 0
-            self.chunk_start_t = 0.0
-    
-    def is_recording(self) -> bool:
-        """Check if currently recording."""
-        with self._writer_lock:
-            return self.recording and self.writer is not None
-    
-    def is_opened(self) -> bool:
-        """Check if camera is open."""
-        with self._cap_lock:
-            return self.cap is not None and self.cap.isOpened()
-    
-    def read_frame(self, fresh: bool = True) -> Optional["np.ndarray"]:
-        """
-        Read a frame from the camera.
-        If fresh is True, grabs a new frame from hardware and caches it.
-        If fresh is False, returns the last cached frame.
-        """
-        if fresh:
-            with self._cap_lock:
-                if self.cap:
-                    ret, frame = self.cap.read()
-                    if ret:
-                        with self._last_frame_lock:
-                            self._last_frame = frame
-                        return frame
-            return None
-        else:
-            with self._last_frame_lock:
-                return self._last_frame.copy() if self._last_frame is not None else None
-    
-    def add_overlay(self, frame, t_s: float, freq: float, flow: float) -> "np.ndarray":
-        """Add overlay text to frame."""
+        self.stop_recording()
+        cfg = {**VIDEO_DEFAULTS, **(video_cfg or {})}
+        codec = str(cfg.get("codec") or "mjpg").lower()
+        if codec not in VIDEO_CODECS:
+            log_warning(f"VideoRecorder: unknown codec {codec!r}; using mjpg")
+            codec = "mjpg"
+        # The header needs the real frame rate: wait (up to 3 s) for a measurement
+        t_wait = CLOCK() + 3.0
+        while self.measured_fps() is None and CLOCK() < t_wait:
+            time.sleep(0.05)
+        fps = self.measured_fps()
+        if fps is None:
+            fps = float(self.cap.get(cv2.CAP_PROP_FPS) or 0) or 15.0
+            log_warning(f"VideoRecorder: frame rate not measured yet; header uses {fps:.2f} fps")
+        with self._latest_lock:
+            if self._latest is None:
+                log_error("VideoRecorder.start_recording: no frames from the camera")
+                return False
+            h, w = self._latest[2].shape[:2]
+        crop = cfg.get("crop")
+        if crop:
+            try:
+                x, y, cw, ch = (int(v) for v in crop)
+                if not (0 <= x < w and 0 <= y < h and cw > 0 and ch > 0):
+                    raise ValueError
+                cw, ch = min(cw, w - x), min(ch, h - y)
+                crop = (x, y, cw, ch)
+            except Exception:
+                log_warning(f"VideoRecorder: invalid crop {crop!r} for {w}x{h}; recording the full frame")
+                crop = None
+        size = (crop[2], crop[3]) if crop else (w, h)
+        frame_bytes = size[0] * size[1] * 3 + w * h * 3
+        maxsize = max(8, int(float(cfg.get("queue_mb") or 256) * 2**20 / max(1, frame_bytes)))
         try:
-            # Add semi-transparent overlay rectangle
+            frames_f = open(os.path.join(run_dir, "frames.csv"), "x", newline="", encoding="utf-8")
+        except Exception:
+            log_exception(f"VideoRecorder: cannot create frames.csv in {run_dir}")
+            return False
+        self.rec_fps = fps
+        self.frames_written = 0
+        self.dropped_total = 0
+        self._drop_pending = 0
+        self.video_paths = []
+        self.info_cb = info_cb
+        self._q = queue.Queue(maxsize=maxsize)
+        params = {"run_dir": run_dir, "t0": t0, "fps": fps, "codec": codec, "size": size, "crop": crop,
+                  "quality": int(cfg.get("quality") or 95), "overlay": bool(cfg.get("overlay")),
+                  "chunk_s": max(1.0, float(cfg.get("chunk_s") or 60.0)), "frames_f": frames_f,
+                  "queue_max": maxsize}
+        self._writer_thread = threading.Thread(target=self._writer_loop, args=(self._q, params),
+                                               name="video-writer", daemon=True)
+        self._writer_thread.start()
+        self.recording = True
+        return True
+
+    def _open_chunk(self, p, n: int):
+        fourcc, ext = VIDEO_CODECS[p["codec"]]
+        path = os.path.join(p["run_dir"], f"video_part{n:04d}{ext}")
+        args = (path, cv2.VideoWriter_fourcc(*fourcc), p["fps"], p["size"])
+        writer = None
+        if p["codec"] == "mjpg":
+            # OpenCV's own MJPEG writer honours the quality setting
+            writer = cv2.VideoWriter(path, cv2.CAP_OPENCV_MJPEG, *args[1:])
+            if not writer.isOpened():
+                writer.release()
+                writer = None
+        if writer is None:
+            writer = cv2.VideoWriter(*args)
+        if not writer.isOpened():
+            writer.release()
+            raise RuntimeError(f"cannot open video writer {path} ({p['codec']})")
+        if p["codec"] == "mjpg":
+            writer.set(cv2.VIDEOWRITER_PROP_QUALITY, p["quality"])
+        self.video_paths.append(path)
+        return writer, os.path.basename(path)
+
+    def _writer_loop(self, q: "queue.Queue", p: Dict[str, Any]):
+        frames_f = p["frames_f"]
+        w = csv.writer(frames_f, lineterminator="\n")
+        w.writerow(FRAME_COLS)
+        writer, name, chunk_n, chunk_frame, chunk_t0 = None, "", 0, 0, None
+        gaps, t_prev, t_first, t_last = [], None, None, None
+        last_flush = CLOCK()
+        try:
+            while True:
+                item = q.get()
+                if item is None:
+                    break
+                idx, t, pos, frame, dropped = item
+                if writer is None or (t - chunk_t0) >= p["chunk_s"]:
+                    if writer is not None:
+                        writer.release()
+                    chunk_n += 1
+                    writer, name = self._open_chunk(p, chunk_n)
+                    chunk_frame, chunk_t0 = 0, t
+                img = frame
+                if p["crop"]:
+                    x, y, cw, ch = p["crop"]
+                    img = img[y:y + ch, x:x + cw]
+                if p["overlay"]:
+                    img = img.copy()           # never draw on the frame the preview shares
+                    ts, fq, flow = self.info_cb() if self.info_cb else (t - p["t0"], 0, 0.0)
+                    self.add_overlay(img, t - p["t0"], fq, flow)
+                writer.write(np.ascontiguousarray(img))
+                w.writerow([idx, f"{t - p['t0']:.6f}", f"{t:.6f}", f"{pos:.3f}", dropped, name, chunk_frame])
+                chunk_frame += 1
+                self.frames_written += 1
+                if t_prev is not None:
+                    gaps.append(t - t_prev)
+                t_prev = t
+                t_first = t if t_first is None else t_first
+                t_last = t
+                if CLOCK() - last_flush >= 1.0:
+                    frames_f.flush()
+                    last_flush = CLOCK()
+        except Exception:
+            log_exception("VideoRecorder writer failed; recording stopped")
+            self.recording = False
+        finally:
+            if writer is not None:
+                writer.release()
+            try:
+                frames_f.flush()
+                os.fsync(frames_f.fileno())
+                frames_f.close()
+            except Exception:
+                pass
+            try:
+                n = self.frames_written
+                g = np.array(gaps) if gaps else np.zeros(0)
+                fps = (n - 1) / (t_last - t_first) if n > 1 and t_last > t_first else None
+                summary = {
+                    "frames_written": n, "frames_dropped": self.dropped_total,
+                    "fps_header": p["fps"], "fps_measured": fps,
+                    "interval_median_s": float(np.median(g)) if g.size else None,
+                    "interval_max_s": float(g.max()) if g.size else None,
+                    "gaps_over_1p5_intervals": int((g > 1.5 * np.median(g)).sum()) if g.size else 0,
+                    "codec": p["codec"], "quality": p["quality"], "size": list(p["size"]),
+                    "crop": list(p["crop"]) if p["crop"] else None, "overlay": p["overlay"],
+                    "chunk_s": p["chunk_s"], "queue_max_frames": p["queue_max"],
+                    "files": [os.path.basename(x) for x in self.video_paths],
+                    "clock": "perf_counter; t_s = t_perf_s - run t0",
+                }
+                with open(os.path.join(p["run_dir"], "video_summary.json"), "w", encoding="utf-8") as f:
+                    json.dump(summary, f, indent=2)
+            except Exception:
+                log_exception("VideoRecorder: could not write video_summary.json")
+
+    def stop_recording(self):
+        """Stop recording; the writer finishes the queued frames first."""
+        if not self.recording and self._writer_thread is None:
+            return
+        self.recording = False
+        q, th = self._q, self._writer_thread
+        if q is not None:
+            q.put(None)
+        if th is not None and th is not threading.current_thread():
+            th.join(timeout=30.0)
+        self._q = None
+        self._writer_thread = None
+
+    def is_recording(self) -> bool:
+        return self.recording
+
+    def add_overlay(self, frame, t_s: float, freq: float, flow: float) -> "np.ndarray":
+        """Burn time/frequency/flow into the top-left corner (in place)."""
+        try:
             overlay = frame.copy()
             cv2.rectangle(overlay, (5, 5), (250, 90), (0, 0, 0), -1)
             cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-            
-            # Add text
-            cv2.putText(frame, f"Time: {t_s:.2f}s", (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.putText(frame, f"Freq: {freq:.0f} Hz", (10, 55), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(frame, f"Flow: {flow:.4f}", (10, 80), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            cv2.putText(frame, f"Time: {t_s:.2f}s", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(frame, f"Freq: {freq:.0f} Hz", (10, 55),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(frame, f"Flow: {flow:.4f}", (10, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
             return frame
         except Exception:
             log_exception_limited("video_overlay_error", "VideoRecorder.add_overlay: failed to add overlay")
             return frame
-    
-    def record_frame(self, frame) -> bool:
-        """Record a frame if recording is active."""
-        with self._writer_lock:
-            if not self.writer or not self.recording:
-                return False
-
-            if self.chunk_start_t and (time.monotonic() - self.chunk_start_t) >= self.chunk_duration_s:
-                if not self._open_next_chunk_locked():
-                    self.recording = False
-                    self._release_writer_locked()
-                    return False
-
-            self.writer.write(frame)
-            return True
 
 
 # ---------------- UI ----------------
@@ -1760,6 +2015,7 @@ class DashboardApp:
 
         self.var_test_name = tk.StringVar(value="Pump Test")
         self.var_operator  = tk.StringVar(value="")
+        self.var_pump_id   = tk.StringVar(value="")
         self.var_out_dir   = tk.StringVar(value=os.path.abspath("./pump_runs"))
         self.var_log_manual = tk.BooleanVar(value=False)
         self.txt_desc      = tk.Text(meta, height=4, width=55)
@@ -1771,7 +2027,11 @@ class DashboardApp:
         ttk.Entry(meta, textvariable=self.var_test_name, width=40).grid(row=0, column=1, sticky="w", padx=4, pady=2)
 
         ttk.Label(meta, text="Operator:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(meta, textvariable=self.var_operator, width=40).grid(row=1, column=1, sticky="w", padx=4, pady=2)
+        op_row = ttk.Frame(meta)
+        op_row.grid(row=1, column=1, columnspan=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(op_row, textvariable=self.var_operator, width=18).pack(side=tk.LEFT)
+        ttk.Label(op_row, text="Pump ID:").pack(side=tk.LEFT, padx=(10, 2))
+        ttk.Entry(op_row, textvariable=self.var_pump_id, width=16).pack(side=tk.LEFT)
 
         ttk.Label(meta, text="Output folder:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(meta, textvariable=self.var_out_dir, width=40).grid(row=2, column=1, sticky="w", padx=4, pady=2)
@@ -2186,7 +2446,7 @@ class DashboardApp:
                 self.voltage_banner.pack_forget()
                 self._vprompt_index = None
             return
-        waited = time.monotonic() - req["asked_mono"]
+        waited = CLOCK() - req["asked_mono"]
         pump = (f"The pump keeps running at {req['freq_hz']} Hz" if req["hold"]
                 else "The pump is at 0 Hz")
         self.var_vprompt_info.set(
@@ -2322,17 +2582,58 @@ class DashboardApp:
         self.btn_video_disconnect = ttk.Button(row1, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
         self.btn_video_disconnect.pack(side=tk.LEFT, padx=4)
         
+        row_opts = ttk.Frame(video_frame)
+        row_opts.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
+        self.var_video_overlay = tk.BooleanVar(value=bool(VIDEO_DEFAULTS["overlay"]))
+        self.var_video_codec = tk.StringVar(value=str(VIDEO_DEFAULTS["codec"]))
+        ttk.Checkbutton(row_opts, text="Overlay (time/freq/flow, top-left)", variable=self.var_video_overlay)\
+            .pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(row_opts, text="Codec:").pack(side=tk.LEFT)
+        ttk.Combobox(row_opts, state="readonly", width=6, values=list(VIDEO_CODECS),
+                     textvariable=self.var_video_codec).pack(side=tk.LEFT, padx=4)
+        ttk.Label(row_opts, text="(index 'dummy' = test camera)").pack(side=tk.LEFT, padx=8)
+
         row2 = ttk.Frame(video_frame)
         row2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
-        
+
         ttk.Label(row2, textvariable=self.var_video_status).pack(side=tk.LEFT)
-        ttk.Label(row2, text="  |  Recording: off").pack(side=tk.LEFT)
-        
+        ttk.Label(row2, text="  |  Recording:").pack(side=tk.LEFT)
+
         # Store video label for updating recording status
         self.var_video_rec_status = tk.StringVar(value="off")
         self.lbl_video_rec = ttk.Label(row2, textvariable=self.var_video_rec_status)
         self.lbl_video_rec.pack(side=tk.LEFT, padx=4)
+        self.root.after(1000, self._tick_video_status)
         return video_frame
+
+    def _tick_video_status(self):
+        """Once a second: camera frame rate, frames written and dropped."""
+        try:
+            vr = self.video_recorder
+            if vr is not None and vr.is_opened():
+                fps = vr.measured_fps()
+                fps_txt = f"{fps:.2f} fps" if fps else "measuring fps"
+                if vr.is_recording():
+                    self.var_video_rec_status.set(f"on · {vr.frames_written} frames · {vr.dropped_total} dropped "
+                                                  f"· camera {fps_txt} (header {vr.rec_fps:.2f})")
+                else:
+                    self.var_video_rec_status.set(f"off · camera {fps_txt}")
+        except Exception:
+            log_exception_limited("video_status", "Video status update failed")
+        self.root.after(1000, self._tick_video_status)
+
+    def _camera_index(self):
+        """Camera index from the panel: an integer, or "dummy" for the test camera."""
+        raw = self.var_video_camera_index.get().strip()
+        return "dummy" if raw.lower() == "dummy" else safe_int(raw, 0)
+
+    def _drive_hz(self) -> float:
+        """Current drive frequency (moves the dummy camera's meniscus)."""
+        s = self.active_stream
+        try:
+            return float(s.overlay_info()[1]) if s is not None else 0.0
+        except Exception:
+            return 0.0
 
     def _init_video(self):
         """Initialize video recorder."""
@@ -2345,8 +2646,8 @@ class DashboardApp:
         self.video_recorder = VideoRecorder()
         
         # Try to auto-connect to camera 0
-        camera_idx = safe_int(self.var_video_camera_index.get(), 0)
-        if self.video_recorder.open(camera_idx):
+        camera_idx = self._camera_index()
+        if self.video_recorder.open(camera_idx, hz_cb=self._drive_hz):
             self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
             self.btn_video_connect.config(state=tk.DISABLED)
             self.btn_video_disconnect.config(state=tk.NORMAL)
@@ -2368,8 +2669,8 @@ class DashboardApp:
         if self.video_recorder is None:
             self.video_recorder = VideoRecorder()
         
-        camera_idx = safe_int(self.var_video_camera_index.get(), 0)
-        if self.video_recorder.open(camera_idx):
+        camera_idx = self._camera_index()
+        if self.video_recorder.open(camera_idx, hz_cb=self._drive_hz):
             self.var_video_status.set(f"Camera: Connected (index {camera_idx})")
             self.btn_video_connect.config(state=tk.DISABLED)
             self.btn_video_disconnect.config(state=tk.NORMAL)
@@ -2401,32 +2702,41 @@ class DashboardApp:
         # Reset preview label
         self.video_preview_label.configure(image="", text="Camera not connected\nConnect camera to see preview")
 
-    def _start_video_recording(self):
-        """Start video recording for current run."""
+    def _video_cfg(self) -> Dict[str, Any]:
+        """Video settings: the config's "video" section with the panel's overlay/codec."""
+        v = {**VIDEO_DEFAULTS, **(self.cfg.get("video") or {})}
+        if hasattr(self, "var_video_overlay"):
+            v["overlay"] = bool(self.var_video_overlay.get())
+            v["codec"] = self.var_video_codec.get().strip() or v["codec"]
+        return v
+
+    def _start_video_recording(self, stream: Optional[LiveSessionBase] = None):
+        """Start recording on the session's clock (t0), into the run folder."""
         if not self.var_video_enabled.get():
             return False
-        
+
         if not self.video_recorder or not self.video_recorder.is_opened():
             # Camera not connected, disable video for this run
             self.var_video_enabled.set(False)
             log_warning("Video recording: camera not connected; disabling video for this run.")
             return False
-        
+
         if self.video_recorder.is_recording():
             return True
-        
+
         if not self.run_dir:
             out_dir = ensure_dir(self.var_out_dir.get().strip())
             run_name = sanitize_run_name(self.var_test_name.get(), "video")
             self.run_dir = create_unique_run_dir(out_dir, run_name, "_VIDEO")
 
-        # Start recording in chunked files
-        video_path = os.path.join(self.run_dir, "video_recording.mp4")
-        if self.video_recorder.start_recording(video_path, chunk_duration_s=60.0):
+        t0 = getattr(stream, "t0", None)
+        info_cb = stream.overlay_info if stream is not None else None
+        if self.video_recorder.start_recording(self.run_dir, t0 if t0 is not None else CLOCK(),
+                                               self._video_cfg(), info_cb):
             self.var_video_rec_status.set("recording")
             return True
         else:
-            log_error(f"Video recording: failed to start recording at {video_path}")
+            log_error(f"Video recording: failed to start recording in {self.run_dir}")
             messagebox.showerror("Video", "Failed to start video recording")
             return False
 
@@ -2513,10 +2823,8 @@ class DashboardApp:
             return
         
         if self.video_recorder and self.video_recorder.is_opened():
-            # Use cached frame from the recorder to avoid thread competition
-            # If recording is OFF, we need to grab a fresh frame here
-            is_recording = self.video_recorder.is_recording()
-            frame = self.video_recorder.read_frame(fresh=not is_recording)
+            # Latest frame from the capture thread (only that thread reads the camera)
+            frame = self.video_recorder.read_frame()
             
             if frame is not None:
                 # Convert frame to RGB for display
@@ -2980,6 +3288,13 @@ class DashboardApp:
             self.var_flow_server.set(str(flow_cfg.get("server", self.var_flow_server.get())))
             self.var_sample_rate.set(str(flow_cfg.get("sample_rate_hz", self.var_sample_rate.get())))
 
+        video = self.cfg.get("video")
+        if isinstance(video, dict) and hasattr(self, "var_video_overlay"):
+            if "overlay" in video:
+                self.var_video_overlay.set(bool(video["overlay"]))
+            if video.get("codec") in VIDEO_CODECS:
+                self.var_video_codec.set(video["codec"])
+
         supply = self.cfg.get("supply")
         if isinstance(supply, dict):
             if supply.get("initial_mv") is not None:
@@ -2999,6 +3314,7 @@ class DashboardApp:
             meta = {}
         self.var_test_name.set(meta.get("name", self._default_test_name))
         self.var_operator.set(meta.get("operator", self._default_operator))
+        self.var_pump_id.set(str(meta.get("pump_id") or ""))
         self.txt_desc.delete("1.0", tk.END)
         self.txt_desc.insert("1.0", meta.get("description", self._default_desc))
 
@@ -3021,9 +3337,11 @@ class DashboardApp:
                 "name": self.var_test_name.get().strip(),
                 "description": self.txt_desc.get("1.0", tk.END).strip(),
                 "operator": self.var_operator.get().strip(),
+                "pump_id": self.var_pump_id.get().strip(),
                 "created": iso_now(),
                 "output_dir": self.var_out_dir.get().strip(),
             },
+            "require_pump_id": bool(self.cfg.get("require_pump_id", False)),
             "serial": {"protocol": self.var_protocol.get().strip()},
             "flow_sensor": {
                 "backend": self.var_sensor_backend.get().strip(),
@@ -3034,6 +3352,7 @@ class DashboardApp:
             # Bench supply (voltage steps, power calculation) and the PPK2 power meter
             "supply": self._supply_cfg(),
             "power": self._power_cfg(),
+            "video": self._video_cfg(),
         }
 
     def save_config_as(self):
@@ -3372,6 +3691,11 @@ class DashboardApp:
             messagebox.showerror("No tests", "No test blocks. Add at least one block in the Config builder.")
             return
 
+        if cfg.get("require_pump_id") and not cfg["meta"].get("pump_id"):
+            messagebox.showerror("Pump ID", "This config requires a pump ID. Type it in the Pump ID field "
+                                            "(Run details) and start again.")
+            return
+
         supply_now = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
         if safe_float(supply_now.get("initial_mv") or 0, 0.0) > safe_float(supply_now.get("max_mv"), 2500.0):
             messagebox.showerror("Supply voltage", f"Supply voltage at start ({supply_now['initial_mv'] / 1000:.3f} V) "
@@ -3418,6 +3742,8 @@ class DashboardApp:
         cfg.setdefault("meta", {})
         cfg["meta"]["output_dir"] = out_dir
         cfg["meta"]["run_dir"] = run_dir
+        cfg["meta"]["clock"] = clock_info()
+        LOG.info(f"Run clock: {cfg['meta']['clock']}")
 
         with open(os.path.join(run_dir, "meta.json"), "x", encoding="utf-8") as f:
             json.dump(cfg.get("meta", {}), f, indent=2)
@@ -3426,8 +3752,14 @@ class DashboardApp:
 
         # Pass video recorder to the runner
         runner = PumpTestRunner(cfg, run_dir, self.ui_events, self.video_recorder)
+        video_on = [False]
+
+        def start_video():
+            # Called between t0 and the first block, so frames.csv covers the whole run
+            video_on[0] = self._start_video_recording(runner)
+
         try:
-            runner.start()
+            runner.start(before_run=start_video)
         except Exception as e:
             log_exception("Start scheduled run: runner.start failed")
             self.run_dir = None
@@ -3440,8 +3772,7 @@ class DashboardApp:
         self.btn_manual_connect.config(state=tk.DISABLED)
         self.btn_manual_disconnect.config(state=tk.DISABLED)
         
-        # Start video recording if enabled
-        if self._start_video_recording():
+        if video_on[0]:
             self.var_status.set(f"Running. Folder: {run_dir} (Video recording on)")
         else:
             self.var_status.set(f"Running. Folder: {run_dir}")
@@ -3463,6 +3794,7 @@ class DashboardApp:
             cfg.setdefault("meta", {})
             cfg["meta"]["output_dir"] = out_dir
             cfg["meta"]["run_dir"] = run_dir
+            cfg["meta"]["clock"] = clock_info()
 
             with open(os.path.join(run_dir, "meta.json"), "x", encoding="utf-8") as f:
                 json.dump(cfg.get("meta", {}), f, indent=2)
@@ -3487,7 +3819,7 @@ class DashboardApp:
         self.var_manual_info.set("Manual connected. Use Output ON + Set freq.")
         
         # Start video recording if enabled
-        if self._start_video_recording():
+        if self._start_video_recording(sess):
             self.var_status.set("Manual connected. (Video recording on)")
         else:
             self.var_status.set("Manual connected.")
@@ -3504,29 +3836,39 @@ class DashboardApp:
         threading.Thread(target=self._join_active_bg, daemon=True).start()
 
     def _join_active_bg(self):
+        """Worker thread: stop the session and the video. No Tk calls here (they
+        fail off the main thread); the UI is reset by _on_session_ended."""
         run_dir = self.run_dir
         captured_data = None
-        
+        stream = self.active_stream
         try:
             # Capture data before stopping the stream
-            if self.active_stream is not None:
-                captured_data = self.active_stream.get_plot_data()
-            self.active_stream.stop()
-            self.active_stream.join(timeout=5.0)
+            if stream is not None:
+                captured_data = stream.get_plot_data()
+                stream.stop()
+                stream.join(timeout=5.0)
+        except Exception:
+            log_exception("Stop: failed while stopping the session")
         finally:
+            try:
+                if self.video_recorder is not None:
+                    self.video_recorder.stop_recording()
+            except Exception:
+                log_exception("Stop: failed to stop the video recording")
             self.active_stream = None
             self.run_dir = None
-            self.btn_stop.config(state=tk.DISABLED)
-            self.btn_start.config(state=tk.NORMAL if self.var_mode.get() == "scheduled" else tk.DISABLED)
-            self.btn_manual_connect.config(state=tk.NORMAL)
-            self.btn_manual_disconnect.config(state=tk.DISABLED)
-            self.var_status.set("Idle.")
-            self.var_manual_info.set("Manual session not connected.")
-            self.var_manual_enabled.set(False)
-        
-        # Stop video recording if active
-        self._stop_video_recording()
-        
+            self.ui_events.put(("session_ended", (run_dir, captured_data)))
+
+    def _on_session_ended(self, run_dir: Optional[str], captured_data):
+        """Main thread: reset the controls after a session ended."""
+        self.btn_stop.config(state=tk.DISABLED)
+        self.btn_start.config(state=tk.NORMAL if self.var_mode.get() == "scheduled" else tk.DISABLED)
+        self.btn_manual_connect.config(state=tk.NORMAL)
+        self.btn_manual_disconnect.config(state=tk.DISABLED)
+        self.var_status.set("Idle.")
+        self.var_manual_info.set("Manual session not connected.")
+        self.var_manual_enabled.set(False)
+        self.var_video_rec_status.set("off")
         # Generate summary plot if we have run data
         if run_dir and captured_data and len(captured_data[0]) > 0:
             self.root.after(100, lambda: self._generate_summary_plot(run_dir, captured_data))
@@ -3604,6 +3946,8 @@ class DashboardApp:
                     self.var_manual_enabled.set(False)
                 elif kind == "pip_done":
                     self._on_pip_done(*payload)
+                elif kind == "session_ended":
+                    self._on_session_ended(*payload)
                 elif kind == "error":
                     self.var_status.set(payload)
                     try:

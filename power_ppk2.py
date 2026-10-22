@@ -39,6 +39,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Host times use the dashboard's run clock. On Python 3.10 / Windows
+# time.monotonic only ticks every 15.6 ms; perf_counter is sub-microsecond.
+clock = time.perf_counter
+
 FS = 100_000                  # PPK2 sample rate, samples/s
 ADC_MULT = 1.8 / 163840       # same constant as ppk2-api
 STALL_S = 5.0                 # no data this long -> treat as disconnected
@@ -148,14 +152,14 @@ def _import_ppk2_api():
 
 def _drain(ser, quiet_s: float = 0.25, max_s: float = 3.0) -> bool:
     """Discard incoming bytes until the line has been quiet for quiet_s."""
-    t_end = time.monotonic() + max_s
-    last = time.monotonic()
-    while time.monotonic() < t_end:
+    t_end = clock() + max_s
+    last = clock()
+    while clock() < t_end:
         n = ser.in_waiting
         if n:
             ser.read(n)
-            last = time.monotonic()
-        elif time.monotonic() - last >= quiet_s:
+            last = clock()
+        elif clock() - last >= quiet_s:
             return True
         time.sleep(0.02)
     return False
@@ -167,8 +171,8 @@ def _read_modifiers(ppk, cmd, timeout_s: float = 3.0) -> bool:
     and keeps only the last one)."""
     ppk._write_serial((cmd.GET_META_DATA,))
     buf = b""
-    t_end = time.monotonic() + timeout_s
-    while time.monotonic() < t_end:
+    t_end = clock() + timeout_s
+    while clock() < t_end:
         n = ppk.ser.in_waiting
         if n:
             buf += ppk.ser.read(n)
@@ -310,14 +314,14 @@ class DummySource:
     def open(self):
         if self.fail:
             raise RuntimeError("dummy PPK2 unavailable")
-        self._t_last = time.monotonic()
+        self._t_last = clock()
         self._n = 0
         self._rs = np.random.default_rng(0)
 
     def read(self):
         if self.fail:
             raise IOError("dummy PPK2 disconnected")
-        now = time.monotonic()
+        now = clock()
         n = min(int((now - self._t_last) * FS), FS)
         if n < 200:
             return None
@@ -461,9 +465,9 @@ class PowerMeter:
         self._plot_acc: List[tuple] = []
         self._over = 0
         self._next_anchor = self._next_flush = self._next_sync = 0.0
-        self._next_raw = time.monotonic() + 60.0 * float(self.cfg["raw_every_min"] or 0)
-        self._rotate_at = time.monotonic() + 60.0 * float(self.cfg["rotate_min"] or 1e9)
-        self._t_data = time.monotonic()
+        self._next_raw = clock() + 60.0 * float(self.cfg["raw_every_min"] or 0)
+        self._rotate_at = clock() + 60.0 * float(self.cfg["rotate_min"] or 1e9)
+        self._t_data = clock()
         with self.lock:
             self.live["state"] = "measuring"
         while not self.stop_flag.is_set():
@@ -473,7 +477,7 @@ class PowerMeter:
                 if not self._reconnect(f"read failed: {e}"):
                     return
                 continue
-            now = time.monotonic()
+            now = clock()
             if got is None:
                 if now - self._t_data > STALL_S:
                     if not self._reconnect(f"no data for {STALL_S:g} s"):
@@ -613,13 +617,13 @@ class PowerMeter:
             self.src.close()
         except Exception:
             pass
-        deadline = time.monotonic() + float(self.cfg["reconnect_timeout_s"])
+        deadline = clock() + float(self.cfg["reconnect_timeout_s"])
         while not self.stop_flag.is_set():
             try:
                 self.src.open()
                 self._log_event("reconnect", f"port {self.src.port}")
                 self.emit("status", "Power meter: reconnected.")
-                self._t_data = time.monotonic()
+                self._t_data = clock()
                 self._t_next = None             # restart the time base from PC time
                 self._anchor0 = None
                 self._carry = np.zeros(0)
@@ -628,7 +632,7 @@ class PowerMeter:
                     self.live["state"] = "measuring"
                 return True
             except Exception as e:
-                if time.monotonic() > deadline:
+                if clock() > deadline:
                     self.fatal = True
                     msg = f"Power meter lost ({reason}) and could not reconnect: {e}"
                     self._log_event("fatal", msg)
@@ -695,7 +699,7 @@ class PowerMeter:
             w.writerows(self._fmt_row(r) for r in rows)
 
     def _log_event(self, event: str, detail: str = ""):
-        t = (time.monotonic() - self.t0) if self.t0 is not None else 0.0
+        t = (clock() - self.t0) if self.t0 is not None else 0.0
         w = self._writers.get("events")
         if w:
             try:
