@@ -1,0 +1,865 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 1/30 (pass 1): set the bench supply to 1.000 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 1000,
+      "reading": 1
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 2/30 (pass 1): set the bench supply to 0.800 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 800,
+      "reading": 2
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 700,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 3/30 (pass 1): set the bench supply to 0.700 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 700,
+      "reading": 3
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 650,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 4/30 (pass 1): set the bench supply to 0.650 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 650,
+      "reading": 4
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 5/30 (pass 1): set the bench supply to 0.600 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 600,
+      "reading": 5
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 550,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 6/30 (pass 1): set the bench supply to 0.550 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 550,
+      "reading": 6
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 7/30 (pass 1): set the bench supply to 0.500 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 500,
+      "reading": 7
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 450,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 8/30 (pass 1): set the bench supply to 0.450 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 450,
+      "reading": 8
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 9/30 (pass 1): set the bench supply to 0.400 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 400,
+      "reading": 9
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 300,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 10/30 (pass 1): set the bench supply to 0.300 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 1,
+      "level_mv": 300,
+      "reading": 10
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 300,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 11/30 (pass 2): set the bench supply to 0.300 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 300,
+      "reading": 11
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 12/30 (pass 2): set the bench supply to 0.400 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 400,
+      "reading": 12
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 450,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 13/30 (pass 2): set the bench supply to 0.450 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 450,
+      "reading": 13
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 14/30 (pass 2): set the bench supply to 0.500 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 500,
+      "reading": 14
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 550,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 15/30 (pass 2): set the bench supply to 0.550 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 550,
+      "reading": 15
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 16/30 (pass 2): set the bench supply to 0.600 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 600,
+      "reading": 16
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 650,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 17/30 (pass 2): set the bench supply to 0.650 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 650,
+      "reading": 17
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 700,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 18/30 (pass 2): set the bench supply to 0.700 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 700,
+      "reading": 18
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 19/30 (pass 2): set the bench supply to 0.800 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 800,
+      "reading": 19
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 20/30 (pass 2): set the bench supply to 1.000 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 2,
+      "level_mv": 1000,
+      "reading": 20
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 21/30 (pass 3): set the bench supply to 1.000 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 1000,
+      "reading": 21
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 22/30 (pass 3): set the bench supply to 0.800 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 800,
+      "reading": 22
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 700,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 23/30 (pass 3): set the bench supply to 0.700 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 700,
+      "reading": 23
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 650,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 24/30 (pass 3): set the bench supply to 0.650 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 650,
+      "reading": 24
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 25/30 (pass 3): set the bench supply to 0.600 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 600,
+      "reading": 25
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 550,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 26/30 (pass 3): set the bench supply to 0.550 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 550,
+      "reading": 26
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 27/30 (pass 3): set the bench supply to 0.500 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 500,
+      "reading": 27
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 450,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 28/30 (pass 3): set the bench supply to 0.450 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 450,
+      "reading": 28
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 29/30 (pass 3): set the bench supply to 0.400 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 400,
+      "reading": 29
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 300,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Reading 30/30 (pass 3): set the bench supply to 0.300 V, MEASURE VM at the driver and type the measured value, keep the meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 29.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 30,
+      "edges_commanded": 60,
+      "pass": 3,
+      "level_mv": 300,
+      "reading": 30
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 40.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Stroke volume low-voltage ladder x3",
+    "description": "Smallest stroke volume, precision + repeatability. 1 Hz, 30 strokes per step, bench-supply levels 1, 0.8, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.3 V, passes down/up/down (30 readings, operator-confirmed measured voltage), 40 s rest before each drive. Thinner observation tube. Microscope video on the meniscus, frames.csv for timing. PPK2 out of the supply path.",
+    "operator": "",
+    "pump_id": "",
+    "tube_id_mm": null,
+    "tube_od_mm": null,
+    "sequence_mv": [
+      1000,
+      800,
+      700,
+      650,
+      600,
+      550,
+      500,
+      450,
+      400,
+      300,
+      300,
+      400,
+      450,
+      500,
+      550,
+      600,
+      650,
+      700,
+      800,
+      1000,
+      1000,
+      800,
+      700,
+      650,
+      600,
+      550,
+      500,
+      450,
+      400,
+      300
+    ]
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 1000,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": false
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
