@@ -3324,6 +3324,16 @@ class DashboardApp:
         self._refresh_manual_duty_state()
 
     def build_config_from_ui(self) -> Dict[str, Any]:
+        """The panel's values on top of the loaded config: keys the panel doesn't
+        show (e.g. meta.tube_id_mm, analysis notes) are kept, panel values win."""
+        built = self._config_from_panel()
+        old_meta = self.cfg.get("meta") if isinstance(self.cfg.get("meta"), dict) else {}
+        per_run = ("created", "output_dir", "run_dir", "clock")
+        built["meta"] = {**{k: v for k, v in old_meta.items() if k not in per_run}, **built["meta"]}
+        extra = {k: v for k, v in self.cfg.items() if k not in built}
+        return {**extra, **built}
+
+    def _config_from_panel(self) -> Dict[str, Any]:
         return {
             "port": self.var_port.get().strip(),
             "baud": safe_int(self.var_baud.get(), 115200),
