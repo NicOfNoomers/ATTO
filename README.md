@@ -135,6 +135,7 @@ All run times (events.csv, merged.csv, power, frames.csv) use `time.perf_counter
 - The config requires a **Pump ID** (Run details) and sets the overlay off and MJPG quality 95.
 - Volume accounting: the driver bridge sleeps at 0 Hz, so each drive goes neutral → +x (half swing) → 39 full swings → −x → neutral (half swing on stop): 40 swing-equivalents = 20 strokes (`edges_commanded` 40 on each drive block in config.json), whether the last half-cycle lasts 0.25 or 0.5 s. With 41 edges it would be 20.5 strokes, hence the quarter-period margin. The analysis takes the net meniscus advance rest-to-rest (end of the rest after the drive minus the end of the rest before) / 20.
 - Check the video log afterwards: `python scripts\check_video.py <run folder>`.
+- Runs recorded with the old video code (`video_recording_partNNNN.mp4`, no frames.csv) still have their timing in the burned-in overlay: `python scripts\overlay_to_frames.py <run folder>` reads "Time" and "Freq" from every frame and writes `frames_from_overlay.csv`. Run it with OpenCV 4 (`pip install "opencv-python<5"`): OpenCV 5 draws text with a different font.
 
 ### Troubleshooting
 - If camera connection fails, check USB connection and camera index
