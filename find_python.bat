@@ -14,6 +14,10 @@ if not defined PY for %%P in ("py -3.10" python3.10) do (
 if not defined PY if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" -c "import sys; sys.exit(sys.version_info < (3, 8))" >nul 2>&1 && set "PY=".venv\Scripts\python.exe""
 )
+REM A git worktree (ATTO\.claude\worktrees\<name>) has no .venv of its own: use the main checkout's
+if not defined PY if exist "%~dp0..\..\..\.venv\Scripts\python.exe" (
+    "%~dp0..\..\..\.venv\Scripts\python.exe" -c "import sys; sys.exit(sys.version_info < (3, 8))" >nul 2>&1 && set "PY="%~dp0..\..\..\.venv\Scripts\python.exe""
+)
 if not defined PY for %%P in ("py -3" python python3) do (
     if not defined PY (
         %%~P -c "import sys; sys.exit(sys.version_info < (3, 8))" >nul 2>&1 && set "PY=%%~P"

@@ -9,5 +9,8 @@ if not defined PY (
     pause
     exit /b 1
 )
+echo Starting the dashboard in %CD%
+echo with Python: %PY%
+%PY% -c "import sys; print('  ', sys.executable, sys.version.split()[0])"
 %PY% pump_test_dashboard.py %*
 if errorlevel 1 pause
