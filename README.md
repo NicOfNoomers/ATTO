@@ -143,6 +143,9 @@ All run times (events.csv, merged.csv, power, frames.csv) use `time.perf_counter
 - `config_stroke_volume_freq_B_valveless.json` (valves removed): 10 s per frequency, 20 s rests, at 2.5 and 1.0 V, two passes. About 11 min plus 4 pauses.
 - Run them from this branch, so frames.csv and `t_cmd_s` are written. The burst stroke count at 400–700 Hz rests on the host's command timing: check it with an oscilloscope across the coil. Notes, expected travel and expected swing: `Paper/analysis_2026-10-22_stroke_volume/NOTES_2026-10-25_frequency_configs.md`.
 
+### Smoke test of this branch
+`make_config_stroke_volume_smoke_test.py` writes `config_stroke_volume_smoke_test.json`: one 2.5 V stop, then 5 strokes at 1 Hz, 25-stroke bursts at 100 and 700 Hz, and 10 s at 400 Hz, with 10 s rests (65 s nominal). Afterwards run `python scripts/check_video.py <run folder>` and `python scripts/check_bursts.py <run folder>`. The second compares each drive's commanded length (from `t_cmd_s` in events.csv) with the config and flags anything more than 0.5 ms off.
+
 ### Troubleshooting
 - If camera connection fails, check USB connection and camera index
 - Camera recording will be automatically disabled if camera is not connected when test starts

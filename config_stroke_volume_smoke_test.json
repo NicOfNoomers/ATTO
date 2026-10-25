@@ -1,0 +1,129 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Smoke test: set the bench supply to 2.500 V, MEASURE VM and type it (at most 2.500 V), meniscus in view, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 4.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 5,
+      "edges_commanded": 10,
+      "reading": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.2475,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 25,
+      "edges_commanded": 50,
+      "reading": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.03535714285714286,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 25,
+      "edges_commanded": 50,
+      "reading": 3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 9.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 4000,
+      "edges_commanded": 8000,
+      "reading": 4
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Stroke volume smoke test",
+    "description": "Check of the stroke-volume branch on the test PC: 2.5 V; 5 strokes at 1 Hz, 25-stroke bursts at 100 and 700 Hz, 10 s at 400 Hz, 10 s rests. Verify frames.csv, t_cmd_s, burst lengths, frame rate and the meniscus in the video.",
+    "operator": "",
+    "pump_id": "",
+    "tube_id_mm": 0.5,
+    "tube_od_mm": 1.5875,
+    "line_mm": null
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": false
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
