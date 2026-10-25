@@ -1,0 +1,504 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "meta": {
+    "name": "Stroke volume vs frequency B (valveless)",
+    "description": "Swing per cycle vs frequency, WITHOUT valves. 1, 100, 200, 400, 700 Hz, 10 s each, 20 s rests, bench supply 2.5, 1 V, passes down/up. Swing read from the blur/spread band of the meniscus (~150 frames per drive).",
+    "operator": "",
+    "pump_id": "",
+    "tube_id_mm": 0.5,
+    "tube_od_mm": 1.5875,
+    "line_mm": null,
+    "valves": false
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": false
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  },
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Pause 1 (pass 1, down), VALVELESS assembly: set the bench supply to 2.500 V, MEASURE VM and type it, centre the meniscus, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 9.999642857142858,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7000,
+      "edges_commanded": 14000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 2,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 9.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 4000,
+      "edges_commanded": 8000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Pause 2 (pass 1, down), VALVELESS assembly: set the bench supply to 1.000 V, MEASURE VM and type it, centre the meniscus, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 9.999642857142858,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7000,
+      "edges_commanded": 14000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 7,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 9.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 4000,
+      "edges_commanded": 8000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 10,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Pause 3 (pass 2, up), VALVELESS assembly: set the bench supply to 1.000 V, MEASURE VM and type it, centre the meniscus, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 11,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 9.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 4000,
+      "edges_commanded": 8000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 12,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 13,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 9.999642857142858,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7000,
+      "edges_commanded": 14000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 14,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B_valveless",
+      "level_mv": 1000,
+      "reading": 15,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Pause 4 (pass 2, up), VALVELESS assembly: set the bench supply to 2.500 V, MEASURE VM and type it, centre the meniscus, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 16,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 9.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 4000,
+      "edges_commanded": 8000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 17,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 18,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 9.999642857142858,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7000,
+      "edges_commanded": 14000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 19,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B_valveless",
+      "level_mv": 2500,
+      "reading": 20,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ]
+}

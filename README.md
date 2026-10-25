@@ -137,6 +137,12 @@ All run times (events.csv, merged.csv, power, frames.csv) use `time.perf_counter
 - Check the video log afterwards: `python scripts\check_video.py <run folder>`.
 - Runs recorded with the old video code (`video_recording_partNNNN.mp4`, no frames.csv) still have their timing in the burned-in overlay: `python scripts\overlay_to_frames.py <run folder>` reads "Time" and "Freq" from every frame and writes `frames_from_overlay.csv`. Run it with OpenCV 4 (`pip install "opencv-python<5"`): OpenCV 5 draws text with a different font.
 
+### Stroke volume against frequency (configs A and B)
+`make_config_stroke_volume_freq.py` writes two configs for 1, 100, 200, 400 and 700 Hz with the 0.5 mm observation tube:
+- `config_stroke_volume_freq_A_valves.json` (with valves): bursts of N strokes, sized for about 2.5 mm of meniscus travel. Levels 2.5, 1.5, 1.0 and 0.8 V; 2 bursts per cell; two passes (voltage down, then up). Before each cell a yellow banner at the same voltage is the pause for re-centring the stage. About 31 min plus 40 pauses.
+- `config_stroke_volume_freq_B_valveless.json` (valves removed): 10 s per frequency, 20 s rests, at 2.5 and 1.0 V, two passes. About 11 min plus 4 pauses.
+- Run them from this branch, so frames.csv and `t_cmd_s` are written. The burst stroke count at 400–700 Hz rests on the host's command timing: check it with an oscilloscope across the coil. Notes, expected travel and expected swing: `Paper/analysis_2026-10-22_stroke_volume/NOTES_2026-10-25_frequency_configs.md`.
+
 ### Troubleshooting
 - If camera connection fails, check USB connection and camera index
 - Camera recording will be automatically disabled if camera is not connected when test starts
