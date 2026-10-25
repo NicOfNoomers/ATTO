@@ -1,0 +1,534 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Stop 1 (pass 1, down), VALVELESS, short tube, zoomed in: set the bench supply to 2.500 V, MEASURE VM and type it, re-centre the meniscus with room ahead of it, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 29.999642857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 21000,
+      "edges_commanded": 42000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 2,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 29.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 12000,
+      "edges_commanded": 24000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Stop 2 (pass 1, down), VALVELESS, short tube, zoomed in: set the bench supply to 1.000 V, MEASURE VM and type it, re-centre the meniscus with room ahead of it, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 29.999642857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 21000,
+      "edges_commanded": 42000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 7,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 29.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 12000,
+      "edges_commanded": 24000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 10,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 11,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 29.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 12000,
+      "edges_commanded": 24000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 12,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 13,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 29.999642857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 21000,
+      "edges_commanded": 42000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 14,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B2_valveless",
+      "level_mv": 1000,
+      "reading": 15,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "note": "Stop 3 (pass 2, up), VALVELESS, short tube, zoomed in: set the bench supply to 2.500 V, MEASURE VM and type it, re-centre the meniscus with room ahead of it, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 9.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 16,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 29.999375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 12000,
+      "edges_commanded": 24000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 17,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 9.99875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 2000,
+      "edges_commanded": 4000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 18,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 29.999642857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 21000,
+      "edges_commanded": 42000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 19,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 9.9975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "drive",
+      "strokes": 1000,
+      "edges_commanded": 2000,
+      "config": "B2_valveless",
+      "level_mv": 2500,
+      "reading": 20,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    }
+  ],
+  "meta": {
+    "name": "Stroke volume vs frequency B2 (valveless, short tube, zoom)",
+    "description": "Swing per cycle vs frequency, WITHOUT valves, rerun with a shorter pump-to-meniscus tube and ~2x zoom. 100, 200, 1 Hz for 10 s; 400 and 700 Hz for 30 s; 20 s rests; 2.5 and 1.0 V; passes down/up; stops only at voltage changes.",
+    "operator": "",
+    "pump_id": "",
+    "valves": false,
+    "tube_id_mm": 0.5,
+    "tube_od_mm": 1.5875,
+    "line_mm": null,
+    "zoom": "about 2x vs 25 Oct (scale from the tube OD in the video)"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": false
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
