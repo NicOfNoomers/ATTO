@@ -1,0 +1,1217 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 1: set the bench supply to 0.800 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.03964285714285714,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 28,
+      "edges_commanded": 56,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.3196428571428571,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 224,
+      "edges_commanded": 448,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.069375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 28,
+      "edges_commanded": 56,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.559375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 224,
+      "edges_commanded": 448,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 4
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.04375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 5
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.17875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 36,
+      "edges_commanded": 72,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 6
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 7
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.3575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 36,
+      "edges_commanded": 72,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 8
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 2: re-centre, SAME voltage (0.800 V): re-type the measured VM. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 1.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 2,
+      "edges_commanded": 4,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 9
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "calibration",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 10
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 3: set the bench supply to 1.000 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.03964285714285714,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 28,
+      "edges_commanded": 56,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 11
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.3196428571428571,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 224,
+      "edges_commanded": 448,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 12
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.069375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 28,
+      "edges_commanded": 56,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 13
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.559375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 224,
+      "edges_commanded": 448,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 14
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.04375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 15
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.17875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 36,
+      "edges_commanded": 72,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 16
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 17
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.3575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 36,
+      "edges_commanded": 72,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 18
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 4: re-centre, SAME voltage (1.000 V): re-type the measured VM. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 1.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 2,
+      "edges_commanded": 4,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 19
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "calibration",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 20
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 5: set the bench supply to 1.500 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.025357142857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 18,
+      "edges_commanded": 36,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 21
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.20535714285714285,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 144,
+      "edges_commanded": 288,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 22
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.044375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 18,
+      "edges_commanded": 36,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 23
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.359375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 144,
+      "edges_commanded": 288,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 24
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.02375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 5,
+      "edges_commanded": 10,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 25
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.09875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 20,
+      "edges_commanded": 40,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 26
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.0475,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 5,
+      "edges_commanded": 10,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 27
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.1975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 20,
+      "edges_commanded": 40,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 28
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 6: re-centre, SAME voltage (1.500 V): re-type the measured VM. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 1.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 2,
+      "edges_commanded": 4,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 29
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "calibration",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 30
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 7: set the bench supply to 2.500 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.025357142857142856,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 18,
+      "edges_commanded": 36,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 31
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 0.20535714285714285,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 144,
+      "edges_commanded": 288,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 32
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.044375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 18,
+      "edges_commanded": 36,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 33
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 0.359375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 144,
+      "edges_commanded": 288,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 34
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.02375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 5,
+      "edges_commanded": 10,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 35
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 0.09875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 20,
+      "edges_commanded": 40,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 36
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.0475,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 5,
+      "edges_commanded": 10,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 37
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.1975,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 20,
+      "edges_commanded": 40,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 38
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "label": "stop",
+      "note": "Stop 8: re-centre, SAME voltage (2.500 V): re-type the measured VM. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "still"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 1.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 2,
+      "edges_commanded": 4,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 39
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "burst",
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "calibration",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 40
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "label": "rest"
+    }
+  ],
+  "meta": {
+    "name": "Stroke volume calibration (valves)",
+    "description": "Volume per stroke per voltage and frequency, small bursts that stay in the microscope field: 0.8/1.0/1.5/2.5 V ascending, 700/400/200/100/1 Hz, two bursts per cell (N and 4N, 8N at 400/700 Hz; N sized for ~15 px at the high q estimate), 10 s rests, re-centring stops when the high-estimate travel reaches the field. Sizes the main valved run.",
+    "operator": "",
+    "pump_id": "",
+    "valves": true,
+    "tube_id_mm": 0.8,
+    "tube_od_mm": 1.5875,
+    "line_mm": null,
+    "sizing": {
+      "px_per_mm": 27.4,
+      "nl_per_px": 18.34,
+      "target_px": 15.0,
+      "budget_px": 450.0,
+      "q_high": {
+        "2500": {
+          "1": 400,
+          "100": 60,
+          "200": 60,
+          "400": 15,
+          "700": 15
+        },
+        "1500": {
+          "1": 400,
+          "100": 60,
+          "200": 60,
+          "400": 15,
+          "700": 15
+        },
+        "1000": {
+          "1": 200,
+          "100": 30,
+          "200": 30,
+          "400": 10,
+          "700": 10
+        },
+        "800": {
+          "1": 200,
+          "100": 30,
+          "200": 30,
+          "400": 10,
+          "700": 10
+        }
+      }
+    },
+    "cells": [
+      {
+        "level_mv": 800,
+        "hz": 700,
+        "n1": 28,
+        "n2": 224
+      },
+      {
+        "level_mv": 800,
+        "hz": 400,
+        "n1": 28,
+        "n2": 224
+      },
+      {
+        "level_mv": 800,
+        "hz": 200,
+        "n1": 9,
+        "n2": 36
+      },
+      {
+        "level_mv": 800,
+        "hz": 100,
+        "n1": 9,
+        "n2": 36
+      },
+      {
+        "level_mv": 800,
+        "hz": 1,
+        "n1": 2,
+        "n2": 8
+      },
+      {
+        "level_mv": 1000,
+        "hz": 700,
+        "n1": 28,
+        "n2": 224
+      },
+      {
+        "level_mv": 1000,
+        "hz": 400,
+        "n1": 28,
+        "n2": 224
+      },
+      {
+        "level_mv": 1000,
+        "hz": 200,
+        "n1": 9,
+        "n2": 36
+      },
+      {
+        "level_mv": 1000,
+        "hz": 100,
+        "n1": 9,
+        "n2": 36
+      },
+      {
+        "level_mv": 1000,
+        "hz": 1,
+        "n1": 2,
+        "n2": 8
+      },
+      {
+        "level_mv": 1500,
+        "hz": 700,
+        "n1": 18,
+        "n2": 144
+      },
+      {
+        "level_mv": 1500,
+        "hz": 400,
+        "n1": 18,
+        "n2": 144
+      },
+      {
+        "level_mv": 1500,
+        "hz": 200,
+        "n1": 5,
+        "n2": 20
+      },
+      {
+        "level_mv": 1500,
+        "hz": 100,
+        "n1": 5,
+        "n2": 20
+      },
+      {
+        "level_mv": 1500,
+        "hz": 1,
+        "n1": 2,
+        "n2": 8
+      },
+      {
+        "level_mv": 2500,
+        "hz": 700,
+        "n1": 18,
+        "n2": 144
+      },
+      {
+        "level_mv": 2500,
+        "hz": 400,
+        "n1": 18,
+        "n2": 144
+      },
+      {
+        "level_mv": 2500,
+        "hz": 200,
+        "n1": 5,
+        "n2": 20
+      },
+      {
+        "level_mv": 2500,
+        "hz": 100,
+        "n1": 5,
+        "n2": 20
+      },
+      {
+        "level_mv": 2500,
+        "hz": 1,
+        "n1": 2,
+        "n2": 8
+      }
+    ]
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 120,
+    "max_mv": 2500,
+    "initial_mv": 800,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
