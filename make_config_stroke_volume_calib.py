@@ -19,16 +19,17 @@ Design
 - High estimates of q (nL/stroke) from the quick test and the 25 Oct runs 220735/223420 (rounded up):
   2.5 and 1.5 V: 1 Hz 400, 100 Hz 60, 200 Hz 60, 400/700 Hz 15;  1.0 and 0.8 V: 1 Hz 200, 100/200 Hz 30, 400/700 Hz 10.
 - Scale used for sizing only: tube 1/16 in OD = 43.5 px (27.4 px/mm), 0.8 mm bore -> 18.3 nL per px (TUBE_ID_MM: confirm).
-- Supply: run UNclamped (NM, 26 Oct). At 2.5 V every drive starts with ~90-97 mA for ~1.5 s, so the bench-supply limit
-  must be above ~100 mA; the config sets 120 mA (PPK2 trip at 95 % = 114 mA). Every burst here is shorter than that
-  high-current phase at 2.5 V, as in config A.
+- Supply: run UNclipped (NM, 26 Oct). The 25-26 Oct valved runs were current-limited. At 2.5 V the 10 ms mean current
+  is ~83 mA in the first ~1.5 s of a drive, with 0.3-0.9 A spikes at the stroke edges (PPK2, 100 kS/s). The config
+  sets 600 mA, as the valveless runs (PPK2 trip at 95 % = 570 mA, on the 10 ms mean). Every burst here is shorter than
+  the high-current phase at 2.5 V, as in config A.
 PPK2 in the supply path (power on), video on (overlay off, mjpg), Pump ID required.
 """
 import json
 import math
 
 PORT = "COM3"
-CURRENT_LIMIT_MA = 120
+CURRENT_LIMIT_MA = 600                         # as the valveless runs (NM, 26 Oct): no clipping
 TUBE_OD_MM, TUBE_ID_MM = 1.5875, 0.8          # NM: new tube, 0.8 mm bore (OD assumed 1/16 in)
 PX_PER_MM = 43.5 / TUBE_OD_MM                 # quick test 20261026_020015
 NL_PER_PX = math.pi * (TUBE_ID_MM / 2) ** 2 * 1000 / PX_PER_MM

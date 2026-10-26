@@ -14,7 +14,7 @@
       "while_waiting": "zero",
       "settle_s": 0,
       "label": "stop",
-      "note": "Stop 1: set the bench supply to 0.800 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+      "note": "Stop 1: set the bench supply to 0.800 V (limit 600 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
     },
     {
       "type": "constant",
@@ -266,7 +266,7 @@
       "while_waiting": "zero",
       "settle_s": 0,
       "label": "stop",
-      "note": "Stop 3: set the bench supply to 1.000 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+      "note": "Stop 3: set the bench supply to 1.000 V (limit 600 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
     },
     {
       "type": "constant",
@@ -518,7 +518,7 @@
       "while_waiting": "zero",
       "settle_s": 0,
       "label": "stop",
-      "note": "Stop 5: set the bench supply to 1.500 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+      "note": "Stop 5: set the bench supply to 1.500 V (limit 600 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
     },
     {
       "type": "constant",
@@ -770,7 +770,7 @@
       "while_waiting": "zero",
       "settle_s": 0,
       "label": "stop",
-      "note": "Stop 7: set the bench supply to 2.500 V (limit 120 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
+      "note": "Stop 7: set the bench supply to 2.500 V (limit 600 mA), MEASURE VM and type it. Put the meniscus near the LEFT edge of the image (it moves right), then confirm."
     },
     {
       "type": "constant",
@@ -1196,7 +1196,7 @@
   },
   "supply": {
     "mode": "manual",
-    "current_limit_ma": 120,
+    "current_limit_ma": 600,
     "max_mv": 2500,
     "initial_mv": 800,
     "lead_min": 2
