@@ -846,6 +846,7 @@ class PressureController:
     def _sample_loop(self):
         dt = 1.0 / max(1.0, float(self.cfg["log_hz"]))
         n_flush = 0
+        last_1s: deque = deque(maxlen=max(1, int(round(1.0 / dt))))    # for the 1 s mean
         while not self.stop_flag.is_set():
             t_next = clock() + dt
             ok, raw = self.read_sensor()
@@ -858,9 +859,8 @@ class PressureController:
                 self.hist.append((t_s, p, self.syr.position()))
                 self.plot_buf.append((t_s, p, self.target if self.mode == "hold" else float("nan")))
                 # Settled = the 1 s mean within tolerance (a stop-start v1 hold is a sawtooth)
-                n1 = max(1, int(round(1.0 / dt)))
-                recent = [h[1] for h in list(self.hist)[-n1:]]
-                p1s = sum(recent) / len(recent)
+                last_1s.append(p)
+                p1s = sum(last_1s) / len(last_1s)
                 with self.lock:
                     self.p, self.p_raw, self.p_1s = p, raw, p1s
                     self.t_last_sample = now

@@ -48,7 +48,6 @@ import copy
 import math
 import threading
 import queue
-import bisect
 import logging
 import subprocess
 import importlib.util
@@ -120,7 +119,6 @@ from tkinter import ttk, filedialog, messagebox
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 FLUIGENT_AVAILABLE = False
@@ -316,11 +314,28 @@ def safe_float(s: str, default: float) -> float:
         log_warning(f"safe_float: could not parse {s!r}; using default {default}")
         return default
 
-def window_decimate(ts: List[float], cols: List[List[float]], tmin: float, max_pts: int = 1500):
-    """Plot data from tmin on (plus one point before), thinned to at most max_pts points."""
-    i = max(0, bisect.bisect_left(ts, tmin) - 1)
-    step = max(1, (len(ts) - i) // max_pts)
-    return [c[i::step] for c in [ts] + list(cols)]
+def window_decimate(ts, cols, tmin: float, max_pts: int = 800) -> List["np.ndarray"]:
+    """Plot data from tmin on (plus one point before) as arrays of at most ~max_pts points. When
+    thinning, every bin of samples becomes two points, its min and its max, so peaks and the
+    envelope survive (a plot ~800 px wide can't show more; long noisy lines are slow to draw)."""
+    t = np.asarray(ts, dtype=float)
+    i = max(0, int(np.searchsorted(t, tmin)) - 1)
+    t = t[i:]
+    ys = [np.asarray(c, dtype=float)[i:] for c in cols]
+    n = len(t)
+    if n <= max_pts:
+        return [t] + ys
+    k = -(-2 * n // max_pts)                  # samples per bin, 2 points out per bin
+    m = (n // k) * k
+    tb = t[:m].reshape(-1, k)
+    out = [np.column_stack((tb[:, 0], tb[:, -1])).ravel()]
+    for y in ys:
+        yb = y[:m].reshape(-1, k)
+        # fmin/fmax skip NaN (target line outside holds) without warnings
+        out.append(np.column_stack((np.fmin.reduce(yb, axis=1), np.fmax.reduce(yb, axis=1))).ravel())
+    if m < n:
+        out = [np.concatenate((o, a[m:])) for o, a in zip(out, [t] + ys)]
+    return out
 
 
 def linspace_int(a: int, b: int, n: int) -> List[int]:
@@ -1107,12 +1122,14 @@ class LiveSessionBase:
         ctl = self.ctl
         return ctl.status() if ctl is not None else None
 
-    def get_pressure_plot_data(self) -> Tuple[List[float], List[float], List[float]]:
+    def get_pressure_plot_data(self):
+        """(t, p, target) arrays for the live plot; empty lists without pressure control."""
         ctl = self.ctl
-        if ctl is None:
+        rows = list(ctl.plot_buf) if ctl is not None else []
+        if not rows:
             return [], [], []
-        rows = list(ctl.plot_buf)
-        return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+        a = np.asarray(rows, dtype=float)
+        return a[:, 0], a[:, 1], a[:, 2]
 
 
 class ManualSession(LiveSessionBase):
@@ -2536,10 +2553,8 @@ class DashboardApp:
         self._build_layout()
         self._build_plot()
 
-        # cache_frame_data=False prevents matplotlib from retaining returned artists
-        # for every frame of an unbounded live animation (a known slow memory growth).
-        self.ani = animation.FuncAnimation(self.fig, self._update_plot, interval=150,
-                                           blit=False, cache_frame_data=False)
+        # Live plot every 150 ms (blitted, see _update_plot); skipped while another tab is shown
+        self.root.after(150, self._plot_tick)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if initial_config_path:
@@ -4123,18 +4138,22 @@ class DashboardApp:
         self.ax1 = self.fig.add_subplot(211)
         self.ax2 = self.fig.add_subplot(212)
 
-        self.line_freq, = self.ax1.plot([], [], lw=1)
-        self.line_flow, = self.ax2.plot([], [], lw=1)
+        # The data lines are "animated": a full draw leaves them out, they are drawn on top of the
+        # cached background each frame (blitting, _update_plot)
+        self.line_freq, = self.ax1.plot([], [], lw=1, animated=True)
+        self.line_flow, = self.ax2.plot([], [], lw=1, animated=True)
         # Supply current from the PPK2 on a second y-axis of the frequency plot (hidden without a meter)
         self.ax1_cur = self.ax1.twinx()
-        self.line_cur, = self.ax1_cur.plot([], [], lw=0.8, color="tab:red")
+        self.line_cur, = self.ax1_cur.plot([], [], lw=0.8, color="tab:red", animated=True)
         self.ax1_cur.set_ylabel("mA", color="tab:red")
         self.ax1_cur.tick_params(axis="y", labelcolor="tab:red")
         self.ax1_cur.set_visible(False)
         # Line pressure (and the held target) on a second y-axis of the flow plot
         self.ax2_p = self.ax2.twinx()
-        self.line_p, = self.ax2_p.plot([], [], lw=0.9, color="tab:green")
-        self.line_ptgt, = self.ax2_p.plot([], [], lw=0.8, ls="--", color="darkgreen")
+        self.line_p, = self.ax2_p.plot([], [], lw=0.9, color="tab:green", animated=True)
+        self.line_ptgt, = self.ax2_p.plot([], [], lw=0.8, ls="--", color="darkgreen", animated=True)
+        self._plot_lines = [self.line_freq, self.line_cur, self.line_flow, self.line_p, self.line_ptgt]
+        self._plot_bg = None
         self.ax2_p.set_ylabel("mbar", color="tab:green")
         self.ax2_p.tick_params(axis="y", labelcolor="tab:green")
         self.ax2_p.set_visible(False)
@@ -4190,6 +4209,8 @@ class DashboardApp:
 
         # Custom zoom/pan with mouse wheel on plots
         self.canvas.mpl_connect('scroll_event', self._on_scroll_event)
+        # After every full draw (limits changed, resize, Y range set): new background, lines on top
+        self.canvas.mpl_connect('draw_event', self._on_plot_draw)
         
         # Track if user has manually set y-axis ranges
         self._user_freq_y_range = None
@@ -4266,93 +4287,105 @@ class DashboardApp:
                 self._zoom_time_out()
 
     # ---- plot update ----
-    def _update_plot(self, _frame):
+    def _plot_tick(self):
+        try:
+            if self.center_tabs.select() == str(self.plot_frame):
+                self._update_plot()
+        except Exception:
+            log_exception_limited("plot_tick", "Plot update failed")
+        self.root.after(150, self._plot_tick)
+
+    def _on_plot_draw(self, _evt=None):
+        self._plot_bg = self.canvas.copy_from_bbox(self.fig.bbox)
+        self._draw_plot_lines()
+
+    def _draw_plot_lines(self):
+        for ln in self._plot_lines:
+            if ln.axes.get_visible():
+                ln.axes.draw_artist(ln)
+
+    @staticmethod
+    def _fit_ylim(cur, vals, min_pad: float):
+        """Y-limits for vals: the current ones while the data stays inside and fills at least
+        40 % of them (so most frames need no full redraw), else new ones with 10 % padding."""
+        vals = np.asarray(vals, dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if not len(vals):
+            return cur
+        lo, hi = float(vals.min()), float(vals.max())
+        pad = max(0.1 * (hi - lo), min_pad)
+        new = (lo - pad, hi + pad)
+        if cur is not None and cur[0] <= lo and hi <= cur[1] and (new[1] - new[0]) >= 0.4 * (cur[1] - cur[0]):
+            return cur
+        return new
+
+    def _update_plot(self, _frame=None):
+        """Redraw the live plot. The x-window advances in steps of 1/5 of its width and the
+        y-limits only change when the data leaves them, so most frames just restore the cached
+        background and draw the lines (a few ms) instead of a full redraw (~100+ ms holding the
+        GIL, which the drive timing needs)."""
         if not self.active_stream:
-            return self.line_freq, self.line_flow
+            return
         ts, freqs, flows = self.active_stream.get_plot_data()
         if not ts:
-            return self.line_freq, self.line_flow
-
-        tmax = ts[-1]
+            return
         window = self._get_time_window()
-        tmin = max(0.0, tmax - window)
+        step = max(1.0, window / 5.0)
+        x_right = max(window, (math.floor(ts[-1] / step) + 1) * step)
+        tmin = x_right - window
         # Only the visible window, thinned: the buffers hold far more points than the plot shows
         ts, freqs, flows = window_decimate(ts, [freqs, flows], tmin)
         self.line_freq.set_data(ts, freqs)
         self.line_flow.set_data(ts, flows)
-        self.ax1.set_xlim(tmin, tmin + window)
-        self.ax2.set_xlim(tmin, tmin + window)
+        lims = {"x": (tmin, x_right)}
 
         pts, pps, ptg = self.active_stream.get_pressure_plot_data()
-        if pts:
+        p_on = len(pts) > 0
+        if p_on:
             pts, pps, ptg = window_decimate(pts, [pps, ptg], tmin)
             self.line_p.set_data(pts, pps)
             self.line_ptgt.set_data(pts, ptg)
-            if not self.ax2_p.get_visible():
-                self.ax2_p.set_visible(True)
-                self.ax2.set_title("Flow-rate (sensor units) and pressure (mbar, green)")
-            vis = [v for v in pps + ptg if v == v]
-            if vis:
-                lo, hi = min(vis), max(vis)
-                pad = max(0.05 * (hi - lo), 1.0)
-                self.ax2_p.set_ylim(lo - pad, hi + pad)
-        elif self.ax2_p.get_visible():
-            self.line_p.set_data([], [])
-            self.line_ptgt.set_data([], [])
-            self.ax2_p.set_visible(False)
-            self.ax2.set_title("Flow-rate (sensor units)")
+            lims["p"] = self._fit_ylim(self._plot_lims_cur("p"), np.concatenate((pps, ptg)), 1.0)
+        lims["p_on"] = p_on
 
         pt, pi = self.active_stream.get_power_plot_data()
-        if pt:
+        cur_on = len(pt) > 0
+        if cur_on:
             pt, pi = window_decimate(pt, [pi], tmin)
             self.line_cur.set_data(pt, pi)
-            if not self.ax1_cur.get_visible():
-                self.ax1_cur.set_visible(True)
-                self.ax1.set_title("Frequency setpoint (Hz) and supply current (mA, red)")
-            vis = [i for t, i in zip(pt, pi) if t >= tmin]
-            if vis:
-                lo, hi = min(vis), max(vis)
-                pad = max(0.05 * (hi - lo), 0.1)
-                self.ax1_cur.set_ylim(lo - pad, hi + pad)
-        elif self.ax1_cur.get_visible():
-            self.line_cur.set_data([], [])
-            self.ax1_cur.set_visible(False)
-            self.ax1.set_title("Frequency setpoint (Hz)")
+            lims["cur"] = self._fit_ylim(self._plot_lims_cur("cur"), pi, 0.1)
+        lims["cur_on"] = cur_on
 
-        # Apply user-defined Y ranges or auto-scale
-        if self._user_freq_y_range is not None:
-            self.ax1.set_ylim(self._user_freq_y_range)
+        lims["freq"] = self._user_freq_y_range or self._fit_ylim(self._plot_lims_cur("freq"), freqs, 1.0)
+        lims["flow"] = self._user_flow_y_range or self._fit_ylim(self._plot_lims_cur("flow"), flows, 0.1)
+
+        if lims != getattr(self, "_plot_lims", None) or self._plot_bg is None:
+            self._plot_lims = lims
+            self.ax1.set_xlim(*lims["x"])
+            self.ax2.set_xlim(*lims["x"])
+            self.ax1.set_ylim(*lims["freq"])
+            self.ax2.set_ylim(*lims["flow"])
+            self.ax2_p.set_visible(lims["p_on"])
+            self.ax2.set_title("Flow-rate (sensor units)" + (" and pressure (mbar, green)" if lims["p_on"] else ""))
+            if lims["p_on"] and lims.get("p"):
+                self.ax2_p.set_ylim(*lims["p"])
+            self.ax1_cur.set_visible(lims["cur_on"])
+            self.ax1.set_title("Frequency setpoint (Hz)" + (" and supply current (mA, red)" if lims["cur_on"] else ""))
+            if lims["cur_on"] and lims.get("cur"):
+                self.ax1_cur.set_ylim(*lims["cur"])
+            self.canvas.draw()                  # -> _on_plot_draw: new background + lines
         else:
-            try:
-                fmin, fmax = min(freqs), max(freqs)
-                if fmin == fmax:
-                    fmin -= 1; fmax += 1
-                self.ax1.set_ylim(fmin, fmax)
-            except Exception:
-                log_exception_limited("plot_freq_ylim", "Plot update: failed to auto-scale frequency Y range")
+            self.canvas.restore_region(self._plot_bg)
+            self._draw_plot_lines()
+            self.canvas.blit(self.fig.bbox)
 
-        if self._user_flow_y_range is not None:
-            self.ax2.set_ylim(self._user_flow_y_range)
-        else:
-            try:
-                ymin, ymax = min(flows), max(flows)
-                if ymin == ymax:
-                    ymin -= 0.1; ymax += 0.1
-                self.ax2.set_ylim(ymin, ymax)
-            except Exception:
-                log_exception_limited("plot_flow_ylim", "Plot update: failed to auto-scale flow Y range")
-
-        return self.line_freq, self.line_flow
+    def _plot_lims_cur(self, key: str):
+        return (getattr(self, "_plot_lims", None) or {}).get(key)
 
     def _on_center_tab(self, _evt=None):
-        ani = getattr(self, "ani", None)
-        if ani is None:
-            return
-        live = self.center_tabs.select() == str(self.plot_frame)
-        try:
-            (ani.resume if live else ani.pause)()      # matplotlib >= 3.4
-        except Exception:
-            log_exception_limited("ani_pause", "Plot: could not pause/resume the live animation")
+        # Back on the live tab: the cached background may be stale (resized while hidden)
+        if self.center_tabs.select() == str(self.plot_frame):
+            self._plot_bg = None
 
     # ---- PQ curve tab ----
     def _build_pq_tab(self):
