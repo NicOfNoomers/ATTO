@@ -1666,7 +1666,7 @@ class PumpTestRunner(LiveSessionBase):
                 if self.stop_flag.is_set():
                     break
                 self._nominal_end(nominal)
-                if row is not None and row.get("note") == "above_shutoff":
+                if row is not None and row.get("note") in ("above_shutoff", "no_flow"):
                     rest = len(pressures) - k - 1
                     self._emit("status", f"{label}PQ {hz} Hz: the pump cannot hold {p_t:g} mbar (syringe had to "
                                          f"push from its empty end); skipping the {rest} higher point(s).")
@@ -1729,9 +1729,16 @@ class PumpTestRunner(LiveSessionBase):
                 with self.lock:
                     last = list(self.buf_flow)[-50:]
                 fm = sum(last) / len(last) if last else float("nan")
+                # Low pressure and almost no flow is not the pump's shut-off: the line is open or the
+                # pump isn't pumping (lab 29 Oct 22:53-22:56: 3-9 mbar at 0.7-3.9 uL/min, 30 mA drawn)
+                no_flow = ctl.p_1s < 15.0 and last and abs(fm) < 5.0
                 row = {**base, "p_mean_mbar": f"{ctl.p_1s:.2f}", "flow_mean": f"{fm:.4f}" if last else "",
                        "flow_n": len(last), "pos_end": ctl.syr.position(),
-                       "note": "above_shutoff"}
+                       "note": "no_flow" if no_flow else "above_shutoff"}
+                if no_flow:
+                    self._emit("error", f"PQ {hz} Hz: the pump makes neither pressure ({ctl.p_1s:.1f} mbar) nor "
+                                        f"flow ({fm:.1f}). Is the line closed, the pump primed and running? "
+                                        f"The rest of this curve is skipped.")
                 self.pq_count += 1
                 self._write_pq_row(row)
                 self._emit("pq_point", row)

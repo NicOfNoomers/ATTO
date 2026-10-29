@@ -1087,6 +1087,16 @@ class PressureController:
                     self._fault(f"no pressure reading for {self.cfg['stale_s']:g} s")
             time.sleep(max(0.0, t_next - clock()))
 
+    def _move_ok(self, steps: int) -> bool:
+        """Inside the range (with margin), or moving back into it from the margin zone (right after
+        emptying the syringe the position is 0, inside the margin: pulling must still work)."""
+        margin = int(self.cfg["pos_margin"])
+        if self.syr.within(steps, margin):
+            return True
+        pos, new = self.syr.position(), self.syr.position() - steps
+        lo, hi = self.syr.pos_min + margin, self.syr.pos_max - margin
+        return (pos < lo and new > pos and new <= hi) or (pos > hi and new < pos and new >= lo)
+
     def safe_steps(self, d: int, p: float) -> int:
         """Most steps in direction d whose predicted effect keeps P inside the limits with a margin
         (using the larger known gain, so the estimate errs on the safe side)."""
@@ -1297,7 +1307,7 @@ class PressureController:
                 v = 0.0                                  # pump running: pull only
                 self._integral = min(self._integral, 0.0)
                 self.blocked = "pump_below"
-            if v and not self.syr.within(int(math.copysign(5 * self.m, v)), int(self.cfg["pos_margin"])):
+            if v and not self._move_ok(int(math.copysign(5 * self.m, v))):
                 direction = 1 if v > 0 else -1
                 v = 0.0
                 if self.remaining_steps(-1 if direction < 0 else 1) <= 0:
