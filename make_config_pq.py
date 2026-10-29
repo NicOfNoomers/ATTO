@@ -30,12 +30,15 @@ FREQS_HZ = [200, 400, 700]
 # sticks and slips worst (lab 29 Oct). The 0 mbar (free-flow) point: outlet vented, no syringe.
 PRESSURES_MBAR = [10, 25, 50, 75, 100, 150, 200, 250]    # the sensor reads to 345 mbar; the limit is 280
 MEASURE_S = 20.0
-SETTLE_TIMEOUT_S = 120.0
+# The syringe stopper sticks and slips (+-30 mbar, lab 29 Oct), so points rarely meet the +-2 mbar
+# settle rule and always used the full timeout; at ~250 uL/min of pump flow a 120 s timeout used half
+# the 1 mL syringe per point. 30 s, then measure anyway (the row keeps the mean +- SD).
+SETTLE_TIMEOUT_S = 30.0
 
 PRESSURE = {
     "enabled": True, "backend": "arduino", "port": SYRINGE_PORT, "baud": 115200, "firmware": "auto",
     "sensor": {"backend": "fluigent", "channel": PRESSURE_CHANNEL},
-    "limit_mbar": 280.0, "min_mbar": -100.0, "rate_mbar_s": 40.0,
+    "limit_mbar": 280.0, "min_mbar": -30.0, "rate_mbar_s": 40.0,
     "tolerance_mbar": 2.0, "settle_s": 3.0, "microsteps": MICROSTEPS,
     # in FULL steps (multiplied by microsteps in the software)
     "pos_min": 0, "pos_max": 2470, "pos_margin": 30, "clear_reserve_steps": 150,
@@ -65,9 +68,9 @@ def config(name, desc, tests):
     }
 
 
-smoke = config("PQ smoke test", "One PQ curve at 400 Hz, 10/25/50 mbar, 10 s each: checks syringe, pressure sensor, "
+smoke = config("PQ smoke test", "One PQ curve at 400 Hz, 10/25/50 mbar, 15 s each: checks syringe, pressure sensor, "
                                 "flow and the clearing prompt before the full run.",
-               [pq([400], [10, 25, 50], 10.0)])
+               [pq([400], [10, 25, 50], 15.0)])
 full = config("PQ curves", f"Flow vs outlet pressure at {', '.join(map(str, FREQS_HZ))} Hz, "
                            f"{len(PRESSURES_MBAR)} pressures {PRESSURES_MBAR[0]}..{PRESSURES_MBAR[-1]} mbar, "
                            f"{MEASURE_S:g} s per point after settling. Syringe cleared by hand when full.",

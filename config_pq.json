@@ -25,7 +25,7 @@
         200,
         250
       ],
-      "settle_timeout_s": 120.0,
+      "settle_timeout_s": 30.0,
       "measure_s": 20.0,
       "on_timeout": "measure",
       "release_after": true
@@ -55,7 +55,7 @@
       "channel": 1
     },
     "limit_mbar": 280.0,
-    "min_mbar": -100.0,
+    "min_mbar": -30.0,
     "rate_mbar_s": 40.0,
     "tolerance_mbar": 2.0,
     "settle_s": 3.0,

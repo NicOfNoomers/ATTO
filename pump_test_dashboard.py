@@ -1624,6 +1624,13 @@ class PumpTestRunner(LiveSessionBase):
         measure_s = max(1.0, safe_float(test.get("measure_s", 30), 30.0))
         on_timeout = str(test.get("on_timeout", "measure")).lower()
         nominal = PRESSURE_SETTLE_GUESS_S + measure_s
+        # Start with an (almost) empty syringe: the pump flow fills a 1 mL syringe in a few minutes
+        # (lab 29 Oct: ~4 min at 400 Hz), so a part-full start runs out in the middle of a point
+        usable = ctl.syr.pos_max - ctl.syr.pos_min - 2 * int(ctl.cfg["pos_margin"])
+        if ctl.remaining_steps(-1) < 0.8 * usable and not self.stop_flag.is_set():
+            if not self._clear_syringe("Start the PQ curve with an empty syringe: the pump flow fills it in a few "
+                                       "minutes.", log_event):
+                return
         for hz in pq_frequencies(test):
             if self.stop_flag.is_set():
                 break
