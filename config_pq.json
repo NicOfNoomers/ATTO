@@ -1,0 +1,68 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "pq",
+      "frequency_hz": [
+        200,
+        400,
+        700
+      ],
+      "pressures_mbar": [
+        0,
+        25,
+        50,
+        75,
+        100,
+        150,
+        200,
+        250
+      ],
+      "settle_timeout_s": 120.0,
+      "measure_s": 20.0,
+      "on_timeout": "measure",
+      "release_after": true
+    }
+  ],
+  "meta": {
+    "name": "PQ curves",
+    "description": "Flow vs outlet pressure at 200, 400, 700 Hz, 8 pressures 0..250 mbar, 20 s per point after settling. Syringe cleared by hand when full.",
+    "operator": "",
+    "pump_id": "",
+    "syringe_ml": 1.0,
+    "syringe_on": "outlet",
+    "pressure_channel": 1
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM8",
+    "baud": 115200,
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -100.0,
+    "rate_mbar_s": 40.0,
+    "tolerance_mbar": 2.0,
+    "settle_s": 3.0,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049
+  }
+}

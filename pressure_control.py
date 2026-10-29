@@ -65,6 +65,8 @@ PRESSURE_DEFAULTS: Dict[str, Any] = {
     "log_hz": 25.0,
     "stale_s": 1.0,
     "release_on_stop": True,
+    "clear_reserve_steps": 150,   # PQ: ask to clear the syringe when fewer steps than this remain
+    "state_file": None,           # where the last syringe position is kept (None = default path)
 }
 
 
@@ -160,6 +162,7 @@ class SyringeBase:
     def __init__(self, pos_min: int, pos_max: int):
         self.pos_min, self.pos_max = pos_min, pos_max
         self.pos = 0                    # firmware's step count
+        self.offset = 0                 # position = firmware count + offset (v1 forgets on reset)
         self.lock = threading.Lock()
 
     def open(self): ...
@@ -167,7 +170,12 @@ class SyringeBase:
 
     def position(self) -> int:
         with self.lock:
-            return self.pos
+            return self.pos + self.offset
+
+    def set_position(self, steps: int):
+        """Tell the software where the plunger is (e.g. 0 after emptying it by hand)."""
+        with self.lock:
+            self.offset = int(steps) - self.pos
 
     def within(self, steps: int, margin: int = 0) -> bool:
         """Would a move of `steps` (+ = push in = position down) stay inside the range?"""
@@ -209,7 +217,15 @@ class _SerialSyringe(SyringeBase):
         self._stop.clear()
         self._reader = threading.Thread(target=self._read_loop, name="syringe-reader", daemon=True)
         self._reader.start()
-        time.sleep(0.3)
+        # If opening the port reset the Uno, its bootloader swallows commands for ~1.5 s: ask
+        # for the position until it answers (at once when there was no reset)
+        for _ in range(3):
+            if self.query_position() is not None:
+                break
+        else:
+            self.close()
+            raise RuntimeError(f"syringe Arduino on {self.port} does not answer POS? (wrong port, "
+                               f"or not the syringe firmware?)")
 
     def close(self):
         self._stop.set()
@@ -276,7 +292,7 @@ class _SerialSyringe(SyringeBase):
     def query_position(self) -> Optional[int]:
         t = clock()
         self.send("POS?")
-        line = self.wait_for(r"POS=", 1.0, t)
+        line = self.wait_for(r"^POS=", 1.0, t)
         return self.position() if line and not line.startswith("ERR") else None
 
     def zero(self):
@@ -285,6 +301,15 @@ class _SerialSyringe(SyringeBase):
         line = self.wait_for(r"ZERO", 1.0, t)
         if not line or line.startswith("ERR"):
             raise RuntimeError(f"syringe did not confirm ZERO ({line})")
+        with self.lock:
+            self.pos, self.offset = 0, 0
+
+    def detect_version(self) -> str:
+        """'v2' if the firmware answers VER?, else 'v1' (it answers ERR UNKNOWN_CMD)."""
+        t = clock()
+        self.send("VER?")
+        line = self.wait_for(r"^VER|UNKNOWN", 1.5, t)
+        return "v2" if line and line.startswith("VER") and "v2" in line else "v1"
 
 
 class SyringeV1(_SerialSyringe):
@@ -385,7 +410,64 @@ class DummySyringe(SyringeBase):
 
     def zero(self):
         with self.lock:
-            self.pos = 0
+            self.pos, self.offset = 0, 0
+
+
+def default_state_path() -> str:
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "ATTO", "syringe_state.json")
+
+
+def load_state(path: str) -> Dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_state(path: str, state: Dict[str, Any]):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def make_syringe(cfg: Dict[str, Any], plant: Optional[PressurePlant] = None) -> SyringeBase:
+    """Syringe driver from the pressure config. backend 'dummy' needs the simulated plant.
+    firmware 'auto' asks VER? (v2 answers, v1 says ERR UNKNOWN_CMD)."""
+    c = merged_cfg(cfg)
+    lo, hi = int(c["pos_min"]), int(c["pos_max"])
+    fw = str(c.get("firmware") or "auto").lower()
+    if str(c.get("backend")).lower() == "dummy":
+        if plant is None:
+            raise RuntimeError("dummy syringe needs a PressurePlant")
+        return DummySyringe(plant, lo, hi, "v2" if fw == "v2" else "v1")
+    if fw == "auto":
+        probe = SyringeV1(str(c["port"]), int(c["baud"]), lo, hi)
+        probe.open()
+        try:
+            fw = probe.detect_version()
+        finally:
+            probe.close()
+    cls = SyringeV2 if fw == "v2" else SyringeV1
+    return cls(str(c["port"]), int(c["baud"]), lo, hi)
+
+
+def restore_position(syr: SyringeBase, state_path: str, port: str) -> Optional[int]:
+    """The v1 firmware restarts at 0 whenever the Uno resets (often on connect): carry the last
+    known position over from the state file. Returns the restored position, or None."""
+    st = load_state(state_path)
+    if st.get("port") != port or not isinstance(st.get("pos"), int):
+        return None
+    if isinstance(syr, _SerialSyringe):
+        syr.query_position()
+    syr.set_position(int(st["pos"]))
+    return int(st["pos"])
 
 
 # ---------------- learning ----------------
@@ -501,7 +583,9 @@ class PressureController:
         self.settled_since: Optional[float] = None
         self.fault_msg: Optional[str] = None
         self.t0: Optional[float] = None
-        self.hist: deque = deque(maxlen=200000)     # (t, p, pos) for statistics
+        self.hist: deque = deque(maxlen=100000)     # (t, p, pos): ~1 h at 25 Hz, for statistics
+        self.plot_buf: deque = deque(maxlen=6000)   # (t, p, target) for the live plot
+        self.blocked: Optional[str] = None          # "empty" while a needed push is blocked at the end
         self._recent: deque = deque(maxlen=5)
         self._threads: List[threading.Thread] = []
         self._log_f = None
@@ -509,10 +593,16 @@ class PressureController:
         self.dir = os.path.join(run_dir, "pressure") if run_dir else None
         self.events: List[Dict[str, Any]] = []
         self._integral = 0.0
+        self.state_path = self.cfg.get("state_file") or default_state_path()
+        self.port = str(self.cfg.get("port")) if str(self.cfg.get("backend")).lower() != "dummy" else "dummy"
+        self.restored_pos: Optional[int] = None
+        self._saved_pos: Optional[int] = None
 
     # ---- lifecycle ----
     def open(self):
         self.syr.open()
+        if self.port != "dummy":
+            self.restored_pos = restore_position(self.syr, self.state_path, self.port)
         if self.dir:
             os.makedirs(self.dir, exist_ok=True)
             self._log_f = open(os.path.join(self.dir, "pressure.csv"), "a", newline="", encoding="utf-8")
@@ -552,6 +642,7 @@ class PressureController:
         except Exception:
             pass
         self._event("stop", f"pos {self.syr.position()}")
+        self._save_pos(force=True)
         if self._log_f:
             try:
                 self._log_f.flush()
@@ -644,6 +735,37 @@ class PressureController:
                 self.fault_msg = None
         self._event("fault_reset", "")
 
+    def set_position(self, steps: int = 0):
+        """The operator emptied the syringe by hand (0) or put the plunger somewhere known."""
+        if self.mode in ("hold", "release"):
+            raise RuntimeError("stop the pressure control before setting the position")
+        try:
+            if steps == 0:
+                self.syr.zero()
+            else:
+                self.syr.set_position(steps)
+        except Exception:
+            self.syr.set_position(steps)      # old firmware without ZERO reply: software only
+        self.est.last_dir = 0
+        self._event("set_position", str(steps))
+        self._save_pos(force=True)
+
+    def note(self, kind: str, detail: str = ""):
+        """Add an entry to pressure/events.json (runner and UI actions)."""
+        self._event(kind, detail)
+
+    def steps_rate(self) -> float:
+        """Pull rate (steps/s) the hold needs against the current drift, from the learned values."""
+        return max(0.0, self.est.q) / max(0.02, self.est.gain(-1))
+
+    def _save_pos(self, force: bool = False):
+        if self.port == "dummy":
+            return
+        pos = self.syr.position()
+        if force or pos != self._saved_pos:
+            self._saved_pos = pos
+            save_state(self.state_path, {"port": self.port, "pos": pos, "time": time.time()})
+
     # ---- status / statistics ----
     def settled(self) -> bool:
         s = self.settled_since
@@ -693,6 +815,8 @@ class PressureController:
             st = {"mode": self.mode, "target": self.target, "p_cmd": self.p_cmd, "p": self.p, "p_1s": self.p_1s,
                   "fault": self.fault_msg, "p_max": self.p_max, "p_min": self.p_min}
         st.update(pos=self.syr.position(), settled=self.settled(), protocol=self.syr.protocol,
+                  blocked=self.blocked, remaining_pull=self.remaining_steps(-1),
+                  steps_per_s=round(self.steps_rate(), 2),
                   stale=(clock() - self.t_last_sample) > float(self.cfg["stale_s"]), **self.learned())
         return st
 
@@ -732,6 +856,7 @@ class PressureController:
                 p = sorted(self._recent)[len(self._recent) // 2]          # median of the last 5
                 t_s = now - self.t0
                 self.hist.append((t_s, p, self.syr.position()))
+                self.plot_buf.append((t_s, p, self.target if self.mode == "hold" else float("nan")))
                 # Settled = the 1 s mean within tolerance (a stop-start v1 hold is a sawtooth)
                 n1 = max(1, int(round(1.0 / dt)))
                 recent = [h[1] for h in list(self.hist)[-n1:]]
@@ -762,6 +887,7 @@ class PressureController:
                     if n_flush >= int(1.0 / dt):
                         n_flush = 0
                         self._log_f.flush()
+                        self._save_pos()
             elif now - self.t_last_sample > float(self.cfg["stale_s"]) and self.t_last_sample > 0:
                 if self.mode in ("hold", "release"):
                     self._fault(f"no pressure reading for {self.cfg['stale_s']:g} s")
@@ -854,11 +980,22 @@ class PressureController:
             if not self.syr.within(steps, int(self.cfg["pos_margin"])):
                 avail = self.remaining_steps(-1 if d < 0 else 1)
                 if avail <= 0:
-                    self._fault("syringe range used up (" + ("full" if d < 0 else "empty") +
-                                "): empty/refill it before holding pressure")
+                    if mode == "release":
+                        # Can't pull further: leave the rest to the operator (vent by hand)
+                        self._event("release_blocked", f"{p:.1f} mbar left at pos {self.syr.position()}")
+                        self.idle()
+                    elif d > 0:
+                        # Empty end: can't raise P. Safe (P stays below the target); wait, the
+                        # pump may raise it. The PQ runner treats a lasting block as "above shut-off".
+                        self.blocked = "empty"
+                        time.sleep(0.1)
+                    else:
+                        self._fault("syringe range used up (full): clear the syringe by hand "
+                                    "before holding pressure")
                     continue
                 steps = d * min(n, avail)
             p0, t0 = p, clock()
+            self.blocked = None
             ok = self.syr.move(steps)
             if not ok:
                 self._fault(f"syringe did not confirm a move of {steps} steps"
@@ -877,6 +1014,7 @@ class PressureController:
     def _control_v2(self):
         """Velocity control: v = (kp*err + ki*integral)/g + feed-forward against the drift."""
         last_v, last_p, last_t = 0.0, None, None
+        t_sent = 0.0
         while not self.stop_flag.is_set():
             with self.lock:
                 mode = self.mode
@@ -915,10 +1053,23 @@ class PressureController:
                 direction = 1 if v > 0 else -1
                 v = 0.0
                 if self.remaining_steps(-1 if direction < 0 else 1) <= 0:
-                    self._fault("syringe range used up: empty/refill it before holding pressure")
-            if abs(v - last_v) >= 2.0:
+                    if mode == "release":
+                        self.syr.set_velocity(0)
+                        last_v = 0.0
+                        self._event("release_blocked", f"{p:.1f} mbar left at pos {self.syr.position()}")
+                        self.idle()
+                        continue
+                    if direction > 0:
+                        self.blocked = "empty"
+                    else:
+                        self._fault("syringe range used up (full): clear the syringe by hand "
+                                    "before holding pressure")
+            elif v:
+                self.blocked = None
+            # Resend at least every 0.5 s: the v2 firmware stops on its own after 2 s of silence
+            if abs(v - last_v) >= 2.0 or (v and now - t_sent > 0.5):
                 self.syr.set_velocity(v)
-                last_v = v
+                last_v, t_sent = v, now
             if last_p is not None and abs(last_v) < 1.0:
                 self.est.observe_idle(p - last_p, now - last_t)
             last_p, last_t = p, now
@@ -957,24 +1108,32 @@ def save_calibration(path: str, cal: Dict[str, Any]):
 
 
 def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.0, max_moves: int = 60,
-                     progress: Callable[[str], None] = lambda s: None) -> Dict[str, Any]:
-    """Pump OFF, line closed. Push in `step` steps at a time up to p_top, then pull back to the
-    start. Returns gain per direction (mbar/step), backlash (steps), and the raw points."""
+                     progress: Callable[[str], None] = lambda s: None, first: Optional[int] = None) -> Dict[str, Any]:
+    """Pump OFF, line closed. Move `step` steps at a time away from the start pressure by p_top,
+    then back. Pushes first (pressure up) when the syringe has room to push, else pulls first
+    (pressure down, at most 80 % of the lower limit). Returns gain per direction (mbar/step),
+    backlash (steps, from the first move after the reversal) and the raw points."""
     if ctl.mode in ("hold", "release"):
         raise RuntimeError("stop the pressure control first")
+    margin = int(ctl.cfg["pos_margin"])
+    if first is None:
+        need = int(p_top / max(0.05, ctl.est.gain(1))) + 2 * step
+        first = 1 if ctl.remaining_steps(1) >= need else -1
+    span = p_top if first > 0 else min(p_top, 0.8 * abs(ctl.p_min))
     pts = []
     p_start = ctl._wait_sample(1.0)
-    for direction in (1, -1):
+    for direction in (first, -first):
         moved = 0
         for _ in range(max_moves):
             if ctl.stop_flag.is_set():
                 break
             p0 = ctl._wait_sample(1.0)
-            if direction > 0 and p0 >= p_top:
+            if direction == first and (p0 - p_start) * first >= span:
                 break
-            if direction < 0 and p0 <= p_start + 1.0:
+            if direction != first and (p0 - p_start) * first <= 1.0:
                 break
-            if not ctl.syr.within(direction * step, int(ctl.cfg["pos_margin"])):
+            if not ctl.syr.within(direction * step, margin):
+                progress("syringe range end reached")
                 break
             ctl.syr.move(direction * step)
             time.sleep(0.4)
@@ -984,17 +1143,17 @@ def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.
             progress(f"{'push' if direction > 0 else 'pull'} {moved}: {p1:.1f} mbar")
         if ctl.stop_flag.is_set():
             break
-    out = {}
+    out: Dict[str, Any] = {"sweep_first": "push" if first > 0 else "pull"}
     for d, key in ((1, "gain_push_mbar_step"), (-1, "gain_pull_mbar_step")):
         moves = [p for p in pts if p["dir"] == d]
-        # skip the first move after the reversal (backlash)
-        body = moves[1:] if d < 0 else moves
+        body = moves if d == first else moves[1:]          # skip the first move after the reversal
         gains = sorted((p["p1"] - p["p0"]) * d / p["steps"] for p in body if (p["p1"] - p["p0"]) * d > 0)
         out[key] = round(gains[len(gains) // 2], 4) if gains else None
-    pull = [p for p in pts if p["dir"] < 0]
-    if pull and out.get("gain_pull_mbar_step"):
-        first = (pull[0]["p0"] - pull[0]["p1"]) / out["gain_pull_mbar_step"]
-        out["backlash_steps"] = round(max(0.0, pull[0]["steps"] - first), 1)
+    back = [p for p in pts if p["dir"] == -first]
+    g_back = out["gain_push_mbar_step" if -first > 0 else "gain_pull_mbar_step"]
+    if back and g_back:
+        eff = (back[0]["p1"] - back[0]["p0"]) * (-first) / g_back
+        out["backlash_steps"] = round(max(0.0, back[0]["steps"] - eff), 1)
     out["points"] = pts
     return out
 
