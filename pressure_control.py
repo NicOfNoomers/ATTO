@@ -748,6 +748,14 @@ class PressureController:
                 pass
 
     # ---- commands (any thread) ----
+    def _bound_drift(self):
+        """Pump off, the only drift is the leak (a few mbar/s). Without this bound a line that
+        answers weakly (gas bubbles after a vacuum hold, 29 Oct 20:47) was read as a fast falling
+        drift (-187 mbar/s), the feed-forward pushed ever harder and P overshot to 93 at 50."""
+        if self.pump_on is not None and not self._pumping():      # (unknown pump state: no bound)
+            lim = float(self.cfg.get("leak_max_mbar_s", 5.0))
+            self.est.q = max(-lim, min(lim, self.est.q))
+
     def _pumping(self) -> bool:
         try:
             return bool(self.pump_on and self.pump_on())
@@ -1123,6 +1131,7 @@ class PressureController:
             if abs(err) <= 0.5 * tol and abs(q * T) <= 0.5 * tol:
                 if idle_p is not None:
                     self.est.observe_idle(p - idle_p, now - idle_t)
+                    self._bound_drift()
                 idle_p, idle_t = p, now
                 t_last_move = None
                 time.sleep(0.1)
@@ -1190,6 +1199,7 @@ class PressureController:
             time.sleep(0.08 if self._pumping() else float(self.cfg["move_settle_s"]))
             p1 = self._wait_sample(0.5)
             res = self.est.observe_move(steps, p1 - p0, clock() - t0)
+            self._bound_drift()
             if res["stuck"]:
                 self._event("stuck", f"move {steps} steps changed P by {p1 - p0:+.2f} mbar at pos "
                                      f"{self.syr.position()}")
@@ -1235,7 +1245,15 @@ class PressureController:
             # observed while the syringe moves): limited to what vmax can deliver, not a fixed 200
             ki = float(self.cfg["ki"])
             i_lim = max(200.0, vmax * g / max(ki, 1e-3))
-            self._integral = max(-i_lim, min(i_lim, self._integral + err * dt))
+            # Anti-windup: integrate only near the target (or while pumping, where the integral
+            # holds the pull rate). Far away proportional only: through 900-1500 counts of lost
+            # motion (lab 21:19) a winding integral had the syringe racing when P finally answered:
+            # 125 mbar at 50, then -17 on the way back
+            near = abs(err) < max(10.0, 5.0 * tol)
+            if near or self._pumping():
+                self._integral = max(-i_lim, min(i_lim, self._integral + err * dt))
+            elif self._integral * err < 0:
+                self._integral = 0.0                     # crossed over: drop what was wound up
             v = (float(self.cfg["kp"]) * 2.0 * err + ki * self._integral - self.est.q) / g
             v = max(-vmax, min(vmax, v))
             if v > 0 and mode == "hold" and self._pumping():
@@ -1265,6 +1283,7 @@ class PressureController:
                 last_v, t_sent = v, now
             if last_p is not None and abs(last_v) < 1.0:
                 self.est.observe_idle(p - last_p, now - last_t)
+                self._bound_drift()
             last_p, last_t = p, now
             time.sleep(0.04)
 
