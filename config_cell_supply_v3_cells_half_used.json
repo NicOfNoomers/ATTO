@@ -1,0 +1,275 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2600,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Variant 3 (Cells, half used): bench supply 2.60 V, limit 50 mA; R_series 120 ohm, extra part: none. Type the MEASURED V_s, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 1,
+      "rep": 1,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 2,
+      "rep": 2,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 3,
+      "rep": 3,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 4,
+      "rep": 1,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 5,
+      "rep": 2,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 6,
+      "rep": 3,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 7,
+      "rep": 1,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 8,
+      "rep": 2,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "reading": 9,
+      "rep": 3,
+      "variant": "v3"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Cell supply v3 Cells, half used",
+    "description": "2 x SR516 supply test, variant 3: Cells, half used. V_s 2.60 V, R_series 120 ohm, extra part: none. Readings: 20 s rest, 15 s drive, 30 s recover, x3 at 1, 100, 2000 Hz. PPK2 ampere meter at 1 ms bins after the series resistor; battery node = V_s - I x R_series.",
+    "operator": "",
+    "pump_id": "",
+    "variant": "v3",
+    "variant_label": "Cells, half used",
+    "v_supply_mv": 2600,
+    "series_ohm": 120,
+    "extra_part": "none",
+    "cell_capacity_mah": 12.5,
+    "node_min_v": 1.8,
+    "brief": "PhD/Pump/capsule_driver/03_bench_brief_cell_supply_2026-10-29.md"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 50,
+    "max_mv": 2600,
+    "initial_mv": 2600,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 1,
+    "watch_ma": 40,
+    "watch_hold_ms": 200,
+    "raw_every_min": 2,
+    "raw_length_s": 2.0
+  }
+}
