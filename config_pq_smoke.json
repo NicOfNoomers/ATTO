@@ -12,7 +12,7 @@
       "type": "pq",
       "frequency_hz": 400,
       "pressures_mbar": [
-        0,
+        10,
         25,
         50
       ],
@@ -24,7 +24,7 @@
   ],
   "meta": {
     "name": "PQ smoke test",
-    "description": "One PQ curve at 400 Hz, 0/25/50 mbar, 10 s each: checks syringe, pressure sensor, flow and the clearing prompt before the full run.",
+    "description": "One PQ curve at 400 Hz, 10/25/50 mbar, 10 s each: checks syringe, pressure sensor, flow and the clearing prompt before the full run.",
     "operator": "",
     "pump_id": "",
     "syringe_ml": 1.0,

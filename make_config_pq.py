@@ -26,7 +26,9 @@ SYRINGE_PORT = "COM6"          # the syringe Uno on the lab PC (29 Oct)
 PRESSURE_CHANNEL = 1           # Fluigent index of the pressure sensor ("Find" in the Pressure panel)
 MICROSTEPS = 16                # A4988 with MS1-3 high (29 Oct); at full steps one step was 10-25 mbar
 FREQS_HZ = [200, 400, 700]
-PRESSURES_MBAR = [0, 25, 50, 75, 100, 150, 200, 250]     # the sensor reads to 345 mbar; the limit is 280
+# From 10 mbar: holding 0 means pulling the whole pump flow at no back-pressure, where the syringe
+# sticks and slips worst (lab 29 Oct). The 0 mbar (free-flow) point: outlet vented, no syringe.
+PRESSURES_MBAR = [10, 25, 50, 75, 100, 150, 200, 250]    # the sensor reads to 345 mbar; the limit is 280
 MEASURE_S = 20.0
 SETTLE_TIMEOUT_S = 120.0
 
@@ -63,9 +65,9 @@ def config(name, desc, tests):
     }
 
 
-smoke = config("PQ smoke test", "One PQ curve at 400 Hz, 0/25/50 mbar, 10 s each: checks syringe, pressure sensor, "
+smoke = config("PQ smoke test", "One PQ curve at 400 Hz, 10/25/50 mbar, 10 s each: checks syringe, pressure sensor, "
                                 "flow and the clearing prompt before the full run.",
-               [pq([400], [0, 25, 50], 10.0)])
+               [pq([400], [10, 25, 50], 10.0)])
 full = config("PQ curves", f"Flow vs outlet pressure at {', '.join(map(str, FREQS_HZ))} Hz, "
                            f"{len(PRESSURES_MBAR)} pressures {PRESSURES_MBAR[0]}..{PRESSURES_MBAR[-1]} mbar, "
                            f"{MEASURE_S:g} s per point after settling. Syringe cleared by hand when full.",
