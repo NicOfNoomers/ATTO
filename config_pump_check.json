@@ -1,0 +1,86 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Pump check",
+    "operator": "",
+    "pump_id": "",
+    "description": "Free flow (outlet open) or shut-off pressure (outlet closed, syringe idle) at 200, 400, 700 Hz, 30 s each. Run once per outlet state and note which in the description."
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -30.0,
+    "microsteps": 16,
+    "pos_max": 2470,
+    "ul_per_step": 0.4049
+  }
+}
