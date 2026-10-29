@@ -157,6 +157,8 @@ def missing_feature_packages() -> List[Tuple[str, str, str]]:
     return missing
 
 
+from ui_panels import PanelManager     # dockable/collapsible sidebar panels (repo root)
+
 POWER_AVAILABLE = False
 try:
     from power_ppk2 import PowerMeter, POWER_DEFAULTS, find_ppk2_ports  # PPK2 power meter (needs numpy)
@@ -2006,47 +2008,140 @@ class DashboardApp:
 
     # ---- layout ----
     def _build_layout(self):
-        top = ttk.Frame(self.root)
-        top.pack(side=tk.TOP, fill=tk.X, padx=8, pady=8)
+        """Toolbar + progress row on top, status bar at the bottom, and three
+        columns: left sidebar | tabbed plots | right sidebar. Sidebar panels
+        are managed by ui_panels.PanelManager (View menu)."""
+        self.panels = PanelManager(self.root)
+        self.panels.load()
+        geo = self.panels.window_geometry()
+        if geo:
+            self.root.geometry(geo)
 
-        # Run meta
-        meta = ttk.LabelFrame(top, text="Run details & storage")
-        meta.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self.var_mode = tk.StringVar(value="scheduled")
+        menubar = tk.Menu(self.root)
+        fm = tk.Menu(menubar, tearoff=False)
+        fm.add_command(label="Load config...", command=self.pick_and_load_config)
+        fm.add_command(label="Save config as...", command=self.save_config_as)
+        fm.add_separator()
+        fm.add_command(label="Exit", command=self.on_close)
+        menubar.add_cascade(label="File", menu=fm)
 
+        # Toolbar: run buttons + status (always visible)
+        btns = ttk.Frame(self.root)
+        btns.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
+
+        self.btn_start = ttk.Button(btns, text="Start Run", command=self.start_scheduled_run)
+        self.btn_stop  = ttk.Button(btns, text="Stop", command=self.stop_active, state=tk.DISABLED)
+        self.btn_manual_connect = ttk.Button(btns, text="Connect Manual", command=self.manual_connect)
+        self.btn_manual_disconnect = ttk.Button(btns, text="Disconnect Manual", command=self.manual_disconnect, state=tk.DISABLED)
+
+        self.btn_start.pack(side=tk.LEFT, padx=4)
+        self.btn_stop.pack(side=tk.LEFT, padx=4)
+        self.btn_manual_connect.pack(side=tk.LEFT, padx=(18, 4))
+        self.btn_manual_disconnect.pack(side=tk.LEFT, padx=4)
+        ttk.Label(btns, text="Mode:").pack(side=tk.LEFT, padx=(18, 2))
+        ttk.Radiobutton(btns, text="Scheduled", variable=self.var_mode, value="scheduled",
+                        command=self._update_mode_ui).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(btns, text="Manual", variable=self.var_mode, value="manual",
+                        command=self._update_mode_ui).pack(side=tk.LEFT, padx=2)
+
+        self.var_status = tk.StringVar(value="Idle.")
+        ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
+
+        self._build_progress_row()
+        self._build_status_bar()
+
+        # Three columns; the sidebars hide themselves when they hold no visible panel
+        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=(0, 4))
+        self.panels.paned = main
+        left = self.panels.add_dock("left", main)
+        left.canvas.configure(width=430)
+        self.center_tabs = ttk.Notebook(main)
+        right = self.panels.add_dock("right", main)
+        right.canvas.configure(width=420)
+        main.add(left, weight=0)
+        main.add(self.center_tabs, weight=1)
+        main.add(right, weight=0)
+        self.panels.set_columns([left, self.center_tabs, right])
+
+        self.plot_frame = ttk.Frame(self.center_tabs)
+        self.center_tabs.add(self.plot_frame, text="Live plots")
+
+        # Video state is shared by the camera panels
+        self.video_recorder = None
+        self.video_recording = False
+        self.var_video_enabled = tk.BooleanVar(value=False)
+        self.var_video_camera_index = tk.StringVar(value="0")
+        self.var_video_status = tk.StringVar(value="Camera: Not connected")
+
+        P = self.panels
+        P.add_panel("run", "Run details & storage", "left", self._build_run_details)
+        P.add_panel("hardware", "Hardware", "left", self._build_hardware)
+        P.add_panel("config", "Config builder", "left", self._build_config_builder)
+        P.add_panel("manual", "Manual control", "right", self._build_manual_panel)
+        P.add_panel("power", "Power meter (PPK2)", "right", self._build_power_panel)
+        P.add_panel("camera", "Camera", "right",
+                    lambda body: self._build_video_controls(body).pack(side=tk.TOP, fill=tk.X))
+        P.add_panel("preview", "Camera preview", "right",
+                    lambda body: self._build_video_preview(body).pack(side=tk.TOP, fill=tk.BOTH, expand=True))
+
+        P.add_preset("Run", {"run": "open", "hardware": "collapsed", "config": "open", "manual": "collapsed",
+                             "power": "collapsed", "camera": "collapsed", "preview": "open"})
+        P.add_preset("Setup", {"run": "open", "hardware": "open", "config": "collapsed", "manual": "collapsed",
+                               "power": "open", "camera": "open", "preview": "open"})
+        P.add_preset("Manual", {"run": "collapsed", "hardware": "open", "config": "hidden", "manual": "open",
+                                "power": "open", "camera": "collapsed", "preview": "open"})
+        P.add_preset("Video", {"run": "collapsed", "hardware": "collapsed", "config": "collapsed",
+                               "manual": "collapsed", "power": "hidden", "camera": "open", "preview": "open"})
+        P.add_preset("Plots only", {k: "hidden" for k in ("run", "hardware", "config", "manual", "power",
+                                                           "camera", "preview")})
+        P.add_preset("Compact", {"config": "open"})
+        P.add_preset("All open", {k: "open" for k in ("run", "hardware", "config", "manual", "power",
+                                                       "camera", "preview")})
+        P.build_view_menu(menubar)
+        self.root.config(menu=menubar)
+
+        self._update_mode_ui()
+        self._refresh_manual_duty_state()
+
+        # Start video preview if camera is connected
+        self._init_video()
+        P.restore(default_preset="Run")
+
+    def _build_run_details(self, meta):
         self.var_test_name = tk.StringVar(value="Pump Test")
         self.var_operator  = tk.StringVar(value="")
         self.var_pump_id   = tk.StringVar(value="")
         self.var_out_dir   = tk.StringVar(value=os.path.abspath("./pump_runs"))
         self.var_log_manual = tk.BooleanVar(value=False)
-        self.txt_desc      = tk.Text(meta, height=4, width=55)
+        self.txt_desc      = tk.Text(meta, height=3, width=40)
         self._default_test_name = self.var_test_name.get()
         self._default_operator = self.var_operator.get()
         self._default_desc = ""
+        meta.columnconfigure(1, weight=1)
 
         ttk.Label(meta, text="Name:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(meta, textvariable=self.var_test_name, width=40).grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(meta, textvariable=self.var_test_name).grid(row=0, column=1, columnspan=2, sticky="we", padx=4, pady=2)
 
         ttk.Label(meta, text="Operator:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         op_row = ttk.Frame(meta)
         op_row.grid(row=1, column=1, columnspan=2, sticky="w", padx=4, pady=2)
-        ttk.Entry(op_row, textvariable=self.var_operator, width=18).pack(side=tk.LEFT)
+        ttk.Entry(op_row, textvariable=self.var_operator, width=14).pack(side=tk.LEFT)
         ttk.Label(op_row, text="Pump ID:").pack(side=tk.LEFT, padx=(10, 2))
-        ttk.Entry(op_row, textvariable=self.var_pump_id, width=16).pack(side=tk.LEFT)
+        ttk.Entry(op_row, textvariable=self.var_pump_id, width=14).pack(side=tk.LEFT)
 
         ttk.Label(meta, text="Output folder:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(meta, textvariable=self.var_out_dir, width=40).grid(row=2, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(meta, textvariable=self.var_out_dir).grid(row=2, column=1, sticky="we", padx=4, pady=2)
         ttk.Button(meta, text="Browse...", command=self.pick_out_dir).grid(row=2, column=2, padx=4, pady=2)
 
         ttk.Label(meta, text="Description:").grid(row=3, column=0, sticky="nw", padx=4, pady=2)
         self.txt_desc.grid(row=3, column=1, columnspan=2, sticky="we", padx=4, pady=2)
 
         ttk.Checkbutton(meta, text="Log manual sessions to disk", variable=self.var_log_manual)\
-            .grid(row=4, column=1, sticky="w", padx=4, pady=(2, 6))
+            .grid(row=4, column=1, sticky="w", padx=4, pady=(2, 4))
 
-        # Hardware
-        hw = ttk.LabelFrame(top, text="Hardware & mode")
-        hw.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+    def _build_hardware(self, hw):
         self.var_cfg_file = tk.StringVar(value="")
         self.var_port     = tk.StringVar(value="COM22")
         self.var_baud     = tk.StringVar(value="115200")
@@ -2057,18 +2152,19 @@ class DashboardApp:
         self.var_flow_server    = tk.StringVar(value="localhost:8765")
         self.var_sample_rate    = tk.StringVar(value="25")
         self.var_break_between  = tk.StringVar(value="0")
-
-        self.var_mode = tk.StringVar(value="scheduled")
+        hw.columnconfigure(1, weight=1)
 
         ttk.Label(hw, text="Config file:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_cfg_file, width=38).grid(row=0, column=1, sticky="w", padx=4, pady=2)
-        ttk.Button(hw, text="Load", command=self.pick_and_load_config).grid(row=0, column=2, padx=4, pady=2)
-        ttk.Button(hw, text="Save As", command=self.save_config_as).grid(row=0, column=3, padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_cfg_file).grid(row=0, column=1, columnspan=2, sticky="we", padx=4, pady=2)
+        cf = ttk.Frame(hw)
+        cf.grid(row=0, column=3, sticky="e")
+        ttk.Button(cf, text="Load", command=self.pick_and_load_config, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Button(cf, text="Save As", command=self.save_config_as, width=8).pack(side=tk.LEFT, padx=2)
 
         ttk.Label(hw, text="Serial port:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_port, width=12).grid(row=1, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_port, width=10).grid(row=1, column=1, sticky="w", padx=4, pady=2)
         ttk.Label(hw, text="Baud:").grid(row=1, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_baud, width=10).grid(row=1, column=3, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_baud, width=9).grid(row=1, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Protocol:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty"], textvariable=self.var_protocol)
@@ -2080,92 +2176,72 @@ class DashboardApp:
             .grid(row=3, column=1, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Channel:").grid(row=3, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_sensor_channel, width=10).grid(row=3, column=3, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_sensor_channel, width=9).grid(row=3, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Sample rate (Hz):").grid(row=4, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(hw, textvariable=self.var_sample_rate, width=10).grid(row=4, column=1, sticky="w", padx=4, pady=2)
 
-        ttk.Label(hw, text="Break between blocks (s):").grid(row=4, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_break_between, width=10).grid(row=4, column=3, sticky="w", padx=4, pady=2)
+        ttk.Label(hw, text="Break (s):").grid(row=4, column=2, sticky="e", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_break_between, width=9).grid(row=4, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Flow server:").grid(row=5, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_flow_server, width=24).grid(row=5, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_flow_server).grid(row=5, column=1, columnspan=3, sticky="we", padx=4, pady=2)
 
-        mode_row = ttk.Frame(hw)
-        mode_row.grid(row=6, column=0, columnspan=4, sticky="w", padx=4, pady=(8, 2))
-        ttk.Label(mode_row, text="Mode:").pack(side=tk.LEFT)
-        ttk.Radiobutton(mode_row, text="Scheduled tests", variable=self.var_mode, value="scheduled", command=self._update_mode_ui)\
-            .pack(side=tk.LEFT, padx=6)
-        ttk.Radiobutton(mode_row, text="Manual control (testing OFF)", variable=self.var_mode, value="manual", command=self._update_mode_ui)\
-            .pack(side=tk.LEFT, padx=6)
+    # ---- status bar: device lights + memory ----
+    def _build_status_bar(self):
+        bar = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._status_lights: Dict[str, tk.Label] = {}
+        for key in ("arduino", "flow", "ppk2", "camera"):
+            lbl = tk.Label(bar, text=f"● {key}", fg="#888888", padx=8)
+            lbl.pack(side=tk.LEFT)
+            self._status_lights[key] = lbl
+        self.var_mem = tk.StringVar(value="")
+        tk.Label(bar, textvariable=self.var_mem, padx=8).pack(side=tk.RIGHT)
 
-        # Buttons row
-        btns = ttk.Frame(self.root)
-        btns.pack(side=tk.TOP, fill=tk.X, padx=8, pady=6)
+    def _set_light(self, key: str, state: str, text: str):
+        colours = {"ok": "#1a7f37", "bad": "#c62828", "off": "#888888", "busy": "#b26a00"}
+        lbl = self._status_lights.get(key)
+        if lbl is not None:
+            lbl.configure(text=f"● {text}", fg=colours.get(state, "#888888"))
 
-        self.btn_start = ttk.Button(btns, text="Start Run", command=self.start_scheduled_run)
-        self.btn_stop  = ttk.Button(btns, text="Stop", command=self.stop_active, state=tk.DISABLED)
-        self.btn_manual_connect = ttk.Button(btns, text="Connect Manual", command=self.manual_connect)
-        self.btn_manual_disconnect = ttk.Button(btns, text="Disconnect Manual", command=self.manual_disconnect, state=tk.DISABLED)
-
-        self.btn_start.pack(side=tk.LEFT, padx=4)
-        self.btn_stop.pack(side=tk.LEFT, padx=4)
-        self.btn_manual_connect.pack(side=tk.LEFT, padx=(18, 4))
-        self.btn_manual_disconnect.pack(side=tk.LEFT, padx=4)
-
-        self.var_status = tk.StringVar(value="Idle.")
-        ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
-
-        self._build_progress_row()
-
-        # Main split (responsive, no scrollbars)
-        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
-
-        left = ttk.Frame(main, width=420)
-        left.pack_propagate(False)
-        main.add(left, weight=0)
-        self._build_config_builder(left)
-
-        right = ttk.Frame(main)
-        main.add(right, weight=1)
-
-        right_pane = ttk.PanedWindow(right, orient=tk.VERTICAL)
-        right_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        self.plot_frame = ttk.LabelFrame(right_pane, text="Live plots")
-        right_pane.add(self.plot_frame, weight=3)
-
-        controls = ttk.Frame(right_pane)
-        right_pane.add(controls, weight=1)
-
-        controls.columnconfigure(0, weight=1)
-        controls.rowconfigure(3, weight=1)
-
-        self.manual_frame = ttk.LabelFrame(controls, text="Manual control")
-        self.manual_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        self._build_manual_panel(self.manual_frame)
-
-        self.power_frame = ttk.LabelFrame(controls, text="Power meter (PPK2 as ammeter: bench supply -> PPK2 -> pump driver)")
-        self.power_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self._build_power_panel(self.power_frame)
-
-        # Initialize video recorder
-        self.video_recorder = None
-        self.video_recording = False
-        self.var_video_enabled = tk.BooleanVar(value=False)
-        self.var_video_camera_index = tk.StringVar(value="0")
-        self.var_video_status = tk.StringVar(value="Camera: Not connected")
-
-        # Build video controls and preview
-        self._build_video_controls(controls).grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        self._build_video_preview(controls).grid(row=3, column=0, sticky="nsew")
-
-        self._update_mode_ui()
-        self._refresh_manual_duty_state()
-
-        # Start video preview if camera is connected
-        self._init_video()
+    def _update_status_bar(self):
+        s = self.active_stream
+        if s is not None and getattr(s, "ser", None) is not None:
+            self._set_light("arduino", "ok", f"Arduino {s.cfg.get('port', '')}")
+        elif s is not None:
+            self._set_light("arduino", "busy", "Arduino (dry run)")
+        else:
+            self._set_light("arduino", "off", "Arduino")
+        backend = self.var_sensor_backend.get()
+        if s is not None and getattr(s, "t0", None) is not None:
+            with s.lock:
+                last = s.buf_t[-1] if s.buf_t else None
+            fresh = last is not None and (CLOCK() - s.t0 - last) < 2.0
+            self._set_light("flow", "ok" if fresh else "bad", f"Flow {backend}" + ("" if fresh else " (no data)"))
+        else:
+            self._set_light("flow", "off", f"Flow {backend}")
+        live = s.get_power_live() if s is not None else None
+        if live is None:
+            self._set_light("ppk2", "off", "PPK2")
+        else:
+            st = live.get("state", "?")
+            self._set_light("ppk2", "ok" if st == "measuring" else "bad" if st in ("tripped", "lost") else "busy",
+                            f"PPK2 {st}")
+        vr = self.video_recorder
+        if vr is not None and vr.is_opened():
+            fps = vr.measured_fps()
+            txt = f"Camera {fps:.1f} fps" if fps else "Camera"
+            self._set_light("camera", "busy" if vr.is_recording() else "ok", txt + (" · REC" if vr.is_recording() else ""))
+        else:
+            self._set_light("camera", "off", "Camera")
+        if PSUTIL_AVAILABLE:
+            try:
+                rss = psutil.Process().memory_info().rss / 2**20
+                free = psutil.virtual_memory().available / 2**20
+                self.var_mem.set(f"Dashboard RAM {rss:.0f} MB · free {free / 1024:.1f} GB")
+            except Exception:
+                pass
 
     # ---- run timer + manual voltage steps ----
     def _build_progress_row(self):
@@ -2249,19 +2325,22 @@ class DashboardApp:
         ttk.Label(r0, text="Port:").pack(side=tk.LEFT, padx=(12, 2))
         ttk.Entry(r0, textvariable=self.var_pw_port, width=8).pack(side=tk.LEFT)
         ttk.Button(r0, text="Detect", command=self._detect_ppk2).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r0, text="Bin (ms):").pack(side=tk.LEFT, padx=(12, 2))
-        ttk.Entry(r0, textvariable=self.var_pw_bin, width=5).pack(side=tk.LEFT)
+        r0b = ttk.Frame(parent); r0b.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r0b, text="Bin (ms):").pack(side=tk.LEFT)
+        ttk.Entry(r0b, textvariable=self.var_pw_bin, width=5).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r0b, text="Supply voltage at start (V):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r0b, textvariable=self.var_supply_v, width=7).pack(side=tk.LEFT, padx=4)
 
         r1 = ttk.Frame(parent); r1.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
-        ttk.Label(r1, text="Supply voltage at start (V):").pack(side=tk.LEFT)
-        ttk.Entry(r1, textvariable=self.var_supply_v, width=7).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r1, text="Bench supply limit (mA):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Label(r1, text="Bench limit (mA):").pack(side=tk.LEFT)
         ttk.Entry(r1, textvariable=self.var_supply_limit, width=6).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r1, text="Stop if current ≥ (mA, blank = 95% of limit):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Label(r1, text="Stop at (mA):").pack(side=tk.LEFT, padx=(12, 2))
         ttk.Entry(r1, textvariable=self.var_pw_watch, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="(blank = 95 % of limit)").pack(side=tk.LEFT, padx=2)
 
         r2 = ttk.Frame(parent); r2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(2, 6))
-        self.lbl_pw_live = tk.Label(r2, textvariable=self.var_pw_live, anchor="w")
+        self.lbl_pw_live = tk.Label(r2, textvariable=self.var_pw_live, anchor="w", wraplength=380,
+                                    justify=tk.LEFT)
         self.lbl_pw_live.pack(side=tk.LEFT)
         self._pw_live_fg = self.lbl_pw_live.cget("fg")
 
@@ -2371,6 +2450,10 @@ class DashboardApp:
             self._update_power_ui()
         except Exception:
             log_exception_limited("power_tick", "Power meter: live update failed")
+        try:
+            self._update_status_bar()
+        except Exception:
+            log_exception_limited("status_bar", "Status bar update failed")
         self.root.after(1000, self._tick_progress)
 
     def _update_progress_ui(self):
@@ -2564,7 +2647,7 @@ class DashboardApp:
     # ---- video controls ----
     def _build_video_controls(self, parent):
         """Build video recording controls."""
-        video_frame = ttk.LabelFrame(parent, text="USB Camera (optional)")
+        video_frame = ttk.Frame(parent)
         self.video_controls_frame = video_frame
         
         row1 = ttk.Frame(video_frame)
@@ -2576,11 +2659,14 @@ class DashboardApp:
         ttk.Label(row1, text="Camera index:").pack(side=tk.LEFT)
         ttk.Entry(row1, textvariable=self.var_video_camera_index, width=6).pack(side=tk.LEFT, padx=4)
         
-        self.btn_video_connect = ttk.Button(row1, text="Connect Camera", command=self._connect_camera)
-        self.btn_video_connect.pack(side=tk.LEFT, padx=8)
+        row1b = ttk.Frame(video_frame)
+        row1b.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
+        self.btn_video_connect = ttk.Button(row1b, text="Connect Camera", command=self._connect_camera)
+        self.btn_video_connect.pack(side=tk.LEFT)
         
-        self.btn_video_disconnect = ttk.Button(row1, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
+        self.btn_video_disconnect = ttk.Button(row1b, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
         self.btn_video_disconnect.pack(side=tk.LEFT, padx=4)
+        ttk.Label(row1b, text="(index 'dummy' = test camera)").pack(side=tk.LEFT, padx=8)
         
         row_opts = ttk.Frame(video_frame)
         row_opts.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
@@ -2591,7 +2677,6 @@ class DashboardApp:
         ttk.Label(row_opts, text="Codec:").pack(side=tk.LEFT)
         ttk.Combobox(row_opts, state="readonly", width=6, values=list(VIDEO_CODECS),
                      textvariable=self.var_video_codec).pack(side=tk.LEFT, padx=4)
-        ttk.Label(row_opts, text="(index 'dummy' = test camera)").pack(side=tk.LEFT, padx=8)
 
         row2 = ttk.Frame(video_frame)
         row2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
@@ -2748,7 +2833,7 @@ class DashboardApp:
 
     def _build_video_preview(self, parent):
         """Build video preview panel to show real-time camera feed."""
-        self.video_preview_frame = ttk.LabelFrame(parent, text="Camera Preview")
+        self.video_preview_frame = ttk.Frame(parent)
 
         topbar = ttk.Frame(self.video_preview_frame)
         topbar.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 0))
@@ -2888,8 +2973,8 @@ class DashboardApp:
         try:
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            w = min(1250, int(sw * 0.95))
-            h = min(840, int(sh * 0.90))
+            w = min(1700, int(sw * 0.95))
+            h = min(1000, int(sh * 0.92))
             x = max(0, (sw - w) // 2)
             y = max(0, (sh - h) // 2)
             self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -2899,7 +2984,7 @@ class DashboardApp:
             self.root.geometry("1250x840")
 
     def _build_config_builder(self, parent):
-        listf = ttk.LabelFrame(parent, text="Config builder (test blocks)")
+        listf = ttk.LabelFrame(parent, text="Test blocks")
         listf.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # exportselection=False: otherwise selecting text in an editor Entry
@@ -2917,18 +3002,20 @@ class DashboardApp:
         ttk.Button(actions, text="Add Constant", command=self.add_constant_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Add Sweep", command=self.add_sweep_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Add Group", command=self.add_group_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Duplicate", command=self.duplicate_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Remove", command=self.remove_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Move Up", command=lambda: self.move_selected_block(-1)).pack(side=tk.LEFT, padx=8)
-        ttk.Button(actions, text="Move Down", command=lambda: self.move_selected_block(+1)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Clear All", command=self.clear_all_blocks).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(actions, text="Add Voltage Step", command=self.add_voltage_block).pack(side=tk.LEFT, padx=2)
+        edit_row = ttk.Frame(listf)
+        edit_row.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
+        ttk.Button(edit_row, text="Duplicate", command=self.duplicate_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Remove", command=self.remove_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Move Up", command=lambda: self.move_selected_block(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Move Down", command=lambda: self.move_selected_block(+1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Clear All", command=self.clear_all_blocks).pack(side=tk.RIGHT, padx=2)
 
         actions2 = ttk.Frame(listf)
         actions2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
         ttk.Button(actions2, text="Group Selected", command=self.group_selected_blocks).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions2, text="Ungroup", command=self.ungroup_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions2, text="Add Voltage Step", command=self.add_voltage_block).pack(side=tk.LEFT, padx=(14, 2))
-        ttk.Label(listf, wraplength=420, justify=tk.LEFT,
+        ttk.Label(listf, wraplength=380, justify=tk.LEFT,
                   text="A group repeats its blocks back-to-back (Repeat 0 = loop until Stop). "
                        "With a group row selected, Add Constant/Sweep/Voltage adds inside the group; "
                        "Esc clears the selection so Add appends at the end. "
@@ -3047,16 +3134,18 @@ class DashboardApp:
         ttk.Entry(row, textvariable=self.var_manual_freq, width=10).pack(side=tk.LEFT, padx=6)
         ttk.Button(row, text="Set freq", command=self._manual_set_freq).pack(side=tk.LEFT, padx=4)
 
-        ttk.Label(row, text="Duty (0..1):").pack(side=tk.LEFT, padx=(16, 2))
-        self.ent_manual_duty = ttk.Entry(row, textvariable=self.var_manual_duty, width=8)
+        row2 = ttk.Frame(parent)
+        row2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6))
+        ttk.Label(row2, text="Duty (0..1):").pack(side=tk.LEFT)
+        self.ent_manual_duty = ttk.Entry(row2, textvariable=self.var_manual_duty, width=8)
         self.ent_manual_duty.pack(side=tk.LEFT, padx=6)
-        self.btn_set_duty = ttk.Button(row, text="Set duty", command=self._manual_set_duty)
+        self.btn_set_duty = ttk.Button(row2, text="Set duty", command=self._manual_set_duty)
         self.btn_set_duty.pack(side=tk.LEFT, padx=4)
 
         info = ttk.Frame(parent)
         info.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 8))
         self.var_manual_info = tk.StringVar(value="Manual session not connected.")
-        ttk.Label(info, textvariable=self.var_manual_info).pack(side=tk.LEFT)
+        ttk.Label(info, textvariable=self.var_manual_info, wraplength=380, justify=tk.LEFT).pack(side=tk.LEFT)
 
     def _build_plot(self):
         self.fig = plt.figure(figsize=(8.2, 5.2))
@@ -3073,7 +3162,6 @@ class DashboardApp:
         self.ax1_cur.set_visible(False)
 
         self.ax1.set_title("Frequency setpoint (Hz)")
-        self.ax1.set_xlabel("t (s)")
         self.ax1.set_ylabel("Hz")
         self.ax2.set_title("Flow-rate (sensor units)")
         self.ax2.set_xlabel("t (s)")
@@ -3093,8 +3181,9 @@ class DashboardApp:
         ttk.Button(zoom_frame, text="Zoom In", command=self._zoom_time_in).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Zoom Out", command=self._zoom_time_out).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Reset", command=self._zoom_time_reset).pack(side=tk.LEFT, padx=2)
+        zoom_frame = ttk.Frame(self.plot_frame)          # second row: Y ranges
+        zoom_frame.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 2))
         
-        ttk.Label(zoom_frame, text="  |  ").pack(side=tk.LEFT)
         
         # Y-axis range for frequency plot
         ttk.Label(zoom_frame, text="Freq Y min:").pack(side=tk.LEFT)
@@ -4009,6 +4098,10 @@ class DashboardApp:
             self.root.after(MEM_POLL_MS, self._poll_memory)
 
     def on_close(self):
+        try:
+            self.panels.save()
+        except Exception:
+            log_exception("App close: failed to save the panel layout")
         try:
             if self.active_stream:
                 self.active_stream.stop()
