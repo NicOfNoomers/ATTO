@@ -119,13 +119,16 @@ from tkinter import ttk, filedialog, messagebox
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 FLUIGENT_AVAILABLE = False
 try:
     from Fluigent.SDK import fgt_init, fgt_close, fgt_get_sensorValue, fgt_set_errorReportMode
     FLUIGENT_AVAILABLE = True
+    try:
+        from Fluigent.SDK import fgt_get_sensorRange, fgt_get_sensorChannelCount, fgt_get_sensorUnit
+    except Exception:
+        fgt_get_sensorRange = fgt_get_sensorChannelCount = fgt_get_sensorUnit = None
 except Exception:
     FLUIGENT_AVAILABLE = False
     log_exception("Optional import failed: Fluigent SDK not available; Fluigent backend disabled.")
@@ -157,6 +160,8 @@ def missing_feature_packages() -> List[Tuple[str, str, str]]:
     return missing
 
 
+from ui_panels import PanelManager     # dockable/collapsible sidebar panels (repo root)
+
 POWER_AVAILABLE = False
 try:
     from power_ppk2 import PowerMeter, POWER_DEFAULTS, find_ppk2_ports  # PPK2 power meter (needs numpy)
@@ -164,6 +169,14 @@ try:
 except Exception:
     POWER_DEFAULTS = {"enabled": False}
     log_exception("Optional import failed: power_ppk2 not available; power meter disabled.")
+
+PRESSURE_AVAILABLE = False
+try:
+    import pressure_control as pc      # syringe pressure control for PQ curves
+    PRESSURE_AVAILABLE = True
+except Exception:
+    pc = None
+    log_exception("Optional import failed: pressure_control not available; pressure control disabled.")
 
 
 # ---------------- run clock ----------------
@@ -301,6 +314,30 @@ def safe_float(s: str, default: float) -> float:
         log_warning(f"safe_float: could not parse {s!r}; using default {default}")
         return default
 
+def window_decimate(ts, cols, tmin: float, max_pts: int = 800) -> List["np.ndarray"]:
+    """Plot data from tmin on (plus one point before) as arrays of at most ~max_pts points. When
+    thinning, every bin of samples becomes two points, its min and its max, so peaks and the
+    envelope survive (a plot ~800 px wide can't show more; long noisy lines are slow to draw)."""
+    t = np.asarray(ts, dtype=float)
+    i = max(0, int(np.searchsorted(t, tmin)) - 1)
+    t = t[i:]
+    ys = [np.asarray(c, dtype=float)[i:] for c in cols]
+    n = len(t)
+    if n <= max_pts:
+        return [t] + ys
+    k = -(-2 * n // max_pts)                  # samples per bin, 2 points out per bin
+    m = (n // k) * k
+    tb = t[:m].reshape(-1, k)
+    out = [np.column_stack((tb[:, 0], tb[:, -1])).ravel()]
+    for y in ys:
+        yb = y[:m].reshape(-1, k)
+        # fmin/fmax skip NaN (target line outside holds) without warnings
+        out.append(np.column_stack((np.fmin.reduce(yb, axis=1), np.fmax.reduce(yb, axis=1))).ravel())
+    if m < n:
+        out = [np.concatenate((o, a[m:])) for o, a in zip(out, [t] + ys)]
+    return out
+
+
 def linspace_int(a: int, b: int, n: int) -> List[int]:
     if n <= 1:
         return [int(round(a))]
@@ -319,6 +356,12 @@ def linspace_int(a: int, b: int, n: int) -> List[int]:
 # so run ETAs are "nominal time + window waits + your confirmation delays".
 SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10}
 MAX_PLANNED_CHANGES = 2000   # cap for voltage steps inside long or endless groups
+# Pressure holds: the settling time is not known in advance; the plan counts this much per
+# hold (a PQ point = this + measure_s). Syringe clearing by hand comes on top.
+PRESSURE_SETTLE_GUESS_S = 20.0
+PQ_COLS = ["point", "block", "frequency_hz", "target_mbar", "p_mean_mbar", "p_sd_mbar", "flow_mean", "flow_sd",
+           "flow_n", "syringe_steps_per_s", "syringe_flow_ul_min", "current_mean_ma", "settled", "t_settle_s",
+           "t_start_s", "t_end_s", "pos_start", "pos_end", "syringe_clears", "note"]
 
 
 def block_type(t: Dict[str, Any]) -> str:
@@ -336,6 +379,11 @@ def block_duration_s(t: Dict[str, Any]) -> float:
         return repeat * sum(block_duration_s(b) for b in t.get("blocks", []))
     if ttype == "voltage":
         return max(0.0, safe_float(t.get("settle_s", 0), 0.0))
+    if ttype == "pressure":
+        return PRESSURE_SETTLE_GUESS_S if t.get("wait_settled", True) and is_pressure_target(t) else 0.0
+    if ttype == "pq":
+        n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
+        return n * (PRESSURE_SETTLE_GUESS_S + max(0.0, safe_float(t.get("measure_s", 30), 30.0)))
     repeat = max(1, repeat)
     if ttype == "constant":
         return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
@@ -345,6 +393,24 @@ def block_duration_s(t: Dict[str, Any]) -> float:
     else:
         step_dur = safe_float(t.get("total_duration_s", 0), 0.0) / steps
     return repeat * steps * (step_dur + settle_s)
+
+
+def pq_frequencies(t: Dict[str, Any]) -> List[int]:
+    f = t.get("frequency_hz", t.get("frequencies_hz", []))
+    return [int(x) for x in (f if isinstance(f, (list, tuple)) else [f])]
+
+
+def is_pressure_target(t: Dict[str, Any]) -> bool:
+    """A 'pressure' block that holds a pressure (not release/idle)."""
+    return not isinstance(t.get("target_mbar", "release"), str) and t.get("target_mbar") is not None
+
+
+def contains_pressure_block(blocks: List[Dict[str, Any]]) -> bool:
+    for b in blocks:
+        tt = block_type(b)
+        if tt in ("pressure", "pq") or (tt == "group" and contains_pressure_block(b.get("blocks", []))):
+            return True
+    return False
 
 
 def contains_voltage_block(blocks: List[Dict[str, Any]]) -> bool:
@@ -552,6 +618,66 @@ class FlowSensorBase:
     def close(self): ...
     def read(self) -> Tuple[bool, Optional[float]]:
         return False, None
+    def sensor_range(self) -> Optional[Tuple[float, float]]:
+        return None
+
+
+# One Fluigent SDK session per process, shared by the flow and the pressure sensor:
+# fgt_init/fgt_close are reference-counted and every SDK call holds _FGT_LOCK.
+_FGT_LOCK = threading.RLock()
+_FGT_USERS = 0
+
+
+def fluigent_acquire():
+    global _FGT_USERS
+    with _FGT_LOCK:
+        if _FGT_USERS == 0:
+            fgt_init()
+            try:
+                fgt_set_errorReportMode("None")
+            except Exception:
+                log_exception("Fluigent: failed to set error report mode")
+        _FGT_USERS += 1
+
+
+def fluigent_release():
+    global _FGT_USERS
+    with _FGT_LOCK:
+        if _FGT_USERS <= 0:
+            return
+        _FGT_USERS -= 1
+        if _FGT_USERS == 0:
+            try:
+                fgt_close()
+            except Exception:
+                log_exception("Fluigent: failed to close SDK")
+
+
+def fluigent_list_sensors() -> List[Dict[str, Any]]:
+    """Index, unit and range of every Fluigent sensor (to find the pressure channel)."""
+    if not FLUIGENT_AVAILABLE or fgt_get_sensorChannelCount is None:
+        raise RuntimeError("Fluigent SDK not available.")
+    fluigent_acquire()
+    try:
+        with _FGT_LOCK:
+            n = int(fgt_get_sensorChannelCount())
+            out = []
+            for i in range(n):
+                info = {"index": i}
+                try:
+                    info["unit"] = str(fgt_get_sensorUnit(i))
+                except Exception:
+                    info["unit"] = "?"
+                try:
+                    r = fgt_get_sensorRange(i)
+                    info["range"] = (float(r[-2]), float(r[-1]))
+                except Exception:
+                    info["range"] = None
+                out.append(info)
+        return out
+    finally:
+        fluigent_release()
+
 
 class FluigentFlowSensor(FlowSensorBase):
     def __init__(self, channel: int = 0):
@@ -561,36 +687,53 @@ class FluigentFlowSensor(FlowSensorBase):
     def open(self):
         if not FLUIGENT_AVAILABLE:
             raise RuntimeError("Fluigent SDK not available.")
-        fgt_init()
-        try:
-            fgt_set_errorReportMode("None")
-        except Exception:
-            log_exception("FluigentFlowSensor.open: failed to set error report mode")
+        fluigent_acquire()
         self._opened = True
 
     def close(self):
         if self._opened:
-            try:
-                fgt_close()
-            except Exception:
-                log_exception("FluigentFlowSensor.close: failed to close SDK")
+            fluigent_release()
         self._opened = False
 
     def read(self):
         if not self._opened:
             return False, None
         try:
-            try:
-                err, value = fgt_get_sensorValue(self.channel, get_error=True)
-            except TypeError:
-                value = fgt_get_sensorValue(self.channel)
-                err = 0
+            with _FGT_LOCK:
+                try:
+                    err, value = fgt_get_sensorValue(self.channel, get_error=True)
+                except TypeError:
+                    value = fgt_get_sensorValue(self.channel)
+                    err = 0
             if err != 0:
                 return False, None
             return True, float(value)
         except Exception:
             log_exception_limited("fluigent_read", "FluigentFlowSensor.read: failed to read sensor value")
             return False, None
+
+    def sensor_range(self):
+        if not self._opened or fgt_get_sensorRange is None:
+            return None
+        try:
+            with _FGT_LOCK:
+                r = fgt_get_sensorRange(self.channel)
+            lo, hi = float(r[-2]), float(r[-1])      # (min, max), or (error, min, max)
+            return (lo, hi) if hi > lo else None
+        except Exception:
+            log_exception(f"Fluigent: could not read the range of sensor {self.channel}")
+            return None
+
+
+class PlantFlowSensor(FlowSensorBase):
+    """Dummy flow on the simulated pressure line: the pump's flow at the line pressure (uL/min)."""
+    def __init__(self, plant):
+        self.plant = plant
+        self.t0 = time.time()
+
+    def read(self):
+        t = time.time() - self.t0
+        return True, self.plant.pump_flow_ul_min(self.plant.pressure()) + 1.5 * math.sin(2 * math.pi * 1.7 * t)
 
 class DummyFlowSensor(FlowSensorBase):
     """UI testing without hardware."""
@@ -845,8 +988,16 @@ class DataLogger:
 
 
 # ---------------- runtime sessions ----------------
+def pressure_cal_path() -> str:
+    """Syringe/sensor calibration (pressure_cal.json), kept per PC next to the panel layout."""
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "ATTO", "pressure_cal.json")
+
+
 class LiveSessionBase:
     meter: Optional["PowerMeter"] = None      # PPK2 power meter when enabled
+    ctl = None                                # pressure_control.PressureController when enabled
+    plant = None                              # simulated line (pressure backend "dummy")
 
     def get_plot_data(self) -> Tuple[List[float], List[float], List[float]]:
         return [], [], []
@@ -896,6 +1047,89 @@ class LiveSessionBase:
                 self.meter.close()
             except Exception:
                 log_exception(f"{who}: failed to close power meter")
+
+    # ---- pressure control ----
+    def _pump_hz(self) -> float:
+        with self.lock:
+            return float(self.freq_set if getattr(self, "output_enabled", True) else 0)
+
+    def _make_pressure(self, who: str, on_fault):
+        """PressureController from cfg['pressure'] (None when disabled): opens the syringe and the
+        pressure sensor (a Fluigent channel sharing the SDK session with the flow sensor, or a
+        flow-server channel). backend 'dummy' simulates the line, syringe and sensor. Started at
+        t0 by start(); closed (pressure released) after the pump is at 0 Hz."""
+        pcfg = self.cfg.get("pressure") or {}
+        if not pcfg.get("enabled"):
+            return None
+        if not PRESSURE_AVAILABLE:
+            raise RuntimeError(f"{who}: pressure control enabled but pressure_control.py could not be imported.")
+        c = pc.merged_cfg(pcfg)
+        sim = str(c["backend"]).lower() == "dummy"
+        sensor = None
+        if sim:
+            self.plant = pc.PressurePlant(get_freq=self._pump_hz, pos_max=int(c["pos_max"]))
+            read, rng = self.plant.read_sensor, self.plant.range
+            cal = {}
+        else:
+            sensor = make_flow_sensor(c["sensor"], f"{who} pressure sensor")
+            sensor.open()
+            read = sensor.read
+            rng = sensor.sensor_range() or tuple(c["sensor"].get("range_mbar") or (-312.0, 312.0))
+            cal = pc.load_calibration(pressure_cal_path())
+        try:
+            syr = pc.make_syringe(c, self.plant)
+            ctl = pc.PressureController(c, syr, read, sensor_range=rng, run_dir=self.run_dir,
+                                        emit=lambda k, m: None, on_fault=on_fault, calibration=cal)
+            ctl.open()
+        except Exception:
+            if sensor is not None:
+                sensor.close()
+            raise
+        ctl.sensor_obj = sensor
+        if self.run_dir and cal:
+            try:
+                with open(os.path.join(self.run_dir, "pressure", "calibration_used.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump(cal, f, indent=2)
+            except Exception:
+                log_exception(f"{who}: failed to copy the pressure calibration into the run folder")
+        self._emit("status", f"{who}: pressure control ready (syringe {syr.protocol}, position "
+                             f"{syr.position()}, limit {ctl.p_max:g} mbar)")
+        return ctl
+
+    def _close_pressure(self, who: str):
+        ctl = self.ctl
+        if ctl is None:
+            return
+        try:
+            ctl.close()
+        except Exception:
+            log_exception(f"{who}: failed to close the pressure control")
+        try:
+            if getattr(ctl, "sensor_obj", None) is not None:
+                ctl.sensor_obj.close()
+        except Exception:
+            log_exception(f"{who}: failed to close the pressure sensor")
+        self.ctl = None
+
+    def _make_flow(self, who: str) -> FlowSensorBase:
+        fcfg = self.cfg.get("flow_sensor", {})
+        if self.plant is not None and str(fcfg.get("backend") or "").lower() == "dummy":
+            return PlantFlowSensor(self.plant)
+        return make_flow_sensor(fcfg, who)
+
+    def get_pressure_status(self) -> Optional[Dict[str, Any]]:
+        ctl = self.ctl
+        return ctl.status() if ctl is not None else None
+
+    def get_pressure_plot_data(self):
+        """(t, p, target) arrays for the live plot; empty lists without pressure control."""
+        ctl = self.ctl
+        rows = list(ctl.plot_buf) if ctl is not None else []
+        if not rows:
+            return [], [], []
+        a = np.asarray(rows, dtype=float)
+        return a[:, 0], a[:, 1], a[:, 2]
 
 
 class ManualSession(LiveSessionBase):
@@ -947,6 +1181,11 @@ class ManualSession(LiveSessionBase):
         self._emit("manual_output_off", None)
         self._emit("error", msg + " Output switched OFF (0 Hz).")
 
+    def _on_pressure_fault(self, msg: str):
+        self.set_output_enabled(False)
+        self._emit("manual_output_off", None)
+        self._emit("error", f"Pressure control: {msg}. Pump output switched OFF (0 Hz).")
+
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
         baud = int(self.cfg.get("baud", 115200))
@@ -965,9 +1204,17 @@ class ManualSession(LiveSessionBase):
                 self._emit("status", f"Manual: opening serial {port} @ {baud} ...")
                 self.ser = serial_open(port, baud, timeout_s)
 
-            self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Manual")
+            self.ctl = self._make_pressure("Manual", self._on_pressure_fault)
+            self.sensor = self._make_flow("Manual")
             self.sensor.open()
         except Exception:
+            self._close_pressure("Manual")
+            if self.ser:
+                try:
+                    self.ser.close()
+                except Exception:
+                    log_exception("Manual: failed to close serial after a setup error")
+                self.ser = None
             self._close_meter("Manual")
             raise
 
@@ -984,6 +1231,7 @@ class ManualSession(LiveSessionBase):
                 self._set_duty_internal(0.0)
         except Exception:
             log_exception("ManualSession teardown: failed to send zero on exit")
+        self._close_pressure("ManualSession teardown")
         try:
             if self.ser:
                 self.ser.close()
@@ -1087,6 +1335,8 @@ class ManualSession(LiveSessionBase):
         self.stop_flag.clear()
         if self.meter:
             self.meter.start(self.t0)
+        if self.ctl:
+            self.ctl.start(self.t0)
         self._emit("status", "Manual: connected. Sampling started.")
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_sample.start()
@@ -1157,6 +1407,15 @@ class PumpTestRunner(LiveSessionBase):
         self._ser_lock = threading.Lock()   # the power meter's trip handler also writes to the Arduino
         self._force_zero = False            # after a power trip every frequency command becomes 0 Hz
         self._last_cmd: Optional[Tuple[float, float]] = None   # (t_cmd_s, t_cmd_done_s) of the last frequency command
+        # Operator pauses other than voltage steps (clearing the syringe by hand), PQ points
+        self.operator_request: Optional[Dict[str, Any]] = None
+        self._operator_done = threading.Event()
+        self._op_index = 0
+        self._acc: Optional[List[float]] = None   # flow samples of the PQ point being measured
+        self.pq_count = 0
+        self.syringe_clears = 0
+        self._pq_file = None
+        self._pq_writer = None
 
     def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
@@ -1184,6 +1443,9 @@ class PumpTestRunner(LiveSessionBase):
     def _on_power_fatal(self, msg: str):
         self._power_stop(msg + " Run stopped, pump at 0 Hz.")
 
+    def _on_pressure_fault(self, msg: str):
+        self._power_stop(f"Pressure control: {msg}. Run stopped, pump at 0 Hz.")
+
     def _nominal_begin(self, t_start: float, dur_s: float):
         with self.lock:
             self._nominal_step = (t_start, dur_s)
@@ -1207,6 +1469,7 @@ class PumpTestRunner(LiveSessionBase):
                 "total_s": self.plan_total_s,
                 "changes_done": self.changes_done,
                 "voltage_request": dict(self.voltage_request) if self.voltage_request else None,
+                "operator_request": dict(self.operator_request) if self.operator_request else None,
                 "v_set_mv": self.v_set_mv,
                 "finished": self.t_end is not None,
             }
@@ -1219,6 +1482,285 @@ class PumpTestRunner(LiveSessionBase):
             self._voltage_value_mv = int(round(mv))
         self._voltage_confirmed.set()
         return True
+
+    def confirm_operator(self) -> bool:
+        """UI: the operator finished what the prompt asked. False if nothing was asked."""
+        with self.lock:
+            if self.operator_request is None:
+                return False
+        self._operator_done.set()
+        return True
+
+    def _ask_operator(self, kind: str, title: str, text: str) -> bool:
+        """Pause until the operator presses Done (True) or the run is stopped (False)."""
+        self._operator_done.clear()
+        with self.lock:
+            self._op_index += 1
+            self.operator_request = {"kind": kind, "index": self._op_index, "title": title, "text": text,
+                                     "asked_mono": CLOCK(),
+                                     "asked_at": datetime.now().isoformat(timespec="seconds")}
+            req = dict(self.operator_request)
+        self._emit("operator_prompt", req)
+        self._emit("status", f"Waiting for you: {title}")
+        while not self.stop_flag.is_set() and not self._operator_done.wait(0.1):
+            pass
+        with self.lock:
+            self.operator_request = None
+        return not self.stop_flag.is_set()
+
+    # ---- pressure blocks ----
+    def _need_ctl(self):
+        if self.ctl is None:
+            raise RuntimeError("This block needs pressure control: tick 'Control pressure' in the "
+                               "Pressure panel (or set pressure.enabled in the config).")
+        return self.ctl
+
+    def _clear_syringe(self, why: str, log_event) -> bool:
+        """Pump to 0 Hz, let the pressure down, ask the operator to empty the syringe by hand,
+        then position = 0 (the empty end). False if the run was stopped meanwhile."""
+        ctl = self.ctl
+        self._set_freq(0)
+        log_event()
+        ctl.release()
+        t_end = CLOCK() + 20.0
+        while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
+            time.sleep(0.1)
+        ctl.idle()
+        try:
+            ctl.syr.set_hold(False)
+        except Exception:
+            log_exception_limited("syringe_hold", "Clear syringe: could not release the motor")
+        p = ctl.p
+        ctl.note("clear_request", why)
+        ok = self._ask_operator(
+            "syringe_clear", "Clear the syringe by hand",
+            f"{why}\nThe pump is at 0 Hz and the syringe motor is idle (line at {p:.0f} mbar). Empty the "
+            f"syringe by hand back to its empty end (plunger fully in), remove bubbles, reconnect and close "
+            f"the line, then press 'Done - continue'. The position is then set to 0.")
+        if not ok:
+            return False
+        ctl.set_position(0)
+        self.syringe_clears += 1
+        ctl.note("syringe_cleared", str(self.syringe_clears))
+        self._emit("status", f"Syringe cleared (#{self.syringe_clears}); position set to 0. Continuing.")
+        return True
+
+    def _exec_pressure(self, test, log_event):
+        """{'type': 'pressure', 'target_mbar': 50 | 'release' | 'idle', 'wait_settled': true,
+        'timeout_s': 120}: hold a pressure (and wait until settled), release it or stop holding."""
+        ctl = self._need_ctl()
+        tgt = test.get("target_mbar", "release")
+        if isinstance(tgt, str) or tgt is None:
+            if str(tgt).lower() == "idle":
+                ctl.idle()
+                return
+            ctl.release()
+            t_end = CLOCK() + safe_float(test.get("timeout_s", 30), 30.0)
+            while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
+                time.sleep(0.1)
+            return
+        target = float(tgt)
+        ctl.set_target(target)
+        if not test.get("wait_settled", True):
+            return
+        timeout = safe_float(test.get("timeout_s", 120), 120.0)
+        t_start = CLOCK()
+        self._nominal_begin(t_start, PRESSURE_SETTLE_GUESS_S)
+        reserve = int(ctl.cfg["clear_reserve_steps"])
+        while not self.stop_flag.is_set() and CLOCK() - t_start < timeout:
+            if ctl.mode == "fault" or ctl.settled():
+                break
+            if ctl.remaining_steps(-1) < reserve:
+                hz = self.freq_set
+                if not self._clear_syringe("The syringe is nearly full.", log_event):
+                    return
+                self._set_freq(hz)
+                log_event()
+                ctl.set_target(target)
+            time.sleep(0.05)
+        if not self.stop_flag.is_set():
+            self._nominal_end(PRESSURE_SETTLE_GUESS_S)
+            if not ctl.settled() and ctl.mode != "fault":
+                self._emit("status", f"Pressure {target:g} mbar not settled within {timeout:g} s; continuing.")
+
+    def _open_pq_log(self):
+        if self._pq_writer is None:
+            path = os.path.join(self.run_dir, "pq_points.csv")
+            self._pq_file = open(path, "a", newline="", encoding="utf-8")
+            self._pq_writer = csv.DictWriter(self._pq_file, fieldnames=PQ_COLS, lineterminator="\n")
+            if self._pq_file.tell() == 0:
+                self._pq_writer.writeheader()
+
+    def _write_pq_row(self, row: Dict[str, Any]):
+        self._open_pq_log()
+        self._pq_writer.writerow({k: row.get(k, "") for k in PQ_COLS})
+        self._pq_file.flush()
+        try:
+            os.fsync(self._pq_file.fileno())
+        except Exception:
+            pass
+
+    def _window_current_ma(self, t_from: float, t_to: float) -> Optional[float]:
+        if not self.meter:
+            return None
+        ts, cur = self.meter.get_plot_data()
+        vals = [i for t, i in zip(ts, cur) if t_from <= t <= t_to]
+        return sum(vals) / len(vals) if vals else None
+
+    def _exec_pq(self, test, log_event, label: str):
+        """PQ curve: for each frequency, hold each outlet pressure, wait until settled, then
+        average flow and pressure over measure_s -> one row in pq_points.csv per point.
+        {'type': 'pq', 'frequency_hz': 600 | [400, 600], 'pressures_mbar': [0, 25, 50, ...],
+         'settle_timeout_s': 120, 'measure_s': 30, 'on_timeout': 'measure' | 'skip',
+         'release_after': true}
+        The pump flow fills the syringe; when it would run out, the run pauses for the operator
+        to clear the syringe by hand (pump at 0 Hz) and the point is repeated."""
+        ctl = self._need_ctl()
+        pressures = [float(p) for p in test.get("pressures_mbar") or []]
+        settle_to = safe_float(test.get("settle_timeout_s", 120), 120.0)
+        measure_s = max(1.0, safe_float(test.get("measure_s", 30), 30.0))
+        on_timeout = str(test.get("on_timeout", "measure")).lower()
+        nominal = PRESSURE_SETTLE_GUESS_S + measure_s
+        for hz in pq_frequencies(test):
+            if self.stop_flag.is_set():
+                break
+            self._set_freq(hz)
+            log_event()
+            for k, p_t in enumerate(pressures):
+                if self.stop_flag.is_set():
+                    break
+                self._emit("status", f"{label}PQ {hz} Hz: point {k + 1}/{len(pressures)} at {p_t:g} mbar")
+                t_start = CLOCK()
+                self._nominal_begin(t_start, nominal)
+                row = self._pq_point(hz, p_t, settle_to, measure_s, on_timeout, log_event, label)
+                if self.stop_flag.is_set():
+                    break
+                self._nominal_end(nominal)
+                if row is not None and row.get("note") == "above_shutoff":
+                    rest = len(pressures) - k - 1
+                    self._emit("status", f"{label}PQ {hz} Hz: the pump cannot hold {p_t:g} mbar (syringe had to "
+                                         f"push from its empty end); skipping the {rest} higher point(s).")
+                    with self.lock:
+                        self.nominal_done += rest * nominal
+                    break
+        if not self.stop_flag.is_set():
+            self._set_freq(0)
+            log_event()
+            if test.get("release_after", True):
+                ctl.release()
+                t_end = CLOCK() + 30.0
+                while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
+                    time.sleep(0.1)
+
+    def _pq_point(self, hz: int, p_t: float, settle_to: float, measure_s: float, on_timeout: str,
+                  log_event, label: str) -> Optional[Dict[str, Any]]:
+        ctl = self.ctl
+        reserve = int(ctl.cfg["clear_reserve_steps"])
+        for attempt in range(1, 4):
+            # Enough syringe left for settling + measuring? Else clear it before starting.
+            need = ctl.steps_rate() * (measure_s + min(settle_to, PRESSURE_SETTLE_GUESS_S)) * 1.3
+            if ctl.remaining_steps(-1) < reserve + need:
+                if not self._clear_syringe(f"{ctl.remaining_steps(-1)} steps left in the syringe; the next PQ "
+                                           f"point needs about {need:.0f}.", log_event):
+                    return None
+                self._set_freq(hz)
+                log_event()
+            ctl.set_target(p_t)
+            t0 = CLOCK()
+            full = blocked_since = None
+            p_ref = 0.0
+            settled = False
+            while not self.stop_flag.is_set() and CLOCK() - t0 < settle_to:
+                if ctl.mode == "fault":
+                    return None
+                if ctl.settled():
+                    settled = True
+                    break
+                if ctl.remaining_steps(-1) < reserve:
+                    full = "settling"
+                    break
+                # Below the target with the push blocked at the empty end: wait while the pump
+                # still raises the pressure; a plateau (< 2 mbar in 5 s) means above shut-off
+                if ctl.blocked == "empty" and ctl.p_1s < p_t - 2 * float(ctl.cfg["tolerance_mbar"]):
+                    if blocked_since is None or ctl.p_1s - p_ref >= 2.0:
+                        blocked_since, p_ref = CLOCK(), ctl.p_1s
+                    elif CLOCK() - blocked_since > 5.0:
+                        break
+                else:
+                    blocked_since = None
+                time.sleep(0.05)
+            if self.stop_flag.is_set():
+                return None
+            t_settle = CLOCK() - t0
+            base = {"point": self.pq_count + 1, "block": label.strip().rstrip(":"), "frequency_hz": hz,
+                    "target_mbar": p_t, "settled": int(settled), "t_settle_s": f"{t_settle:.1f}",
+                    "syringe_clears": self.syringe_clears}
+            if blocked_since is not None:
+                with self.lock:
+                    last = list(self.buf_flow)[-50:]
+                fm = sum(last) / len(last) if last else float("nan")
+                row = {**base, "p_mean_mbar": f"{ctl.p_1s:.2f}", "flow_mean": f"{fm:.4f}" if last else "",
+                       "flow_n": len(last), "pos_end": ctl.syr.position(),
+                       "note": "above_shutoff"}
+                self.pq_count += 1
+                self._write_pq_row(row)
+                self._emit("pq_point", row)
+                return row
+            if full:
+                if not self._clear_syringe(f"The syringe filled up while {full}; the point is repeated.", log_event):
+                    return None
+                self._set_freq(hz)
+                log_event()
+                continue
+            if not settled and on_timeout == "skip":
+                row = {**base, "note": f"not settled in {settle_to:g} s, skipped"}
+                self.pq_count += 1
+                self._write_pq_row(row)
+                self._emit("pq_point", row)
+                return row
+            # Measure
+            tm0 = CLOCK() - self.t0
+            pos0 = ctl.syr.position()
+            with self.lock:
+                self._acc = []
+            t_end = CLOCK() + measure_s
+            while not self.stop_flag.is_set() and CLOCK() < t_end:
+                if ctl.mode == "fault":
+                    break
+                if ctl.remaining_steps(-1) < reserve:
+                    full = "measuring"
+                    break
+                time.sleep(0.05)
+            with self.lock:
+                flows, self._acc = self._acc or [], None
+            tm1 = CLOCK() - self.t0
+            if self.stop_flag.is_set() or ctl.mode == "fault":
+                return None
+            if full:
+                if not self._clear_syringe(f"The syringe filled up while {full}; the point is repeated.", log_event):
+                    return None
+                self._set_freq(hz)
+                log_event()
+                continue
+            st = ctl.window_stats(tm0, tm1)
+            n = len(flows)
+            fm = sum(flows) / n if n else float("nan")
+            fsd = math.sqrt(sum((x - fm) ** 2 for x in flows) / (n - 1)) if n > 1 else float("nan")
+            cur = self._window_current_ma(tm0, tm1)
+            fmt = lambda v, d=3: "" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.{d}f}"
+            row = {**base, "p_mean_mbar": fmt(st.get("p_mean")), "p_sd_mbar": fmt(st.get("p_sd")),
+                   "flow_mean": fmt(fm, 4), "flow_sd": fmt(fsd, 4), "flow_n": n,
+                   "syringe_steps_per_s": fmt(st.get("steps_per_s")),
+                   "syringe_flow_ul_min": fmt(st.get("syringe_flow_ul_min"), 2),
+                   "current_mean_ma": fmt(cur), "t_start_s": f"{tm0:.3f}", "t_end_s": f"{tm1:.3f}",
+                   "pos_start": pos0, "pos_end": ctl.syr.position(),
+                   "note": "" if settled else f"not settled in {settle_to:g} s"}
+            self.pq_count += 1
+            self._write_pq_row(row)
+            self._emit("pq_point", row)
+            return row
+        self._emit("status", f"{label}PQ point {p_t:g} mbar at {hz} Hz failed 3 times; moving on.")
+        return None
 
     def _exec_voltage(self, test, log_event):
         """Manual voltage step: (pump to 0 Hz) -> wait for the allowed window ->
@@ -1303,9 +1845,17 @@ class PumpTestRunner(LiveSessionBase):
                 self._emit("status", f"Runner: opening serial {port} @ {baud} ...")
                 self.ser = serial_open(port, baud, timeout_s)
 
-            self.sensor = make_flow_sensor(self.cfg.get("flow_sensor", {}), "Runner")
+            self.ctl = self._make_pressure("Runner", self._on_pressure_fault)
+            self.sensor = self._make_flow("Runner")
             self.sensor.open()
         except Exception:
+            self._close_pressure("Runner")
+            if self.ser:
+                try:
+                    self.ser.close()
+                except Exception:
+                    log_exception("Runner: failed to close serial after a setup error")
+                self.ser = None
             self._close_meter("Runner")
             raise
 
@@ -1320,6 +1870,12 @@ class PumpTestRunner(LiveSessionBase):
                 self._set_duty(0.0)
         except Exception:
             log_exception("PumpTestRunner teardown: failed to send zero on exit")
+        self._close_pressure("PumpTestRunner teardown")
+        if self._pq_file is not None:
+            try:
+                self._pq_file.close()
+            except Exception:
+                log_exception("PumpTestRunner teardown: failed to close pq_points.csv")
         self._close_meter("PumpTestRunner teardown")
         try:
             if self.ser:
@@ -1369,6 +1925,8 @@ class PumpTestRunner(LiveSessionBase):
                         self.buf_t.append(t_s)
                         self.buf_freq.append(f)
                         self.buf_flow.append(float(val))
+                        if self._acc is not None:
+                            self._acc.append(float(val))
                     self.logger.log_flow(t_s, float(val))
                     self.logger.log_merged(t_s, f, d, float(val), v)
                     self.logger.maybe_sync()
@@ -1393,6 +1951,12 @@ class PumpTestRunner(LiveSessionBase):
 
         if ttype == "voltage":
             self._exec_voltage(test, log_event)
+            return
+        if ttype == "pressure":
+            self._exec_pressure(test, log_event)
+            return
+        if ttype == "pq":
+            self._exec_pq(test, log_event, status_prefix)
             return
 
         if ttype == "group":
@@ -1529,6 +2093,7 @@ class PumpTestRunner(LiveSessionBase):
             with self.lock:
                 self.t_end = CLOCK()
                 self.voltage_request = None
+                self.operator_request = None
             self.stop_flag.set()
 
     def start(self, before_run: Optional[Callable[[], Any]] = None):
@@ -1541,6 +2106,8 @@ class PumpTestRunner(LiveSessionBase):
         self.stop_flag.clear()
         if self.meter:
             self.meter.start(self.t0)
+        if self.ctl:
+            self.ctl.start(self.t0)
         self.t_sample = threading.Thread(target=self._sampling_loop, daemon=True)
         self.t_run = threading.Thread(target=self._run_tests, daemon=True)
         self.t_sample.start()
@@ -1986,10 +2553,8 @@ class DashboardApp:
         self._build_layout()
         self._build_plot()
 
-        # cache_frame_data=False prevents matplotlib from retaining returned artists
-        # for every frame of an unbounded live animation (a known slow memory growth).
-        self.ani = animation.FuncAnimation(self.fig, self._update_plot, interval=150,
-                                           blit=False, cache_frame_data=False)
+        # Live plot every 150 ms (blitted, see _update_plot); skipped while another tab is shown
+        self.root.after(150, self._plot_tick)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if initial_config_path:
@@ -2006,47 +2571,147 @@ class DashboardApp:
 
     # ---- layout ----
     def _build_layout(self):
-        top = ttk.Frame(self.root)
-        top.pack(side=tk.TOP, fill=tk.X, padx=8, pady=8)
+        """Toolbar + progress row on top, status bar at the bottom, and three
+        columns: left sidebar | tabbed plots | right sidebar. Sidebar panels
+        are managed by ui_panels.PanelManager (View menu)."""
+        self.panels = PanelManager(self.root)
+        self.panels.load()
+        geo = self.panels.window_geometry()
+        if geo:
+            self.root.geometry(geo)
 
-        # Run meta
-        meta = ttk.LabelFrame(top, text="Run details & storage")
-        meta.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self.var_mode = tk.StringVar(value="scheduled")
+        menubar = tk.Menu(self.root)
+        fm = tk.Menu(menubar, tearoff=False)
+        fm.add_command(label="Load config...", command=self.pick_and_load_config)
+        fm.add_command(label="Save config as...", command=self.save_config_as)
+        fm.add_separator()
+        fm.add_command(label="Exit", command=self.on_close)
+        menubar.add_cascade(label="File", menu=fm)
 
+        # Toolbar: run buttons + status (always visible)
+        btns = ttk.Frame(self.root)
+        btns.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
+
+        self.btn_start = ttk.Button(btns, text="Start Run", command=self.start_scheduled_run)
+        self.btn_stop  = ttk.Button(btns, text="Stop", command=self.stop_active, state=tk.DISABLED)
+        self.btn_manual_connect = ttk.Button(btns, text="Connect Manual", command=self.manual_connect)
+        self.btn_manual_disconnect = ttk.Button(btns, text="Disconnect Manual", command=self.manual_disconnect, state=tk.DISABLED)
+
+        self.btn_start.pack(side=tk.LEFT, padx=4)
+        self.btn_stop.pack(side=tk.LEFT, padx=4)
+        self.btn_manual_connect.pack(side=tk.LEFT, padx=(18, 4))
+        self.btn_manual_disconnect.pack(side=tk.LEFT, padx=4)
+        ttk.Label(btns, text="Mode:").pack(side=tk.LEFT, padx=(18, 2))
+        ttk.Radiobutton(btns, text="Scheduled", variable=self.var_mode, value="scheduled",
+                        command=self._update_mode_ui).pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(btns, text="Manual", variable=self.var_mode, value="manual",
+                        command=self._update_mode_ui).pack(side=tk.LEFT, padx=2)
+
+        self.var_status = tk.StringVar(value="Idle.")
+        ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
+
+        self._build_progress_row()
+        self._build_status_bar()
+
+        # Three columns; the sidebars hide themselves when they hold no visible panel
+        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=(0, 4))
+        self.panels.paned = main
+        left = self.panels.add_dock("left", main)
+        left.canvas.configure(width=430)
+        self.center_tabs = ttk.Notebook(main)
+        right = self.panels.add_dock("right", main)
+        right.canvas.configure(width=420)
+        main.add(left, weight=0)
+        main.add(self.center_tabs, weight=1)
+        main.add(right, weight=0)
+        self.panels.set_columns([left, self.center_tabs, right])
+
+        self.plot_frame = ttk.Frame(self.center_tabs)
+        self.center_tabs.add(self.plot_frame, text="Live plots")
+        self._build_pq_tab()
+        # Redrawing a plot nobody sees costs CPU (and GIL time the drive timing needs)
+        self.center_tabs.bind("<<NotebookTabChanged>>", self._on_center_tab)
+
+        # Video state is shared by the camera panels
+        self.video_recorder = None
+        self.video_recording = False
+        self.var_video_enabled = tk.BooleanVar(value=False)
+        self.var_video_camera_index = tk.StringVar(value="0")
+        self.var_video_status = tk.StringVar(value="Camera: Not connected")
+
+        P = self.panels
+        P.add_panel("run", "Run details & storage", "left", self._build_run_details)
+        P.add_panel("hardware", "Hardware", "left", self._build_hardware)
+        P.add_panel("config", "Config builder", "left", self._build_config_builder)
+        P.add_panel("manual", "Manual control", "right", self._build_manual_panel)
+        P.add_panel("power", "Power meter (PPK2)", "right", self._build_power_panel)
+        P.add_panel("pressure", "Pressure control (syringe)", "right", self._build_pressure_panel)
+        P.add_panel("camera", "Camera", "right",
+                    lambda body: self._build_video_controls(body).pack(side=tk.TOP, fill=tk.X))
+        P.add_panel("preview", "Camera preview", "right",
+                    lambda body: self._build_video_preview(body).pack(side=tk.TOP, fill=tk.BOTH, expand=True))
+
+        P.add_preset("Run", {"run": "open", "hardware": "collapsed", "config": "open", "manual": "collapsed",
+                             "power": "collapsed", "pressure": "collapsed", "camera": "collapsed", "preview": "open"})
+        P.add_preset("Setup", {"run": "open", "hardware": "open", "config": "collapsed", "manual": "collapsed",
+                               "power": "open", "pressure": "open", "camera": "open", "preview": "open"})
+        P.add_preset("Manual", {"run": "collapsed", "hardware": "open", "config": "hidden", "manual": "open",
+                                "power": "open", "pressure": "collapsed", "camera": "collapsed", "preview": "open"})
+        P.add_preset("PQ", {"run": "collapsed", "hardware": "collapsed", "config": "open", "manual": "open",
+                            "power": "collapsed", "pressure": "open", "camera": "hidden", "preview": "hidden"})
+        P.add_preset("Video", {"run": "collapsed", "hardware": "collapsed", "config": "collapsed",
+                               "manual": "collapsed", "power": "hidden", "pressure": "hidden", "camera": "open",
+                               "preview": "open"})
+        P.add_preset("Plots only", {k: "hidden" for k in ("run", "hardware", "config", "manual", "power",
+                                                           "pressure", "camera", "preview")})
+        P.add_preset("Compact", {"config": "open"})
+        P.add_preset("All open", {k: "open" for k in ("run", "hardware", "config", "manual", "power",
+                                                       "pressure", "camera", "preview")})
+        P.build_view_menu(menubar)
+        self.root.config(menu=menubar)
+
+        self._update_mode_ui()
+        self._refresh_manual_duty_state()
+
+        # Start video preview if camera is connected
+        self._init_video()
+        P.restore(default_preset="Run")
+
+    def _build_run_details(self, meta):
         self.var_test_name = tk.StringVar(value="Pump Test")
         self.var_operator  = tk.StringVar(value="")
         self.var_pump_id   = tk.StringVar(value="")
         self.var_out_dir   = tk.StringVar(value=os.path.abspath("./pump_runs"))
         self.var_log_manual = tk.BooleanVar(value=False)
-        self.txt_desc      = tk.Text(meta, height=4, width=55)
+        self.txt_desc      = tk.Text(meta, height=3, width=40)
         self._default_test_name = self.var_test_name.get()
         self._default_operator = self.var_operator.get()
         self._default_desc = ""
+        meta.columnconfigure(1, weight=1)
 
         ttk.Label(meta, text="Name:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(meta, textvariable=self.var_test_name, width=40).grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(meta, textvariable=self.var_test_name).grid(row=0, column=1, columnspan=2, sticky="we", padx=4, pady=2)
 
         ttk.Label(meta, text="Operator:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         op_row = ttk.Frame(meta)
         op_row.grid(row=1, column=1, columnspan=2, sticky="w", padx=4, pady=2)
-        ttk.Entry(op_row, textvariable=self.var_operator, width=18).pack(side=tk.LEFT)
+        ttk.Entry(op_row, textvariable=self.var_operator, width=14).pack(side=tk.LEFT)
         ttk.Label(op_row, text="Pump ID:").pack(side=tk.LEFT, padx=(10, 2))
-        ttk.Entry(op_row, textvariable=self.var_pump_id, width=16).pack(side=tk.LEFT)
+        ttk.Entry(op_row, textvariable=self.var_pump_id, width=14).pack(side=tk.LEFT)
 
         ttk.Label(meta, text="Output folder:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(meta, textvariable=self.var_out_dir, width=40).grid(row=2, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(meta, textvariable=self.var_out_dir).grid(row=2, column=1, sticky="we", padx=4, pady=2)
         ttk.Button(meta, text="Browse...", command=self.pick_out_dir).grid(row=2, column=2, padx=4, pady=2)
 
         ttk.Label(meta, text="Description:").grid(row=3, column=0, sticky="nw", padx=4, pady=2)
         self.txt_desc.grid(row=3, column=1, columnspan=2, sticky="we", padx=4, pady=2)
 
         ttk.Checkbutton(meta, text="Log manual sessions to disk", variable=self.var_log_manual)\
-            .grid(row=4, column=1, sticky="w", padx=4, pady=(2, 6))
+            .grid(row=4, column=1, sticky="w", padx=4, pady=(2, 4))
 
-        # Hardware
-        hw = ttk.LabelFrame(top, text="Hardware & mode")
-        hw.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+    def _build_hardware(self, hw):
         self.var_cfg_file = tk.StringVar(value="")
         self.var_port     = tk.StringVar(value="COM22")
         self.var_baud     = tk.StringVar(value="115200")
@@ -2057,18 +2722,19 @@ class DashboardApp:
         self.var_flow_server    = tk.StringVar(value="localhost:8765")
         self.var_sample_rate    = tk.StringVar(value="25")
         self.var_break_between  = tk.StringVar(value="0")
-
-        self.var_mode = tk.StringVar(value="scheduled")
+        hw.columnconfigure(1, weight=1)
 
         ttk.Label(hw, text="Config file:").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_cfg_file, width=38).grid(row=0, column=1, sticky="w", padx=4, pady=2)
-        ttk.Button(hw, text="Load", command=self.pick_and_load_config).grid(row=0, column=2, padx=4, pady=2)
-        ttk.Button(hw, text="Save As", command=self.save_config_as).grid(row=0, column=3, padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_cfg_file).grid(row=0, column=1, columnspan=2, sticky="we", padx=4, pady=2)
+        cf = ttk.Frame(hw)
+        cf.grid(row=0, column=3, sticky="e")
+        ttk.Button(cf, text="Load", command=self.pick_and_load_config, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Button(cf, text="Save As", command=self.save_config_as, width=8).pack(side=tk.LEFT, padx=2)
 
         ttk.Label(hw, text="Serial port:").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_port, width=12).grid(row=1, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_port, width=10).grid(row=1, column=1, sticky="w", padx=4, pady=2)
         ttk.Label(hw, text="Baud:").grid(row=1, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_baud, width=10).grid(row=1, column=3, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_baud, width=9).grid(row=1, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Protocol:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
         proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty"], textvariable=self.var_protocol)
@@ -2080,92 +2746,82 @@ class DashboardApp:
             .grid(row=3, column=1, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Channel:").grid(row=3, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_sensor_channel, width=10).grid(row=3, column=3, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_sensor_channel, width=9).grid(row=3, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Sample rate (Hz):").grid(row=4, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(hw, textvariable=self.var_sample_rate, width=10).grid(row=4, column=1, sticky="w", padx=4, pady=2)
 
-        ttk.Label(hw, text="Break between blocks (s):").grid(row=4, column=2, sticky="e", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_break_between, width=10).grid(row=4, column=3, sticky="w", padx=4, pady=2)
+        ttk.Label(hw, text="Break (s):").grid(row=4, column=2, sticky="e", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_break_between, width=9).grid(row=4, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Flow server:").grid(row=5, column=0, sticky="w", padx=4, pady=2)
-        ttk.Entry(hw, textvariable=self.var_flow_server, width=24).grid(row=5, column=1, sticky="w", padx=4, pady=2)
+        ttk.Entry(hw, textvariable=self.var_flow_server).grid(row=5, column=1, columnspan=3, sticky="we", padx=4, pady=2)
 
-        mode_row = ttk.Frame(hw)
-        mode_row.grid(row=6, column=0, columnspan=4, sticky="w", padx=4, pady=(8, 2))
-        ttk.Label(mode_row, text="Mode:").pack(side=tk.LEFT)
-        ttk.Radiobutton(mode_row, text="Scheduled tests", variable=self.var_mode, value="scheduled", command=self._update_mode_ui)\
-            .pack(side=tk.LEFT, padx=6)
-        ttk.Radiobutton(mode_row, text="Manual control (testing OFF)", variable=self.var_mode, value="manual", command=self._update_mode_ui)\
-            .pack(side=tk.LEFT, padx=6)
+    # ---- status bar: device lights + memory ----
+    def _build_status_bar(self):
+        bar = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._status_lights: Dict[str, tk.Label] = {}
+        for key in ("arduino", "flow", "ppk2", "pressure", "camera"):
+            lbl = tk.Label(bar, text=f"● {key}", fg="#888888", padx=8)
+            lbl.pack(side=tk.LEFT)
+            self._status_lights[key] = lbl
+        self.var_mem = tk.StringVar(value="")
+        tk.Label(bar, textvariable=self.var_mem, padx=8).pack(side=tk.RIGHT)
 
-        # Buttons row
-        btns = ttk.Frame(self.root)
-        btns.pack(side=tk.TOP, fill=tk.X, padx=8, pady=6)
+    def _set_light(self, key: str, state: str, text: str):
+        colours = {"ok": "#1a7f37", "bad": "#c62828", "off": "#888888", "busy": "#b26a00"}
+        lbl = self._status_lights.get(key)
+        if lbl is not None:
+            lbl.configure(text=f"● {text}", fg=colours.get(state, "#888888"))
 
-        self.btn_start = ttk.Button(btns, text="Start Run", command=self.start_scheduled_run)
-        self.btn_stop  = ttk.Button(btns, text="Stop", command=self.stop_active, state=tk.DISABLED)
-        self.btn_manual_connect = ttk.Button(btns, text="Connect Manual", command=self.manual_connect)
-        self.btn_manual_disconnect = ttk.Button(btns, text="Disconnect Manual", command=self.manual_disconnect, state=tk.DISABLED)
-
-        self.btn_start.pack(side=tk.LEFT, padx=4)
-        self.btn_stop.pack(side=tk.LEFT, padx=4)
-        self.btn_manual_connect.pack(side=tk.LEFT, padx=(18, 4))
-        self.btn_manual_disconnect.pack(side=tk.LEFT, padx=4)
-
-        self.var_status = tk.StringVar(value="Idle.")
-        ttk.Label(btns, textvariable=self.var_status).pack(side=tk.LEFT, padx=12)
-
-        self._build_progress_row()
-
-        # Main split (responsive, no scrollbars)
-        main = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
-
-        left = ttk.Frame(main, width=420)
-        left.pack_propagate(False)
-        main.add(left, weight=0)
-        self._build_config_builder(left)
-
-        right = ttk.Frame(main)
-        main.add(right, weight=1)
-
-        right_pane = ttk.PanedWindow(right, orient=tk.VERTICAL)
-        right_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        self.plot_frame = ttk.LabelFrame(right_pane, text="Live plots")
-        right_pane.add(self.plot_frame, weight=3)
-
-        controls = ttk.Frame(right_pane)
-        right_pane.add(controls, weight=1)
-
-        controls.columnconfigure(0, weight=1)
-        controls.rowconfigure(3, weight=1)
-
-        self.manual_frame = ttk.LabelFrame(controls, text="Manual control")
-        self.manual_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        self._build_manual_panel(self.manual_frame)
-
-        self.power_frame = ttk.LabelFrame(controls, text="Power meter (PPK2 as ammeter: bench supply -> PPK2 -> pump driver)")
-        self.power_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self._build_power_panel(self.power_frame)
-
-        # Initialize video recorder
-        self.video_recorder = None
-        self.video_recording = False
-        self.var_video_enabled = tk.BooleanVar(value=False)
-        self.var_video_camera_index = tk.StringVar(value="0")
-        self.var_video_status = tk.StringVar(value="Camera: Not connected")
-
-        # Build video controls and preview
-        self._build_video_controls(controls).grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        self._build_video_preview(controls).grid(row=3, column=0, sticky="nsew")
-
-        self._update_mode_ui()
-        self._refresh_manual_duty_state()
-
-        # Start video preview if camera is connected
-        self._init_video()
+    def _update_status_bar(self):
+        s = self.active_stream
+        if s is not None and getattr(s, "ser", None) is not None:
+            self._set_light("arduino", "ok", f"Arduino {s.cfg.get('port', '')}")
+        elif s is not None:
+            self._set_light("arduino", "busy", "Arduino (dry run)")
+        else:
+            self._set_light("arduino", "off", "Arduino")
+        backend = self.var_sensor_backend.get()
+        if s is not None and getattr(s, "t0", None) is not None:
+            with s.lock:
+                last = s.buf_t[-1] if s.buf_t else None
+            fresh = last is not None and (CLOCK() - s.t0 - last) < 2.0
+            self._set_light("flow", "ok" if fresh else "bad", f"Flow {backend}" + ("" if fresh else " (no data)"))
+        else:
+            self._set_light("flow", "off", f"Flow {backend}")
+        live = s.get_power_live() if s is not None else None
+        if live is None:
+            self._set_light("ppk2", "off", "PPK2")
+        else:
+            st = live.get("state", "?")
+            self._set_light("ppk2", "ok" if st == "measuring" else "bad" if st in ("tripped", "lost") else "busy",
+                            f"PPK2 {st}")
+        pst = s.get_pressure_status() if s is not None else None
+        if pst is None:
+            self._set_light("pressure", "off", "Pressure")
+        else:
+            bad = pst["mode"] == "fault" or pst["stale"]
+            busy = pst["mode"] in ("hold", "release") and not pst["settled"]
+            p = pst["p"]
+            self._set_light("pressure", "bad" if bad else "busy" if busy else "ok",
+                            "Pressure " + ("FAULT" if pst["mode"] == "fault" else
+                                           "no reading" if pst["stale"] or p != p else f"{p:.1f} mbar"))
+        vr = self.video_recorder
+        if vr is not None and vr.is_opened():
+            fps = vr.measured_fps()
+            txt = f"Camera {fps:.1f} fps" if fps else "Camera"
+            self._set_light("camera", "busy" if vr.is_recording() else "ok", txt + (" · REC" if vr.is_recording() else ""))
+        else:
+            self._set_light("camera", "off", "Camera")
+        if PSUTIL_AVAILABLE:
+            try:
+                rss = psutil.Process().memory_info().rss / 2**20
+                free = psutil.virtual_memory().available / 2**20
+                self.var_mem.set(f"Dashboard RAM {rss:.0f} MB · free {free / 1024:.1f} GB")
+            except Exception:
+                pass
 
     # ---- run timer + manual voltage steps ----
     def _build_progress_row(self):
@@ -2203,6 +2859,20 @@ class DashboardApp:
         self._vprompt_index: Optional[int] = None
         self._last_bell = 0.0
         self._last_status_json = 0.0
+
+        # Shown while a run waits for another operator action (clearing the syringe by hand)
+        bg2 = "#f8cbad"
+        self.operator_banner = tk.Frame(self.root, bg=bg2, bd=2, relief=tk.RIDGE)
+        self.var_oprompt_title = tk.StringVar(value="")
+        self.var_oprompt_info = tk.StringVar(value="")
+        tk.Label(self.operator_banner, textvariable=self.var_oprompt_title, bg=bg2,
+                 font=("Segoe UI", 14, "bold")).pack(side=tk.TOP, anchor="w", padx=10, pady=(6, 0))
+        tk.Label(self.operator_banner, textvariable=self.var_oprompt_info, bg=bg2, justify=tk.LEFT,
+                 wraplength=1100).pack(side=tk.TOP, anchor="w", padx=10)
+        orow = tk.Frame(self.operator_banner, bg=bg2)
+        orow.pack(side=tk.TOP, anchor="w", padx=10, pady=(4, 8))
+        ttk.Button(orow, text="Done - continue", command=self.confirm_operator_prompt).pack(side=tk.LEFT)
+        self._oprompt_index: Optional[int] = None
 
         self.root.after(1000, self._tick_progress)
 
@@ -2249,19 +2919,22 @@ class DashboardApp:
         ttk.Label(r0, text="Port:").pack(side=tk.LEFT, padx=(12, 2))
         ttk.Entry(r0, textvariable=self.var_pw_port, width=8).pack(side=tk.LEFT)
         ttk.Button(r0, text="Detect", command=self._detect_ppk2).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r0, text="Bin (ms):").pack(side=tk.LEFT, padx=(12, 2))
-        ttk.Entry(r0, textvariable=self.var_pw_bin, width=5).pack(side=tk.LEFT)
+        r0b = ttk.Frame(parent); r0b.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r0b, text="Bin (ms):").pack(side=tk.LEFT)
+        ttk.Entry(r0b, textvariable=self.var_pw_bin, width=5).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r0b, text="Supply voltage at start (V):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Entry(r0b, textvariable=self.var_supply_v, width=7).pack(side=tk.LEFT, padx=4)
 
         r1 = ttk.Frame(parent); r1.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
-        ttk.Label(r1, text="Supply voltage at start (V):").pack(side=tk.LEFT)
-        ttk.Entry(r1, textvariable=self.var_supply_v, width=7).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r1, text="Bench supply limit (mA):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Label(r1, text="Bench limit (mA):").pack(side=tk.LEFT)
         ttk.Entry(r1, textvariable=self.var_supply_limit, width=6).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r1, text="Stop if current ≥ (mA, blank = 95% of limit):").pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Label(r1, text="Stop at (mA):").pack(side=tk.LEFT, padx=(12, 2))
         ttk.Entry(r1, textvariable=self.var_pw_watch, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="(blank = 95 % of limit)").pack(side=tk.LEFT, padx=2)
 
         r2 = ttk.Frame(parent); r2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(2, 6))
-        self.lbl_pw_live = tk.Label(r2, textvariable=self.var_pw_live, anchor="w")
+        self.lbl_pw_live = tk.Label(r2, textvariable=self.var_pw_live, anchor="w", wraplength=380,
+                                    justify=tk.LEFT)
         self.lbl_pw_live.pack(side=tk.LEFT)
         self._pw_live_fg = self.lbl_pw_live.cget("fg")
 
@@ -2358,6 +3031,330 @@ class DashboardApp:
         self.lbl_pw_live.configure(fg="#b00000" if bad else self._pw_live_fg)
         return live
 
+    # ---- pressure control panel ----
+    def _pressure_cfg(self) -> Dict[str, Any]:
+        """Pressure control settings: config file values, overridden by the panel fields."""
+        p = dict(self.cfg.get("pressure") or {})
+        if hasattr(self, "var_pr_enabled"):
+            sensor = dict(p.get("sensor") or {})
+            sensor.update(backend=self.var_pr_sensor.get().strip() or "fluigent",
+                          channel=safe_int(self.var_pr_channel.get(), 1))
+            if sensor["backend"] == "network" and not sensor.get("server"):
+                sensor["server"] = self.var_flow_server.get().strip() or "localhost:8765"
+            p.update(enabled=bool(self.var_pr_enabled.get()) and PRESSURE_AVAILABLE,
+                     backend=self.var_pr_backend.get().strip() or "arduino",
+                     port=self.var_pr_port.get().strip() or "COM8",
+                     firmware=self.var_pr_fw.get().strip() or "auto",
+                     limit_mbar=safe_float(self.var_pr_limit.get(), 300.0), sensor=sensor)
+        return p
+
+    def _cal_summary(self) -> str:
+        if not PRESSURE_AVAILABLE:
+            return ""
+        cal = pc.load_calibration(pressure_cal_path())
+        if not cal:
+            return "Not calibrated yet (Calibrate...)."
+        g1, g2 = cal.get("gain_push_mbar_step"), cal.get("gain_pull_mbar_step")
+        txt = f"Calibrated {str(cal.get('saved_at', '?'))[:16].replace('T', ' ')}"
+        if g1 and g2:
+            txt += f": push {g1:.2f} / pull {g2:.2f} mbar/step"
+        if cal.get("backlash_steps") is not None:
+            txt += f", backlash {cal['backlash_steps']:g}"
+        if cal.get("sensor_offset_mbar") is not None:
+            txt += f", zero {cal['sensor_offset_mbar']:+.2f} mbar"
+        return txt
+
+    def _build_pressure_panel(self, parent):
+        d = pc.PRESSURE_DEFAULTS if PRESSURE_AVAILABLE else {"sensor": {}}
+        self.var_pr_enabled = tk.BooleanVar(value=False)
+        self.var_pr_backend = tk.StringVar(value="arduino")
+        self.var_pr_port = tk.StringVar(value=str(d.get("port", "COM8")))
+        self.var_pr_fw = tk.StringVar(value="auto")
+        self.var_pr_sensor = tk.StringVar(value="fluigent" if FLUIGENT_AVAILABLE else "network")
+        self.var_pr_channel = tk.StringVar(value=str(d["sensor"].get("channel", 1)))
+        self.var_pr_limit = tk.StringVar(value=str(d.get("limit_mbar", 300)))
+        self.var_pr_target = tk.StringVar(value="50")
+        self.var_pr_jog = tk.StringVar(value="20")
+        self.var_pr_live = tk.StringVar(value="Pressure control off." if PRESSURE_AVAILABLE
+                                        else "Pressure control unavailable (pressure_control.py missing).")
+        self.var_pr_cal = tk.StringVar(value=self._cal_summary())
+        state = tk.NORMAL if PRESSURE_AVAILABLE else tk.DISABLED
+
+        r0 = ttk.Frame(parent); r0.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
+        ttk.Checkbutton(r0, text="Control pressure", variable=self.var_pr_enabled, state=state).pack(side=tk.LEFT)
+        ttk.Label(r0, text="Syringe:").pack(side=tk.LEFT, padx=(10, 2))
+        ttk.Combobox(r0, state="readonly", width=7, values=["arduino", "dummy"],
+                     textvariable=self.var_pr_backend).pack(side=tk.LEFT)
+        ttk.Label(r0, text="Port:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Entry(r0, textvariable=self.var_pr_port, width=6).pack(side=tk.LEFT)
+        ttk.Label(r0, text="FW:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Combobox(r0, state="readonly", width=4, values=["auto", "v1", "v2"],
+                     textvariable=self.var_pr_fw).pack(side=tk.LEFT)
+        r1 = ttk.Frame(parent); r1.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r1, text="P sensor:").pack(side=tk.LEFT)
+        ttk.Combobox(r1, state="readonly", width=8, values=["fluigent", "network"],
+                     textvariable=self.var_pr_sensor).pack(side=tk.LEFT, padx=2)
+        ttk.Label(r1, text="Ch:").pack(side=tk.LEFT, padx=(6, 2))
+        ttk.Entry(r1, textvariable=self.var_pr_channel, width=3).pack(side=tk.LEFT)
+        ttk.Button(r1, text="Find", width=5, command=self._find_pressure_sensor).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="Limit (mbar):").pack(side=tk.LEFT, padx=(6, 2))
+        ttk.Entry(r1, textvariable=self.var_pr_limit, width=5).pack(side=tk.LEFT)
+
+        r2 = ttk.Frame(parent); r2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        self.lbl_pr_live = tk.Label(r2, textvariable=self.var_pr_live, anchor="w", wraplength=380, justify=tk.LEFT)
+        self.lbl_pr_live.pack(side=tk.LEFT)
+        self._pr_live_fg = self.lbl_pr_live.cget("fg")
+        self._pr_last_txt: Optional[str] = None
+
+        r3 = ttk.Frame(parent); r3.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r3, text="Target (mbar):").pack(side=tk.LEFT)
+        ent = ttk.Entry(r3, textvariable=self.var_pr_target, width=6)
+        ent.pack(side=tk.LEFT, padx=4)
+        ent.bind("<Return>", lambda _e: self._pr_hold())
+        ttk.Button(r3, text="Hold", width=6, command=self._pr_hold).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r3, text="Release", width=8, command=self._pr_release).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r3, text="Stop", width=5, command=self._pr_idle).pack(side=tk.LEFT, padx=2)
+        r4 = ttk.Frame(parent); r4.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r4, text="Jog steps:").pack(side=tk.LEFT)
+        ttk.Entry(r4, textvariable=self.var_pr_jog, width=5).pack(side=tk.LEFT, padx=4)
+        ttk.Button(r4, text="Push (+P)", command=lambda: self._pr_jog(+1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r4, text="Pull (-P)", command=lambda: self._pr_jog(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r4, text="Reset fault", command=self._pr_reset).pack(side=tk.LEFT, padx=2)
+        r5 = ttk.Frame(parent); r5.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Button(r5, text="Zero sensor (vented)", command=self._pr_zero_sensor).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r5, text="Syringe emptied: pos 0", command=self._pr_set_empty).pack(side=tk.LEFT, padx=2)
+        r6 = ttk.Frame(parent); r6.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(2, 6))
+        ttk.Button(r6, text="Calibrate...", command=self.open_pressure_calibration, state=state)\
+            .pack(side=tk.LEFT, padx=2)
+        ttk.Label(r6, textvariable=self.var_pr_cal, wraplength=290, justify=tk.LEFT).pack(side=tk.LEFT, padx=6)
+        self._cal_win = None
+        self._cal_busy = False
+        self._cal_result: Dict[str, Any] = {}
+
+    def _find_pressure_sensor(self):
+        try:
+            sensors = fluigent_list_sensors()
+        except Exception as e:
+            messagebox.showinfo("Find pressure sensor", f"Could not list the Fluigent sensors: {e}\n\n"
+                                "With the 'network' backend, flow_server.py prints its channels and units.")
+            return
+        lines = [f"channel {x['index']}: {x['unit']}" + (f", range {x['range'][0]:g}..{x['range'][1]:g}"
+                                                         if x.get("range") else "") for x in sensors]
+        mbar = [x for x in sensors if "bar" in str(x.get("unit", "")).lower()]
+        if mbar:
+            self.var_pr_channel.set(str(mbar[0]["index"]))
+            lines.append(f"\nPressure channel set to {mbar[0]['index']}.")
+        messagebox.showinfo("Fluigent sensors", "\n".join(lines) or "No Fluigent sensors found.")
+
+    def _ctl_for_ui(self, allow_run: bool = False):
+        s = self.active_stream
+        ctl = getattr(s, "ctl", None) if s is not None else None
+        if ctl is None:
+            messagebox.showinfo("Pressure control", "No pressure control is running. Tick 'Control pressure', "
+                                                    "then Connect Manual (or start a run).")
+            return None
+        if isinstance(s, PumpTestRunner) and not allow_run:
+            messagebox.showinfo("Pressure control", "The run controls the pressure now. Stop the run first.")
+            return None
+        return ctl
+
+    def _pressure_bg(self, label: str, fn):
+        """Run a blocking controller action off the Tk thread; report through the UI queue."""
+        def work():
+            try:
+                res = fn()
+                self.ui_events.put(("status", f"{label}: {res}" if isinstance(res, str) else f"{label}: done"))
+            except Exception as e:
+                self.ui_events.put(("error", f"{label} failed: {e}"))
+        threading.Thread(target=work, name="pressure-action", daemon=True).start()
+
+    def _pr_hold(self):
+        ctl = self._ctl_for_ui()
+        if ctl is not None:
+            try:
+                ctl.set_target(safe_float(self.var_pr_target.get().replace(",", "."), 0.0))
+            except Exception as e:
+                messagebox.showerror("Hold pressure", str(e))
+
+    def _pr_release(self):
+        ctl = self._ctl_for_ui()
+        if ctl is not None:
+            ctl.release()
+
+    def _pr_idle(self):
+        ctl = self._ctl_for_ui()
+        if ctl is not None:
+            ctl.idle()
+
+    def _pr_reset(self):
+        ctl = self._ctl_for_ui()
+        if ctl is not None:
+            ctl.reset_fault()
+
+    def _pr_jog(self, sign: int):
+        ctl = self._ctl_for_ui()
+        if ctl is None:
+            return
+        steps = sign * abs(safe_int(self.var_pr_jog.get(), 0))
+        if steps:
+            self._pressure_bg(f"Jog {steps:+d} steps", lambda: (ctl.jog(steps), f"position {ctl.syr.position()}")[1])
+
+    def _pr_zero_sensor(self):
+        ctl = self._ctl_for_ui()
+        if ctl is None or not messagebox.askokcancel(
+                "Zero pressure sensor", "Open the line to atmosphere first (pump off, nothing pushing).\n\n"
+                                        "The mean reading over 3 s becomes the zero. Zero now?"):
+            return
+
+        def work():
+            off = ctl.zero_sensor(3.0)
+            self._save_cal_values({"sensor_offset_mbar": round(off, 4)})
+            return f"offset {off:+.2f} mbar (saved)"
+        self._pressure_bg("Zero pressure sensor", work)
+
+    def _pr_set_empty(self):
+        ctl = self._ctl_for_ui()
+        if ctl is None or not messagebox.askokcancel(
+                "Syringe emptied", "Is the plunger at the empty end (fully in)?\n\nThe syringe position "
+                                   "becomes 0; the controller only pulls from there."):
+            return
+        self._pressure_bg("Syringe position", lambda: (ctl.set_position(0), "set to 0")[1])
+
+    def _save_cal_values(self, values: Dict[str, Any]):
+        path = pressure_cal_path()
+        cal = pc.load_calibration(path)
+        cal.update(values)
+        cal["saved_at"] = iso_now()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        pc.save_calibration(path, cal)
+        self.ui_events.put(("cal_saved", None))
+
+    def _update_pressure_ui(self):
+        s = self.active_stream
+        st = s.get_pressure_status() if s is not None else None
+        if st is None:
+            if self._pr_last_txt:
+                self.var_pr_live.set("Stopped. Last: " + self._pr_last_txt)
+                self.lbl_pr_live.configure(fg=self._pr_live_fg)
+                self._pr_last_txt = None
+            return
+        p, p1 = st["p"], st["p_1s"]
+        txt = "no reading" if p != p else f"P {p:.1f} mbar (1 s mean {p1:.1f})"
+        if st["mode"] == "hold":
+            txt += f" -> {st['target']:g} mbar, " + ("settled" if st["settled"] else "settling")
+        else:
+            txt += f" · {st['mode']}"
+        txt += (f"\nSyringe {st['protocol']}: position {st['pos']}, {st['remaining_pull']} steps to full"
+                f"{' · push blocked (empty end)' if st.get('blocked') else ''}"
+                f"\nGain push {st['gain_push_mbar_step']:.2f} / pull {st['gain_pull_mbar_step']:.2f} mbar/step · "
+                f"backlash {st['backlash_steps']:.0f} · drift {st['drift_mbar_s']:+.1f} mbar/s")
+        if st["mode"] == "fault":
+            txt = f"FAULT: {st['fault']}\n" + txt
+        self.var_pr_live.set(txt)
+        self._pr_last_txt = txt
+        self.lbl_pr_live.configure(fg="#b00000" if st["mode"] == "fault" or st["stale"] else self._pr_live_fg)
+
+    def open_pressure_calibration(self):
+        if self._cal_win is not None and self._cal_win.winfo_exists():
+            self._cal_win.lift()
+            return
+        w = tk.Toplevel(self.root)
+        w.title("Pressure calibration")
+        self._cal_win = w
+        self.var_cal_top = tk.StringVar(value="60")
+        intro = ("Needs a Manual session with 'Control pressure' ticked and the pump output OFF. "
+                 "Results apply to the running controller at once; 'Save' keeps them for later sessions "
+                 f"({pressure_cal_path()}).")
+        ttk.Label(w, text=intro, wraplength=560, justify=tk.LEFT).pack(side=tk.TOP, anchor="w", padx=10, pady=(8, 4))
+        steps = [
+            ("zero", "1. Zero sensor", "Line open to atmosphere: the mean reading becomes 0 mbar."),
+            ("pos0", "2. Syringe emptied: pos 0", "Plunger fully in. To calibrate pushing too, open the line to "
+                                                  "the reservoir, Jog Pull ~500 steps, then close the line."),
+            ("sweep", "3. Gain + backlash sweep", "Line closed, liquid-filled, pump OFF: steps of 10 up to the "
+                                                  "span below and back (pushes first if there is room)."),
+            ("leak", "4. Leak test (60 s)", "Holds 2/3 of the span, then stops the syringe and watches the decay."),
+            ("step", "5. Step response", "Holds 1/4, 1/2 and 1 x the span, reports settling time, then releases."),
+        ]
+        for key, label, hint in steps:
+            row = ttk.Frame(w); row.pack(side=tk.TOP, fill=tk.X, padx=10, pady=2)
+            ttk.Button(row, text=label, width=24, command=lambda k=key: self._cal_step(k)).pack(side=tk.LEFT)
+            ttk.Label(row, text=hint, wraplength=380, justify=tk.LEFT).pack(side=tk.LEFT, padx=6)
+        row = ttk.Frame(w); row.pack(side=tk.TOP, fill=tk.X, padx=10, pady=4)
+        ttk.Label(row, text="Span (mbar):").pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=self.var_cal_top, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Button(row, text="Save calibration", command=self._cal_save).pack(side=tk.RIGHT, padx=2)
+        self.txt_cal = tk.Text(w, height=12, width=78)
+        self.txt_cal.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=(4, 10))
+
+    def _cal_log(self, msg: str):
+        if self._cal_win is not None and self._cal_win.winfo_exists():
+            self.txt_cal.insert(tk.END, msg + "\n")
+            self.txt_cal.see(tk.END)
+
+    def _cal_step(self, key: str):
+        s = self.active_stream
+        if not isinstance(s, ManualSession):
+            messagebox.showinfo("Calibration", "Connect a Manual session with 'Control pressure' ticked first.",
+                                parent=self._cal_win)
+            return
+        ctl = self._ctl_for_ui()
+        if ctl is None:
+            return
+        if s._pump_hz() > 0:
+            messagebox.showinfo("Calibration", "Switch the pump output OFF first.", parent=self._cal_win)
+            return
+        if self._cal_busy:
+            messagebox.showinfo("Calibration", "A calibration step is still running.", parent=self._cal_win)
+            return
+        span = max(5.0, safe_float(self.var_cal_top.get(), 60.0))
+        log = lambda m: self.ui_events.put(("cal_log", m))
+
+        def work():
+            self._cal_busy = True
+            try:
+                if key == "zero":
+                    off = ctl.zero_sensor(3.0)
+                    self._cal_result["sensor_offset_mbar"] = round(off, 4)
+                    log(f"Sensor zero: offset {off:+.3f} mbar")
+                elif key == "pos0":
+                    ctl.set_position(0)
+                    log("Syringe position set to 0 (empty end)")
+                elif key == "sweep":
+                    log(f"Sweep to {span:g} mbar ...")
+                    r = pc.calib_gain_sweep(ctl, step=10, p_top=span, progress=log)
+                    ctl.apply_calibration(r)
+                    self._cal_result.update({k: v for k, v in r.items() if k != "points"})
+                    self._cal_result["sweep_points"] = r["points"]
+                    log(f"Gain push {r.get('gain_push_mbar_step')} / pull {r.get('gain_pull_mbar_step')} mbar/step, "
+                        f"backlash {r.get('backlash_steps')} steps ({len(r['points'])} moves, {r['sweep_first']} first)")
+                elif key == "leak":
+                    r = pc.calib_leak_test(ctl, p_test=round(2 * span / 3), seconds=60.0, progress=log)
+                    self._cal_result.update(r)
+                    log(f"Leak: {r['leak_mbar_s']:+.4f} mbar/s from {r['leak_p_start_mbar']:.1f} mbar")
+                elif key == "step":
+                    r = pc.calib_step_response(ctl, targets=(round(span / 4), round(span / 2), span), progress=log)
+                    self._cal_result.update(r)
+                    for x in r["step_response"]:
+                        log(f"  {x['target']:g} mbar: {'settled' if x['settled'] else 'NOT settled'} in "
+                            f"{x['t_settle_s']} s, overshoot {x['overshoot_mbar']} mbar")
+            except Exception as e:
+                log(f"FAILED: {e}")
+            finally:
+                self._cal_busy = False
+        threading.Thread(target=work, name="pressure-calibration", daemon=True).start()
+
+    def _cal_save(self):
+        if not self._cal_result:
+            messagebox.showinfo("Calibration", "Nothing measured yet.", parent=self._cal_win)
+            return
+        vals = dict(self._cal_result)
+        vals["port"] = self.var_pr_port.get().strip()
+        try:
+            self._save_cal_values(vals)
+            self._cal_log(f"Saved to {pressure_cal_path()}")
+        except Exception as e:
+            messagebox.showerror("Calibration", f"Could not save: {e}", parent=self._cal_win)
+
     def _active_runner(self) -> Optional["PumpTestRunner"]:
         s = self.active_stream
         return s if isinstance(s, PumpTestRunner) else None
@@ -2371,6 +3368,14 @@ class DashboardApp:
             self._update_power_ui()
         except Exception:
             log_exception_limited("power_tick", "Power meter: live update failed")
+        try:
+            self._update_pressure_ui()
+        except Exception:
+            log_exception_limited("pressure_tick", "Pressure control: live update failed")
+        try:
+            self._update_status_bar()
+        except Exception:
+            log_exception_limited("status_bar", "Status bar update failed")
         self.root.after(1000, self._tick_progress)
 
     def _update_progress_ui(self):
@@ -2380,6 +3385,7 @@ class DashboardApp:
 
         if runner is None:
             self._show_voltage_banner(None)
+            self._show_operator_banner(None)
             tests = self.cfg.get("tests", [])
             if not tests:
                 self.var_progress.set("")
@@ -2432,7 +3438,8 @@ class DashboardApp:
             self.lbl_next_change.configure(fg=self._next_change_fg)
 
         self._show_voltage_banner(req)
-        if req and time.monotonic() - self._last_bell >= 60.0:
+        self._show_operator_banner(p.get("operator_request"))
+        if (req or p.get("operator_request")) and time.monotonic() - self._last_bell >= 60.0:
             self._last_bell = time.monotonic()
             self.root.bell()
 
@@ -2469,6 +3476,34 @@ class DashboardApp:
             self.ent_vprompt.select_range(0, tk.END)
         except Exception:
             log_exception_limited("vprompt_focus", "Voltage prompt: could not raise the window")
+
+    def _show_operator_banner(self, req: Optional[Dict[str, Any]]):
+        if not req:
+            if self._oprompt_index is not None:
+                self.operator_banner.pack_forget()
+                self._oprompt_index = None
+            return
+        waited = CLOCK() - req["asked_mono"]
+        self.var_oprompt_info.set(f"{req['text']}\nAsked at {req['asked_at'][11:16]} ({fmt_duration(waited)} ago).")
+        if self._oprompt_index == req["index"]:
+            return
+        self._oprompt_index = req["index"]
+        self.var_oprompt_title.set(f"WAITING FOR YOU: {req['title']}")
+        self.operator_banner.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6), after=self._progress_row)
+        self._last_bell = time.monotonic()
+        self.root.bell()
+        try:
+            self.root.deiconify()
+            self.root.lift()
+        except Exception:
+            log_exception_limited("oprompt_raise", "Operator prompt: could not raise the window")
+
+    def confirm_operator_prompt(self):
+        runner = self._active_runner()
+        if runner is None or not runner.confirm_operator():
+            self._show_operator_banner(None)
+            return
+        self.var_status.set("Confirmed; continuing ...")
 
     def confirm_voltage_change(self):
         runner = self._active_runner()
@@ -2564,7 +3599,7 @@ class DashboardApp:
     # ---- video controls ----
     def _build_video_controls(self, parent):
         """Build video recording controls."""
-        video_frame = ttk.LabelFrame(parent, text="USB Camera (optional)")
+        video_frame = ttk.Frame(parent)
         self.video_controls_frame = video_frame
         
         row1 = ttk.Frame(video_frame)
@@ -2576,11 +3611,14 @@ class DashboardApp:
         ttk.Label(row1, text="Camera index:").pack(side=tk.LEFT)
         ttk.Entry(row1, textvariable=self.var_video_camera_index, width=6).pack(side=tk.LEFT, padx=4)
         
-        self.btn_video_connect = ttk.Button(row1, text="Connect Camera", command=self._connect_camera)
-        self.btn_video_connect.pack(side=tk.LEFT, padx=8)
+        row1b = ttk.Frame(video_frame)
+        row1b.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
+        self.btn_video_connect = ttk.Button(row1b, text="Connect Camera", command=self._connect_camera)
+        self.btn_video_connect.pack(side=tk.LEFT)
         
-        self.btn_video_disconnect = ttk.Button(row1, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
+        self.btn_video_disconnect = ttk.Button(row1b, text="Disconnect", command=self._disconnect_camera, state=tk.DISABLED)
         self.btn_video_disconnect.pack(side=tk.LEFT, padx=4)
+        ttk.Label(row1b, text="(index 'dummy' = test camera)").pack(side=tk.LEFT, padx=8)
         
         row_opts = ttk.Frame(video_frame)
         row_opts.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
@@ -2591,7 +3629,6 @@ class DashboardApp:
         ttk.Label(row_opts, text="Codec:").pack(side=tk.LEFT)
         ttk.Combobox(row_opts, state="readonly", width=6, values=list(VIDEO_CODECS),
                      textvariable=self.var_video_codec).pack(side=tk.LEFT, padx=4)
-        ttk.Label(row_opts, text="(index 'dummy' = test camera)").pack(side=tk.LEFT, padx=8)
 
         row2 = ttk.Frame(video_frame)
         row2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 4))
@@ -2748,7 +3785,7 @@ class DashboardApp:
 
     def _build_video_preview(self, parent):
         """Build video preview panel to show real-time camera feed."""
-        self.video_preview_frame = ttk.LabelFrame(parent, text="Camera Preview")
+        self.video_preview_frame = ttk.Frame(parent)
 
         topbar = ttk.Frame(self.video_preview_frame)
         topbar.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 0))
@@ -2888,8 +3925,8 @@ class DashboardApp:
         try:
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            w = min(1250, int(sw * 0.95))
-            h = min(840, int(sh * 0.90))
+            w = min(1700, int(sw * 0.95))
+            h = min(1000, int(sh * 0.92))
             x = max(0, (sw - w) // 2)
             y = max(0, (sh - h) // 2)
             self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -2899,7 +3936,7 @@ class DashboardApp:
             self.root.geometry("1250x840")
 
     def _build_config_builder(self, parent):
-        listf = ttk.LabelFrame(parent, text="Config builder (test blocks)")
+        listf = ttk.LabelFrame(parent, text="Test blocks")
         listf.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # exportselection=False: otherwise selecting text in an editor Entry
@@ -2917,18 +3954,22 @@ class DashboardApp:
         ttk.Button(actions, text="Add Constant", command=self.add_constant_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Add Sweep", command=self.add_sweep_block).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="Add Group", command=self.add_group_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Duplicate", command=self.duplicate_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Remove", command=self.remove_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Move Up", command=lambda: self.move_selected_block(-1)).pack(side=tk.LEFT, padx=8)
-        ttk.Button(actions, text="Move Down", command=lambda: self.move_selected_block(+1)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="Clear All", command=self.clear_all_blocks).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(actions, text="Add Voltage Step", command=self.add_voltage_block).pack(side=tk.LEFT, padx=2)
+        edit_row = ttk.Frame(listf)
+        edit_row.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
+        ttk.Button(edit_row, text="Duplicate", command=self.duplicate_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Remove", command=self.remove_selected_block).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Move Up", command=lambda: self.move_selected_block(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Move Down", command=lambda: self.move_selected_block(+1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(edit_row, text="Clear All", command=self.clear_all_blocks).pack(side=tk.RIGHT, padx=2)
 
         actions2 = ttk.Frame(listf)
         actions2.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
         ttk.Button(actions2, text="Group Selected", command=self.group_selected_blocks).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions2, text="Ungroup", command=self.ungroup_selected_block).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions2, text="Add Voltage Step", command=self.add_voltage_block).pack(side=tk.LEFT, padx=(14, 2))
-        ttk.Label(listf, wraplength=420, justify=tk.LEFT,
+        ttk.Button(actions2, text="Add PQ Curve", command=self.add_pq_block).pack(side=tk.LEFT, padx=(12, 2))
+        ttk.Button(actions2, text="Add Pressure", command=self.add_pressure_block).pack(side=tk.LEFT, padx=2)
+        ttk.Label(listf, wraplength=380, justify=tk.LEFT,
                   text="A group repeats its blocks back-to-back (Repeat 0 = loop until Stop). "
                        "With a group row selected, Add Constant/Sweep/Voltage adds inside the group; "
                        "Esc clears the selection so Add appends at the end. "
@@ -3011,8 +4052,43 @@ class DashboardApp:
         ttk.Label(vrow2, text="and").pack(side=tk.LEFT)
         ttk.Entry(vrow2, textvariable=self.var_edit_vto, width=6).pack(side=tk.LEFT, padx=4)
 
-        ttk.Button(editf, text="Apply changes", command=self.apply_edit_to_selected)\
-            .pack(side=tk.TOP, padx=6, pady=(6, 8))
+        # Pressure editor (hold / release / idle)
+        self.var_edit_ptarget = tk.StringVar(value="50")
+        self.var_edit_pwait = tk.BooleanVar(value=True)
+        self.var_edit_ptimeout = tk.StringVar(value="120")
+        self.edit_pressure = ttk.Frame(editf)
+        ttk.Label(self.edit_pressure, text="Target (mbar, or release / idle):").pack(side=tk.LEFT)
+        ttk.Entry(self.edit_pressure, textvariable=self.var_edit_ptarget, width=8).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(self.edit_pressure, text="wait settled, max (s):",
+                        variable=self.var_edit_pwait).pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Entry(self.edit_pressure, textvariable=self.var_edit_ptimeout, width=6).pack(side=tk.LEFT)
+
+        # PQ curve editor
+        self.var_edit_pqfreqs = tk.StringVar(value="600")
+        self.var_edit_pqps = tk.StringVar(value="0, 25, 50, 100, 150, 200")
+        self.var_edit_pqsettle = tk.StringVar(value="120")
+        self.var_edit_pqmeasure = tk.StringVar(value="30")
+        self.var_edit_pqtimeout = tk.StringVar(value="measure")
+        self.var_edit_pqrelease = tk.BooleanVar(value=True)
+        self.edit_pq = ttk.Frame(editf)
+        q1 = ttk.Frame(self.edit_pq); q1.pack(side=tk.TOP, fill=tk.X, pady=2)
+        ttk.Label(q1, text="Frequencies (Hz):").pack(side=tk.LEFT)
+        ttk.Entry(q1, textvariable=self.var_edit_pqfreqs, width=16).pack(side=tk.LEFT, padx=4)
+        ttk.Label(q1, text="Measure (s):").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Entry(q1, textvariable=self.var_edit_pqmeasure, width=5).pack(side=tk.LEFT)
+        q2 = ttk.Frame(self.edit_pq); q2.pack(side=tk.TOP, fill=tk.X, pady=2)
+        ttk.Label(q2, text="Pressures (mbar):").pack(side=tk.LEFT)
+        ttk.Entry(q2, textvariable=self.var_edit_pqps, width=34).pack(side=tk.LEFT, padx=4)
+        q3 = ttk.Frame(self.edit_pq); q3.pack(side=tk.TOP, fill=tk.X, pady=2)
+        ttk.Label(q3, text="Settle max (s):").pack(side=tk.LEFT)
+        ttk.Entry(q3, textvariable=self.var_edit_pqsettle, width=5).pack(side=tk.LEFT, padx=4)
+        ttk.Label(q3, text="if not settled:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Combobox(q3, state="readonly", width=8, values=["measure", "skip"],
+                     textvariable=self.var_edit_pqtimeout).pack(side=tk.LEFT)
+        ttk.Checkbutton(q3, text="release after", variable=self.var_edit_pqrelease).pack(side=tk.LEFT, padx=8)
+
+        self.btn_apply_edit = ttk.Button(editf, text="Apply changes", command=self.apply_edit_to_selected)
+        self.btn_apply_edit.pack(side=tk.TOP, padx=6, pady=(6, 8))
 
         self.var_edit_type.trace_add("write", lambda *_: self._refresh_editor_visibility())
         self._refresh_editor_visibility()
@@ -3023,14 +4099,11 @@ class DashboardApp:
         self.edit_sweep.pack_forget()
         self.edit_group.pack_forget()
         self.edit_voltage.pack_forget()
-        if ttype == "constant":
-            self.edit_constant.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
-        elif ttype == "group":
-            self.edit_group.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
-        elif ttype == "voltage":
-            self.edit_voltage.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
-        else:
-            self.edit_sweep.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2)
+        self.edit_pressure.pack_forget()
+        self.edit_pq.pack_forget()
+        frame = {"constant": self.edit_constant, "pressure": self.edit_pressure, "pq": self.edit_pq,
+                 "group": self.edit_group, "voltage": self.edit_voltage}.get(ttype, self.edit_sweep)
+        frame.pack(side=tk.TOP, fill=tk.X, padx=6, pady=2, before=self.btn_apply_edit)
 
     def _build_manual_panel(self, parent):
         self.var_manual_enabled = tk.BooleanVar(value=False)
@@ -3047,33 +4120,45 @@ class DashboardApp:
         ttk.Entry(row, textvariable=self.var_manual_freq, width=10).pack(side=tk.LEFT, padx=6)
         ttk.Button(row, text="Set freq", command=self._manual_set_freq).pack(side=tk.LEFT, padx=4)
 
-        ttk.Label(row, text="Duty (0..1):").pack(side=tk.LEFT, padx=(16, 2))
-        self.ent_manual_duty = ttk.Entry(row, textvariable=self.var_manual_duty, width=8)
+        row2 = ttk.Frame(parent)
+        row2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6))
+        ttk.Label(row2, text="Duty (0..1):").pack(side=tk.LEFT)
+        self.ent_manual_duty = ttk.Entry(row2, textvariable=self.var_manual_duty, width=8)
         self.ent_manual_duty.pack(side=tk.LEFT, padx=6)
-        self.btn_set_duty = ttk.Button(row, text="Set duty", command=self._manual_set_duty)
+        self.btn_set_duty = ttk.Button(row2, text="Set duty", command=self._manual_set_duty)
         self.btn_set_duty.pack(side=tk.LEFT, padx=4)
 
         info = ttk.Frame(parent)
         info.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 8))
         self.var_manual_info = tk.StringVar(value="Manual session not connected.")
-        ttk.Label(info, textvariable=self.var_manual_info).pack(side=tk.LEFT)
+        ttk.Label(info, textvariable=self.var_manual_info, wraplength=380, justify=tk.LEFT).pack(side=tk.LEFT)
 
     def _build_plot(self):
         self.fig = plt.figure(figsize=(8.2, 5.2))
         self.ax1 = self.fig.add_subplot(211)
         self.ax2 = self.fig.add_subplot(212)
 
-        self.line_freq, = self.ax1.plot([], [], lw=1)
-        self.line_flow, = self.ax2.plot([], [], lw=1)
+        # The data lines are "animated": a full draw leaves them out, they are drawn on top of the
+        # cached background each frame (blitting, _update_plot)
+        self.line_freq, = self.ax1.plot([], [], lw=1, animated=True)
+        self.line_flow, = self.ax2.plot([], [], lw=1, animated=True)
         # Supply current from the PPK2 on a second y-axis of the frequency plot (hidden without a meter)
         self.ax1_cur = self.ax1.twinx()
-        self.line_cur, = self.ax1_cur.plot([], [], lw=0.8, color="tab:red")
+        self.line_cur, = self.ax1_cur.plot([], [], lw=0.8, color="tab:red", animated=True)
         self.ax1_cur.set_ylabel("mA", color="tab:red")
         self.ax1_cur.tick_params(axis="y", labelcolor="tab:red")
         self.ax1_cur.set_visible(False)
+        # Line pressure (and the held target) on a second y-axis of the flow plot
+        self.ax2_p = self.ax2.twinx()
+        self.line_p, = self.ax2_p.plot([], [], lw=0.9, color="tab:green", animated=True)
+        self.line_ptgt, = self.ax2_p.plot([], [], lw=0.8, ls="--", color="darkgreen", animated=True)
+        self._plot_lines = [self.line_freq, self.line_cur, self.line_flow, self.line_p, self.line_ptgt]
+        self._plot_bg = None
+        self.ax2_p.set_ylabel("mbar", color="tab:green")
+        self.ax2_p.tick_params(axis="y", labelcolor="tab:green")
+        self.ax2_p.set_visible(False)
 
         self.ax1.set_title("Frequency setpoint (Hz)")
-        self.ax1.set_xlabel("t (s)")
         self.ax1.set_ylabel("Hz")
         self.ax2.set_title("Flow-rate (sensor units)")
         self.ax2.set_xlabel("t (s)")
@@ -3093,8 +4178,9 @@ class DashboardApp:
         ttk.Button(zoom_frame, text="Zoom In", command=self._zoom_time_in).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Zoom Out", command=self._zoom_time_out).pack(side=tk.LEFT, padx=2)
         ttk.Button(zoom_frame, text="Reset", command=self._zoom_time_reset).pack(side=tk.LEFT, padx=2)
+        zoom_frame = ttk.Frame(self.plot_frame)          # second row: Y ranges
+        zoom_frame.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 2))
         
-        ttk.Label(zoom_frame, text="  |  ").pack(side=tk.LEFT)
         
         # Y-axis range for frequency plot
         ttk.Label(zoom_frame, text="Freq Y min:").pack(side=tk.LEFT)
@@ -3123,6 +4209,8 @@ class DashboardApp:
 
         # Custom zoom/pan with mouse wheel on plots
         self.canvas.mpl_connect('scroll_event', self._on_scroll_event)
+        # After every full draw (limits changed, resize, Y range set): new background, lines on top
+        self.canvas.mpl_connect('draw_event', self._on_plot_draw)
         
         # Track if user has manually set y-axis ranges
         self._user_freq_y_range = None
@@ -3199,62 +4287,187 @@ class DashboardApp:
                 self._zoom_time_out()
 
     # ---- plot update ----
-    def _update_plot(self, _frame):
+    def _plot_tick(self):
+        try:
+            if self.center_tabs.select() == str(self.plot_frame):
+                self._update_plot()
+        except Exception:
+            log_exception_limited("plot_tick", "Plot update failed")
+        self.root.after(150, self._plot_tick)
+
+    def _on_plot_draw(self, _evt=None):
+        self._plot_bg = self.canvas.copy_from_bbox(self.fig.bbox)
+        self._draw_plot_lines()
+
+    def _draw_plot_lines(self):
+        for ln in self._plot_lines:
+            if ln.axes.get_visible():
+                ln.axes.draw_artist(ln)
+
+    @staticmethod
+    def _fit_ylim(cur, vals, min_pad: float):
+        """Y-limits for vals: the current ones while the data stays inside and fills at least
+        40 % of them (so most frames need no full redraw), else new ones with 10 % padding."""
+        vals = np.asarray(vals, dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if not len(vals):
+            return cur
+        lo, hi = float(vals.min()), float(vals.max())
+        pad = max(0.1 * (hi - lo), min_pad)
+        new = (lo - pad, hi + pad)
+        if cur is not None and cur[0] <= lo and hi <= cur[1] and (new[1] - new[0]) >= 0.4 * (cur[1] - cur[0]):
+            return cur
+        return new
+
+    def _update_plot(self, _frame=None):
+        """Redraw the live plot. The x-window advances in steps of 1/5 of its width and the
+        y-limits only change when the data leaves them, so most frames just restore the cached
+        background and draw the lines (a few ms) instead of a full redraw (~100+ ms holding the
+        GIL, which the drive timing needs)."""
         if not self.active_stream:
-            return self.line_freq, self.line_flow
+            return
         ts, freqs, flows = self.active_stream.get_plot_data()
         if not ts:
-            return self.line_freq, self.line_flow
-
+            return
+        window = self._get_time_window()
+        step = max(1.0, window / 5.0)
+        x_right = max(window, (math.floor(ts[-1] / step) + 1) * step)
+        tmin = x_right - window
+        # Only the visible window, thinned: the buffers hold far more points than the plot shows
+        ts, freqs, flows = window_decimate(ts, [freqs, flows], tmin)
         self.line_freq.set_data(ts, freqs)
         self.line_flow.set_data(ts, flows)
+        lims = {"x": (tmin, x_right)}
 
-        tmax = ts[-1]
-        window = self._get_time_window()
-        tmin = max(0.0, tmax - window)
-        self.ax1.set_xlim(tmin, tmin + window)
-        self.ax2.set_xlim(tmin, tmin + window)
+        pts, pps, ptg = self.active_stream.get_pressure_plot_data()
+        p_on = len(pts) > 0
+        if p_on:
+            pts, pps, ptg = window_decimate(pts, [pps, ptg], tmin)
+            self.line_p.set_data(pts, pps)
+            self.line_ptgt.set_data(pts, ptg)
+            lims["p"] = self._fit_ylim(self._plot_lims_cur("p"), np.concatenate((pps, ptg)), 1.0)
+        lims["p_on"] = p_on
 
         pt, pi = self.active_stream.get_power_plot_data()
-        if pt:
+        cur_on = len(pt) > 0
+        if cur_on:
+            pt, pi = window_decimate(pt, [pi], tmin)
             self.line_cur.set_data(pt, pi)
-            if not self.ax1_cur.get_visible():
-                self.ax1_cur.set_visible(True)
-                self.ax1.set_title("Frequency setpoint (Hz) and supply current (mA, red)")
-            vis = [i for t, i in zip(pt, pi) if t >= tmin]
-            if vis:
-                lo, hi = min(vis), max(vis)
-                pad = max(0.05 * (hi - lo), 0.1)
-                self.ax1_cur.set_ylim(lo - pad, hi + pad)
-        elif self.ax1_cur.get_visible():
-            self.line_cur.set_data([], [])
-            self.ax1_cur.set_visible(False)
-            self.ax1.set_title("Frequency setpoint (Hz)")
+            lims["cur"] = self._fit_ylim(self._plot_lims_cur("cur"), pi, 0.1)
+        lims["cur_on"] = cur_on
 
-        # Apply user-defined Y ranges or auto-scale
-        if self._user_freq_y_range is not None:
-            self.ax1.set_ylim(self._user_freq_y_range)
+        lims["freq"] = self._user_freq_y_range or self._fit_ylim(self._plot_lims_cur("freq"), freqs, 1.0)
+        lims["flow"] = self._user_flow_y_range or self._fit_ylim(self._plot_lims_cur("flow"), flows, 0.1)
+
+        if lims != getattr(self, "_plot_lims", None) or self._plot_bg is None:
+            self._plot_lims = lims
+            self.ax1.set_xlim(*lims["x"])
+            self.ax2.set_xlim(*lims["x"])
+            self.ax1.set_ylim(*lims["freq"])
+            self.ax2.set_ylim(*lims["flow"])
+            self.ax2_p.set_visible(lims["p_on"])
+            self.ax2.set_title("Flow-rate (sensor units)" + (" and pressure (mbar, green)" if lims["p_on"] else ""))
+            if lims["p_on"] and lims.get("p"):
+                self.ax2_p.set_ylim(*lims["p"])
+            self.ax1_cur.set_visible(lims["cur_on"])
+            self.ax1.set_title("Frequency setpoint (Hz)" + (" and supply current (mA, red)" if lims["cur_on"] else ""))
+            if lims["cur_on"] and lims.get("cur"):
+                self.ax1_cur.set_ylim(*lims["cur"])
+            self.canvas.draw()                  # -> _on_plot_draw: new background + lines
         else:
-            try:
-                fmin, fmax = min(freqs), max(freqs)
-                if fmin == fmax:
-                    fmin -= 1; fmax += 1
-                self.ax1.set_ylim(fmin, fmax)
-            except Exception:
-                log_exception_limited("plot_freq_ylim", "Plot update: failed to auto-scale frequency Y range")
+            self.canvas.restore_region(self._plot_bg)
+            self._draw_plot_lines()
+            self.canvas.blit(self.fig.bbox)
 
-        if self._user_flow_y_range is not None:
-            self.ax2.set_ylim(self._user_flow_y_range)
-        else:
-            try:
-                ymin, ymax = min(flows), max(flows)
-                if ymin == ymax:
-                    ymin -= 0.1; ymax += 0.1
-                self.ax2.set_ylim(ymin, ymax)
-            except Exception:
-                log_exception_limited("plot_flow_ylim", "Plot update: failed to auto-scale flow Y range")
+    def _plot_lims_cur(self, key: str):
+        return (getattr(self, "_plot_lims", None) or {}).get(key)
 
-        return self.line_freq, self.line_flow
+    def _on_center_tab(self, _evt=None):
+        # Back on the live tab: the cached background may be stale (resized while hidden)
+        if self.center_tabs.select() == str(self.plot_frame):
+            self._plot_bg = None
+
+    # ---- PQ curve tab ----
+    def _build_pq_tab(self):
+        from matplotlib.figure import Figure
+        frame = ttk.Frame(self.center_tabs)
+        self.center_tabs.add(frame, text="PQ curve")
+        bar = ttk.Frame(frame)
+        bar.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 2))
+        ttk.Button(bar, text="Open pq_points.csv...", command=self._pq_open_csv).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bar, text="Clear", command=self._pq_clear).pack(side=tk.LEFT, padx=2)
+        self.var_pq_info = tk.StringVar(value="Points appear here while a run with a PQ block measures.")
+        ttk.Label(bar, textvariable=self.var_pq_info).pack(side=tk.LEFT, padx=10)
+        self.pq_fig = Figure(figsize=(7.0, 4.5))
+        self.pq_ax = self.pq_fig.add_subplot(111)
+        self.pq_canvas = FigureCanvasTkAgg(self.pq_fig, master=frame)
+        self.pq_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
+        self.pq_rows: List[Dict[str, Any]] = []
+        self._redraw_pq()
+
+    def _pq_clear(self):
+        self.pq_rows = []
+        self.var_pq_info.set("")
+        self._redraw_pq()
+
+    def _pq_open_csv(self):
+        p = filedialog.askopenfilename(title="Open pq_points.csv", filetypes=[("CSV", "*.csv"), ("All", "*.*")])
+        if not p:
+            return
+        try:
+            with open(p, newline="", encoding="utf-8") as f:
+                self.pq_rows = list(csv.DictReader(f))
+        except Exception as e:
+            messagebox.showerror("PQ curve", f"Could not read {p}: {e}")
+            return
+        self.var_pq_info.set(f"{len(self.pq_rows)} points from {p}")
+        self._redraw_pq()
+
+    def _add_pq_point(self, row: Dict[str, Any]):
+        self.pq_rows.append(row)
+        note = f" ({row['note']})" if row.get("note") else ""
+        self.var_pq_info.set(f"{len(self.pq_rows)} points · last: {row.get('frequency_hz')} Hz, "
+                             f"{row.get('p_mean_mbar') or row.get('target_mbar')} mbar, flow {row.get('flow_mean') or '-'}"
+                             + note)
+        self._redraw_pq()
+
+    def _redraw_pq(self):
+        def num(r, k):
+            try:
+                v = float(r.get(k, ""))
+                return v if v == v else None
+            except (TypeError, ValueError):
+                return None
+        ax = self.pq_ax
+        ax.clear()
+        curves: Dict[int, list] = {}
+        shutoff: Dict[int, list] = {}
+        for r in self.pq_rows:
+            p, q, hz = num(r, "p_mean_mbar"), num(r, "flow_mean"), num(r, "frequency_hz")
+            if p is None or q is None or hz is None:
+                continue
+            if r.get("note") == "above_shutoff":
+                shutoff.setdefault(int(hz), []).append((p, q))
+                continue
+            curves.setdefault(int(hz), []).append((p, q, num(r, "p_sd_mbar") or 0.0, num(r, "flow_sd") or 0.0))
+        for hz in sorted(set(curves) | set(shutoff)):
+            pts = sorted(curves.get(hz, []))
+            colour = None
+            if pts:
+                eb = ax.errorbar([a[0] for a in pts], [a[1] for a in pts], xerr=[a[2] for a in pts],
+                                 yerr=[a[3] for a in pts], marker="o", ms=4, capsize=2, lw=1, label=f"{hz} Hz")
+                colour = eb[0].get_color()
+            if hz in shutoff:
+                # Pressure plateau with the syringe unable to push: the pump's shut-off point
+                ax.plot([a[0] for a in shutoff[hz]], [a[1] for a in shutoff[hz]], "x", ms=9, mew=2, color=colour,
+                        label=f"{hz} Hz shut-off (plateau)")
+        ax.set_xlabel("Outlet pressure (mbar)")
+        ax.set_ylabel("Flow (flow-sensor units)")
+        ax.set_title("PQ curve")
+        ax.grid(True, alpha=0.25)
+        if curves:
+            ax.legend(fontsize=8)
+        self.pq_canvas.draw_idle()
 
     # ---- config IO ----
     def pick_out_dir(self):
@@ -3309,6 +4522,17 @@ class DashboardApp:
             self.var_pw_bin.set(str(power.get("bin_ms", 10)))
             self.var_pw_watch.set("" if power.get("watch_ma") in (None, "") else str(power["watch_ma"]))
 
+        pressure = self.cfg.get("pressure")
+        if isinstance(pressure, dict) and hasattr(self, "var_pr_enabled"):
+            self.var_pr_enabled.set(bool(pressure.get("enabled", False)) and PRESSURE_AVAILABLE)
+            self.var_pr_backend.set(str(pressure.get("backend") or "arduino"))
+            self.var_pr_port.set(str(pressure.get("port") or self.var_pr_port.get()))
+            self.var_pr_fw.set(str(pressure.get("firmware") or "auto"))
+            self.var_pr_limit.set(str(pressure.get("limit_mbar", self.var_pr_limit.get())))
+            sensor = pressure.get("sensor") if isinstance(pressure.get("sensor"), dict) else {}
+            self.var_pr_sensor.set(str(sensor.get("backend") or self.var_pr_sensor.get()))
+            self.var_pr_channel.set(str(sensor.get("channel", self.var_pr_channel.get())))
+
         meta = self.cfg.get("meta", {})
         if not isinstance(meta, dict):
             meta = {}
@@ -3362,6 +4586,7 @@ class DashboardApp:
             # Bench supply (voltage steps, power calculation) and the PPK2 power meter
             "supply": self._supply_cfg(),
             "power": self._power_cfg(),
+            "pressure": self._pressure_cfg(),
             "video": self._video_cfg(),
         }
 
@@ -3400,6 +4625,19 @@ class DashboardApp:
             when = f", ask {w[0]}-{w[1]}" if voltage_window(t) else ""
             return (f"VOLTAGE STEP → {mv / 1000:.3f} V (wait for you, {pump}, "
                     f"settle {safe_float(t.get('settle_s', 0), 0.0):g} s{when})")
+        if ttype == "pressure":
+            tgt = t.get("target_mbar", "release")
+            if not is_pressure_target(t):
+                return f"PRESSURE: {str(tgt).lower()}"
+            wait = f", wait until settled (max {safe_float(t.get('timeout_s', 120), 120.0):g} s)" \
+                if t.get("wait_settled", True) else ""
+            return f"PRESSURE: hold {safe_float(tgt, 0.0):g} mbar{wait}"
+        if ttype == "pq":
+            ps = t.get("pressures_mbar") or []
+            fr = ", ".join(str(f) for f in pq_frequencies(t))
+            rng = f"{min(ps):g}..{max(ps):g} mbar" if ps else "no pressures"
+            return (f"PQ CURVE: {fr} Hz x {len(ps)} pressures ({rng}), measure {t.get('measure_s', 30)} s, "
+                    f"settle max {t.get('settle_timeout_s', 120)} s")
         if ttype == "group":
             children = t.get("blocks", [])
             repeat = safe_int(t.get("repeat", 1), 1)
@@ -3420,6 +4658,8 @@ class DashboardApp:
             self._row_paths.append((i,))
             if block_type(t) == "voltage":
                 self.lst_blocks.itemconfig(tk.END, background=volt_bg)
+            if block_type(t) in ("pressure", "pq"):
+                self.lst_blocks.itemconfig(tk.END, background="#e2f0d9")
             if self._is_group(t):
                 self.lst_blocks.itemconfig(tk.END, background="#e3ebfa")
                 for j, child in enumerate(t.get("blocks", [])):
@@ -3460,7 +4700,8 @@ class DashboardApp:
         ttype = (t.get("type") or "constant").lower()
 
         # A group can't be turned into a constant/sweep (its children would be lost)
-        self.cmb_edit_type.configure(values=["group"] if ttype == "group" else ["constant", "sweep", "voltage"])
+        self.cmb_edit_type.configure(values=["group"] if ttype == "group"
+                                     else ["constant", "sweep", "voltage", "pressure", "pq"])
         self.var_edit_type.set(ttype)
         self.var_edit_repeat.set(str(t.get("repeat", 1)))
         self.var_edit_settle_ms.set(str(t.get("settle_ms", 0)))
@@ -3475,6 +4716,18 @@ class DashboardApp:
             w = t.get("window") if voltage_window(t) else None
             self.var_edit_vfrom.set(str(w[0]) if w else "")
             self.var_edit_vto.set(str(w[1]) if w else "")
+        elif ttype == "pressure":
+            tgt = t.get("target_mbar", "release")
+            self.var_edit_ptarget.set(str(tgt) if not is_pressure_target(t) else f"{safe_float(tgt, 0.0):g}")
+            self.var_edit_pwait.set(bool(t.get("wait_settled", True)))
+            self.var_edit_ptimeout.set(str(t.get("timeout_s", 120)))
+        elif ttype == "pq":
+            self.var_edit_pqfreqs.set(", ".join(str(f) for f in pq_frequencies(t)))
+            self.var_edit_pqps.set(", ".join(f"{float(p):g}" for p in t.get("pressures_mbar") or []))
+            self.var_edit_pqsettle.set(str(t.get("settle_timeout_s", 120)))
+            self.var_edit_pqmeasure.set(str(t.get("measure_s", 30)))
+            self.var_edit_pqtimeout.set(str(t.get("on_timeout", "measure")))
+            self.var_edit_pqrelease.set(bool(t.get("release_after", True)))
         elif ttype != "group":
             self.var_edit_start.set(str(t.get("start_hz", 100)))
             self.var_edit_end.set(str(t.get("end_hz", 1000)))
@@ -3534,6 +4787,33 @@ class DashboardApp:
             old = self._block_at(path)
             if block_type(old) == "voltage" and old.get("note"):
                 block["note"] = old["note"]
+        elif ttype == "pressure":
+            raw = self.var_edit_ptarget.get().strip().lower().replace(",", ".")
+            if raw in ("release", "idle"):
+                block = {"type": "pressure", "target_mbar": raw}
+            else:
+                try:
+                    tgt = float(raw)
+                except ValueError:
+                    messagebox.showerror("Pressure block", "Target: a pressure in mbar, 'release' or 'idle'.")
+                    return
+                block = {"type": "pressure", "target_mbar": tgt, "wait_settled": bool(self.var_edit_pwait.get()),
+                         "timeout_s": max(1.0, safe_float(self.var_edit_ptimeout.get(), 120.0))}
+        elif ttype == "pq":
+            try:
+                freqs = [int(float(x)) for x in self.var_edit_pqfreqs.get().replace(";", ",").split(",") if x.strip()]
+                ps = [float(x) for x in self.var_edit_pqps.get().replace(";", ",").split(",") if x.strip()]
+            except ValueError:
+                messagebox.showerror("PQ block", "Frequencies and pressures: numbers separated by commas.")
+                return
+            if not freqs or not ps:
+                messagebox.showerror("PQ block", "Give at least one frequency and one pressure.")
+                return
+            block = {"type": "pq", "frequency_hz": freqs if len(freqs) > 1 else freqs[0], "pressures_mbar": ps,
+                     "settle_timeout_s": max(5.0, safe_float(self.var_edit_pqsettle.get(), 120.0)),
+                     "measure_s": max(1.0, safe_float(self.var_edit_pqmeasure.get(), 30.0)),
+                     "on_timeout": self.var_edit_pqtimeout.get().strip() or "measure",
+                     "release_after": bool(self.var_edit_pqrelease.get())}
         else:
             step_dur = self.var_edit_step_dur.get().strip()
             total_dur = self.var_edit_total_dur.get().strip()
@@ -3589,6 +4869,14 @@ class DashboardApp:
 
     def add_voltage_block(self):
         self._insert_new_block({"type": "voltage", "voltage_mv": 2500, "while_waiting": "zero", "settle_s": 30})
+
+    def add_pq_block(self):
+        self._insert_new_block({"type": "pq", "frequency_hz": 600, "pressures_mbar": [0, 25, 50, 100, 150, 200],
+                                "settle_timeout_s": 120, "measure_s": 30, "on_timeout": "measure",
+                                "release_after": True})
+
+    def add_pressure_block(self):
+        self._insert_new_block({"type": "pressure", "target_mbar": 50, "wait_settled": True, "timeout_s": 120})
 
     def add_group_block(self):
         tests = self.cfg.setdefault("tests", [])
@@ -3706,6 +4994,11 @@ class DashboardApp:
                                             "(Run details) and start again.")
             return
 
+        if contains_pressure_block(cfg["tests"]) and not (cfg.get("pressure") or {}).get("enabled"):
+            messagebox.showerror("Pressure control", "The sequence has pressure / PQ blocks: tick 'Control "
+                                                     "pressure' in the Pressure panel first.")
+            return
+
         supply_now = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
         if safe_float(supply_now.get("initial_mv") or 0, 0.0) > safe_float(supply_now.get("max_mv"), 2500.0):
             messagebox.showerror("Supply voltage", f"Supply voltage at start ({supply_now['initial_mv'] / 1000:.3f} V) "
@@ -3760,6 +5053,8 @@ class DashboardApp:
         with open(os.path.join(run_dir, "config.json"), "x", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
 
+        if contains_pressure_block(cfg["tests"]):
+            self._pq_clear()
         # Pass video recorder to the runner
         runner = PumpTestRunner(cfg, run_dir, self.ui_events, self.video_recorder)
         video_on = [False]
@@ -3879,6 +5174,12 @@ class DashboardApp:
         self.var_manual_info.set("Manual session not connected.")
         self.var_manual_enabled.set(False)
         self.var_video_rec_status.set("off")
+        self._show_operator_banner(None)
+        if run_dir and os.path.exists(os.path.join(run_dir, "pq_points.csv")) and self.pq_rows:
+            try:
+                self.pq_fig.savefig(os.path.join(run_dir, "pq_curve.png"), dpi=150, bbox_inches="tight")
+            except Exception:
+                log_exception("Session end: failed to save pq_curve.png")
         # Generate summary plot if we have run data
         if run_dir and captured_data and len(captured_data[0]) > 0:
             self.root.after(100, lambda: self._generate_summary_plot(run_dir, captured_data))
@@ -3952,6 +5253,14 @@ class DashboardApp:
                     self.var_status.set(payload)
                 elif kind == "voltage_prompt":
                     self._show_voltage_banner(payload)
+                elif kind == "operator_prompt":
+                    self._show_operator_banner(payload)
+                elif kind == "pq_point":
+                    self._add_pq_point(payload)
+                elif kind == "cal_log":
+                    self._cal_log(payload)
+                elif kind == "cal_saved":
+                    self.var_pr_cal.set(self._cal_summary())
                 elif kind == "manual_output_off":
                     self.var_manual_enabled.set(False)
                 elif kind == "pip_done":
@@ -4009,6 +5318,10 @@ class DashboardApp:
             self.root.after(MEM_POLL_MS, self._poll_memory)
 
     def on_close(self):
+        try:
+            self.panels.save()
+        except Exception:
+            log_exception("App close: failed to save the panel layout")
         try:
             if self.active_stream:
                 self.active_stream.stop()

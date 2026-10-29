@@ -103,6 +103,23 @@ In the **Power meter (PPK2)** panel tick *Measure power* (port `auto` or *Detect
 - `power/power_1s.csv` (1 s summary), `power/raw/` (2 s of raw 100 kS/s data every 10 min, and around a trip), `power/power_events.csv`, `power/anchors.csv`, `power/summary.json`
 - `voltage_changes.csv` (requested/confirmed voltage, how long the confirmation took), `schedule.txt`, `status.json` (progress heartbeat every 10 s)
 
+## Pressure Control and PQ Curves (stepper syringe)
+
+A 1 mL liquid-filled syringe on the pump **outlet**, driven by a stepper on an Arduino Uno, holds the outlet pressure while the flow is measured. The pressure sensor (a Fluigent channel) sits between the outlet and the syringe. Code: `pressure_control.py`; firmware: the old `syringe_simple_controls_sketch` (v1) works, `firmware/syringe_v2/syringe_v2.ino` is better (stops mid-move, velocity mode, holds torque, keeps its position over the Uno's reset).
+
+### Set up once
+1. **Pressure control (syringe)** panel: the syringe Uno's port, *Find* to pick the Fluigent pressure channel (the one in mbar). The flow and pressure sensors share one Fluigent session.
+2. Tick *Control pressure*, *Connect Manual* (pump output off), *Calibrate...*: zero the sensor (line vented), *Syringe emptied: pos 0*, the gain + backlash sweep (line closed, liquid-filled), optionally the leak test and step response. *Save calibration* keeps it in `%LOCALAPPDATA%\ATTO\pressure_cal.json`.
+
+The controller learns while it runs (mbar per step for pushing and pulling, backlash, the pressure drift from the pump flow) because steps per revolution and microstepping are unknown and the motor loses steps. The pressure limit is 95 % of the sensor range (at most `limit_mbar`, default 300). Above it, on a saturated or silent sensor, a stuck syringe or a full syringe, the controller faults: the syringe stops, overpressure is let down, the pump goes to 0 Hz and the run stops.
+
+### Run
+`python make_config_pq.py` writes `config_pq_smoke.json` and `config_pq.json`. A **PQ block** (*Add PQ Curve*) holds each pressure in turn at each frequency, waits until the 1 s mean is within 2 mbar for 3 s, then averages flow and pressure over `measure_s`. A **Pressure block** holds one pressure (or releases). The pump flow fills the syringe: before a point that would not fit, the run sets the pump to 0 Hz, lets the pressure down and shows an orange banner. Empty the syringe **by hand** to its empty end, reconnect, close the line and press *Done - continue*. The position becomes 0 and the point is repeated. A pressure the pump cannot reach is logged as `above_shutoff` (x on the plot) and the higher pressures at that frequency are skipped.
+
+### Files (in each run folder)
+- `pq_points.csv`: one row per point: target, mean/SD pressure and flow, syringe steps/s (and µL/min from `ul_per_step`), mean supply current (PPK2), settled flag, settling time, syringe clears, note. `pq_curve.png` at the end; the *PQ curve* tab can reopen any `pq_points.csv`
+- `pressure/pressure.csv` (25 Hz: pressure, target, syringe position, mode, learned gains and drift), `pressure/events.json` (targets, clears, faults, learned values), `pressure/calibration_used.json`
+
 ## USB Camera Video Recording
 
 The dashboard supports recording video from a USB camera during tests. Video recording is **disabled by default** and must be enabled in the UI.
