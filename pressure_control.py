@@ -683,6 +683,8 @@ class PressureController:
         self.dir = os.path.join(run_dir, "pressure") if run_dir else None
         self.events: List[Dict[str, Any]] = []
         self._integral = 0.0
+        self.handling = False               # operator works on the line: limits stop the motor, no fault
+        self._handling_note = 0.0
         self.state_path = self.cfg.get("state_file") or default_state_path()
         self.port = str(self.cfg.get("port")) if str(self.cfg.get("backend")).lower() != "dummy" else "dummy"
         self.restored_pos: Optional[int] = None
@@ -748,6 +750,12 @@ class PressureController:
                 pass
 
     # ---- commands (any thread) ----
+    def set_handling(self, on: bool):
+        """True while the operator works on the line (clear prompt): out-of-range readings stop the
+        motor but don't fault. False restores the faults."""
+        self.handling = bool(on)
+        self._event("handling", "on" if on else "off")
+
     def _bound_drift(self):
         """Pump off, the only drift is the leak (a few mbar/s). Without this bound a line that
         answers weakly (gas bubbles after a vacuum hold, 29 Oct 20:47) was read as a fast falling
@@ -1044,7 +1052,19 @@ class PressureController:
                     else:
                         self.settled_since = None
                 lo, hi = self.sensor_range
-                if raw >= 0.99 * hi or raw <= 0.99 * lo:
+                out = raw >= 0.99 * hi or raw <= 0.99 * lo or p > self.p_max or p < self.p_min
+                if self.handling:
+                    # The operator is working on the line (plugging a liquid-filled line back in
+                    # squeezes it: 290-370 mbar spikes in the lab): stop the motor, don't fault
+                    if out and self.mode != "release":      # (a release is letting it down)
+                        try:
+                            self.syr.stop()
+                        except Exception:
+                            pass
+                        if now - self._handling_note > 2.0:
+                            self._handling_note = now
+                            self._event("limit_while_handling", f"{raw:.1f} mbar")
+                elif raw >= 0.99 * hi or raw <= 0.99 * lo:
                     self._fault(f"pressure sensor saturated ({raw:.1f} mbar): pressure unknown")
                 elif p > self.p_max:
                     self._fault(f"pressure {p:.1f} mbar above the {self.p_max:g} mbar limit ({self.limit_source()})")
