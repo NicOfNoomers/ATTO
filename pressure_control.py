@@ -1108,18 +1108,25 @@ def save_calibration(path: str, cal: Dict[str, Any]):
 
 
 def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.0, max_moves: int = 60,
-                     progress: Callable[[str], None] = lambda s: None, first: Optional[int] = None) -> Dict[str, Any]:
-    """Pump OFF, line closed. Move `step` steps at a time away from the start pressure by p_top,
-    then back. Pushes first (pressure up) when the syringe has room to push, else pulls first
-    (pressure down, at most 80 % of the lower limit). Returns gain per direction (mbar/step),
-    backlash (steps, from the first move after the reversal) and the raw points."""
+                     progress: Callable[[str], None] = lambda s: None) -> Dict[str, Any]:
+    """Pump OFF, line liquid-filled. Push `step` steps at a time until the pressure is p_top above
+    the start, then pull back to the start. Returns gain per direction (mbar/step), backlash
+    (steps, from the first move after the reversal) and the raw points.
+
+    Never below the start pressure: sucking on the outlet draws liquid forward through the
+    stopped pump (past the valves' cracking pressure; at once if valveless), so a pull below
+    the start would measure the pump, not the syringe. Above it the outlet valve keeps the line
+    closed. A valveless pump leaks back either way: clamp its inlet tube for the sweep."""
     if ctl.mode in ("hold", "release"):
         raise RuntimeError("stop the pressure control first")
     margin = int(ctl.cfg["pos_margin"])
-    if first is None:
-        need = int(p_top / max(0.05, ctl.est.gain(1))) + 2 * step
-        first = 1 if ctl.remaining_steps(1) >= need else -1
-    span = p_top if first > 0 else min(p_top, 0.8 * abs(ctl.p_min))
+    need = int(p_top / max(0.05, ctl.est.gain(1))) + 2 * step
+    if ctl.remaining_steps(1) < need:
+        raise RuntimeError(
+            f"no room to push: position {ctl.syr.position()}, the sweep needs about {need + margin}. Give the "
+            f"syringe some liquid first: Output ON (e.g. 400 Hz), Hold 0 mbar for 20-30 s (the syringe takes "
+            f"up the pump's flow), then Release, Output OFF, Stop")
+    first, span = 1, p_top
     pts = []
     p_start = ctl._wait_sample(1.0)
     for direction in (first, -first):
@@ -1130,8 +1137,11 @@ def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.
             p0 = ctl._wait_sample(1.0)
             if direction == first and (p0 - p_start) * first >= span:
                 break
-            if direction != first and (p0 - p_start) * first <= 1.0:
-                break
+            if direction != first:
+                # Stop while the next pull would still end above the start (see the docstring)
+                up = sorted((p["p1"] - p["p0"]) / p["steps"] for p in pts if p["dir"] == first) or [1.0]
+                if p0 - p_start < up[len(up) // 2] * step + 1.0:
+                    break
             if not ctl.syr.within(direction * step, margin):
                 progress("syringe range end reached")
                 break
