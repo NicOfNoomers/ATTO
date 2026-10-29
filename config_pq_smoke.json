@@ -38,7 +38,7 @@
   "pressure": {
     "enabled": true,
     "backend": "arduino",
-    "port": "COM8",
+    "port": "COM6",
     "baud": 115200,
     "firmware": "auto",
     "sensor": {
@@ -50,6 +50,7 @@
     "rate_mbar_s": 40.0,
     "tolerance_mbar": 2.0,
     "settle_s": 3.0,
+    "microsteps": 16,
     "pos_min": 0,
     "pos_max": 2470,
     "pos_margin": 30,

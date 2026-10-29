@@ -52,9 +52,12 @@ PRESSURE_DEFAULTS: Dict[str, Any] = {
     "rate_mbar_s": 40.0,          # setpoint ramp limit (protects the membrane)
     "tolerance_mbar": 2.0,
     "settle_s": 3.0,              # within tolerance this long = settled
+    "microsteps": 1,              # driver setting (A4988 MS1-3 all high = 16); step counts below are
+                                  # in FULL steps and get multiplied by it
     "pos_min": 0,
     "pos_max": 2470,
     "pos_margin": 30,             # stay this far from the ends (sticking)
+    "control": "steps",           # "steps" (both firmwares) | "velocity" (v2 only, not validated yet)
     "max_chunk": 200,             # v1: largest move per cycle (steps)
     "move_settle_s": 0.25,        # v1: wait after a move before judging it
     "kp": 0.6,                    # fraction of the error corrected per move (v1) / gain (v2)
@@ -76,6 +79,44 @@ def merged_cfg(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return c
 
 
+STEP_KEYS = ("pos_min", "pos_max", "pos_margin", "max_chunk", "clear_reserve_steps")
+
+
+def microsteps(cfg: Dict[str, Any]) -> int:
+    return max(1, int(cfg.get("microsteps") or 1))
+
+
+def motor_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Merged config with the full-step counts converted to motor counts (x microsteps)."""
+    c = merged_cfg(cfg)
+    m = microsteps(c)
+    for k in STEP_KEYS:
+        c[k] = int(round(float(c[k]) * m))
+    if c.get("ul_per_step"):
+        c["ul_per_step"] = float(c["ul_per_step"]) / m
+    return c
+
+
+def rescale_calibration(cal: Dict[str, Any], m: int) -> Dict[str, Any]:
+    """Calibration measured at another microstep setting (none recorded = full steps) -> m."""
+    if cal and "microsteps" not in cal:
+        # saved before this version (the 29 Oct sweep read 30-100x too low): keep only the zero
+        return {k: v for k, v in cal.items() if k in ("sensor_offset_mbar", "saved_at", "port")}
+    m_cal = max(1, int(cal.get("microsteps") or 1))
+    if not cal or m_cal == m:
+        return dict(cal)
+    out = dict(cal)
+    f = m_cal / float(m)                         # gains are per motor count
+    for k in ("gain_push_mbar_step", "gain_pull_mbar_step", "gain_mbar_step"):
+        if out.get(k):
+            out[k] = float(out[k]) * f
+    for k in ("backlash_steps", "backlash_min_steps", "slack_push_steps"):
+        if out.get(k) is not None:
+            out[k] = float(out[k]) / f
+    out["microsteps"] = m
+    return out
+
+
 # ---------------- simulated rig ----------------
 class PressurePlant:
     """Closed liquid line between pump outlet and syringe.
@@ -84,14 +125,16 @@ class PressurePlant:
     Q(P) = Q0(f) x (1 - P / P_shutoff) uL/min, a small leak removes P / R_leak, the syringe adds
     ul_per_step for every step it pushes in (F). Backlash: after a direction reversal the first
     `backlash` steps move nothing. Lost steps: each step is lost with p_lose. Near the range ends
-    (within stick_zone) a move does nothing with p_stick.
+    (within stick_zone) a move does nothing with p_stick. Creep (soft tubing): a delayed compliance
+    creep_frac x C fills with time constant creep_tau_s, so after a push P jumps, then sags.
     """
 
     def __init__(self, get_freq: Callable[[], float] = lambda: 0.0, compliance_ul_mbar: float = 0.25,
                  ul_per_step: float = 0.405, p_shutoff: float = 200.0, q_per_hz: float = 0.67,
                  q_max: float = 400.0, r_leak: float = 400.0, backlash: int = 6, p_lose: float = 0.02,
                  stick_zone: int = 80, p_stick: float = 0.3, pos_max: int = 2470, sensor_range=(-312.0, 312.0),
-                 offset_mbar: float = 1.5, noise_mbar: float = 0.3, seed: int = 1):
+                 offset_mbar: float = 1.5, noise_mbar: float = 0.3, seed: int = 1,
+                 creep_frac: float = 0.0, creep_tau_s: float = 2.0):
         self.get_freq = get_freq
         self.C, self.ul_step = compliance_ul_mbar, ul_per_step
         self.p_shutoff, self.q_per_hz, self.q_max, self.r_leak = p_shutoff, q_per_hz, q_max, r_leak
@@ -100,6 +143,8 @@ class PressurePlant:
         self.rng = random.Random(seed)
         self.lock = threading.Lock()
         self.v_in = 0.0                 # uL in the line above atmospheric
+        self.creep_frac, self.creep_tau = creep_frac, creep_tau_s
+        self.v_c = 0.0                  # part of v_in taken up by the delayed compliance
         self.pos = pos_max // 2         # true plunger position (steps)
         self.last_dir = 0
         self.slack = 0                  # backlash still to take up
@@ -117,14 +162,16 @@ class PressurePlant:
         dt, self.t = now - self.t, now
         if dt <= 0:
             return
-        p = self.v_in / self.C
+        p = (self.v_in - self.v_c) / self.C
         dv = (self.pump_flow_ul_min(p) / 60.0 - p / self.r_leak) * dt
         self.v_in += dv
+        if self.creep_frac > 0:
+            self.v_c += (self.creep_frac * self.C * p - self.v_c) * (1.0 - math.exp(-dt / self.creep_tau))
 
     def pressure(self) -> float:
         with self.lock:
             self._advance()
-            return self.v_in / self.C
+            return (self.v_in - self.v_c) / self.C
 
     def read_sensor(self) -> Tuple[bool, float]:
         p = self.pressure() + self.offset + self.rng.gauss(0.0, self.noise)
@@ -331,9 +378,13 @@ class SyringeV2(_SerialSyringe):
     velocity (+ = push in), S stop, HOLD 0/1, streams 'P=<pos> V=<sps>'; keeps v1 F/B."""
     protocol = "v2"
 
+    move_sps = 450
+
     def open(self):
         super().open()
         self.send("STREAM 1")
+        if self.move_sps != 450:
+            self.send(f"SPEED {int(self.move_sps)}")
 
     def move(self, steps: int, timeout_s: float = 10.0) -> bool:
         steps = int(steps)
@@ -440,7 +491,7 @@ def save_state(path: str, state: Dict[str, Any]):
 def make_syringe(cfg: Dict[str, Any], plant: Optional[PressurePlant] = None) -> SyringeBase:
     """Syringe driver from the pressure config. backend 'dummy' needs the simulated plant.
     firmware 'auto' asks VER? (v2 answers, v1 says ERR UNKNOWN_CMD)."""
-    c = merged_cfg(cfg)
+    c = motor_cfg(cfg)
     lo, hi = int(c["pos_min"]), int(c["pos_max"])
     fw = str(c.get("firmware") or "auto").lower()
     if str(c.get("backend")).lower() == "dummy":
@@ -455,19 +506,23 @@ def make_syringe(cfg: Dict[str, Any], plant: Optional[PressurePlant] = None) -> 
         finally:
             probe.close()
     cls = SyringeV2 if fw == "v2" else SyringeV1
-    return cls(str(c["port"]), int(c["baud"]), lo, hi)
+    syr = cls(str(c["port"]), int(c["baud"]), lo, hi)
+    syr.move_sps = min(1500, 450 * microsteps(c))       # v2: same plunger speed as at full steps, capped
+    return syr
 
 
-def restore_position(syr: SyringeBase, state_path: str, port: str) -> Optional[int]:
+def restore_position(syr: SyringeBase, state_path: str, port: str, m: int = 1) -> Optional[int]:
     """The v1 firmware restarts at 0 whenever the Uno resets (often on connect): carry the last
-    known position over from the state file. Returns the restored position, or None."""
+    known position over from the state file (rescaled if the microstep setting changed).
+    Returns the restored position, or None."""
     st = load_state(state_path)
     if st.get("port") != port or not isinstance(st.get("pos"), int):
         return None
+    pos = int(round(st["pos"] * m / max(1, int(st.get("microsteps") or 1))))
     if isinstance(syr, _SerialSyringe):
         syr.query_position()
-    syr.set_position(int(st["pos"]))
-    return int(st["pos"])
+    syr.set_position(pos)
+    return pos
 
 
 # ---------------- learning ----------------
@@ -486,7 +541,9 @@ class GainEstimator:
         prediction (not learned from).
     """
 
-    def __init__(self, g_init: float = 1.0):
+    def __init__(self, g_init: float = 1.0, scale: int = 1):
+        self.scale = scale               # motor counts per full step (microstepping)
+        self.n_s = {1: 0, -1: 0}         # (kept for callers; this estimator anchors to the calibration)
         self.g0 = {1: abs(g_init), -1: abs(g_init)}
         self._g = dict(self.g0)
         self.q = 0.0
@@ -506,7 +563,14 @@ class GainEstimator:
         self._g = dict(self.g0)
 
     def gain(self, d: int) -> float:
-        return max(0.02, self._g[1 if d > 0 else -1])
+        return max(0.005, self._g[1 if d > 0 else -1])
+
+    def known(self, d: int) -> bool:
+        """A value from calibration or from moves in this direction."""
+        return self.n[1 if d > 0 else -1] > 0
+
+    def step_gain(self) -> float:
+        return max(0.005, max(self._g.values()))
 
     def observe_idle(self, dp: float, dt: float):
         if dt > 0.05:
@@ -524,12 +588,13 @@ class GainEstimator:
         if reversal:
             if n >= 3:
                 lost = max(0.0, n - effect / g)
-                self.backlash += 0.3 * (min(lost, 60.0) - self.backlash)
+                self.backlash += 0.3 * (min(lost, 60.0 * self.scale) - self.backlash)
             n_eff = max(0.0, n - self.backlash)
         else:
             n_eff = float(n)
             expected = n * g
-            if n >= 2 and expected > 3 * noise and effect < 0.25 * expected:
+            # only moves big enough that "no effect" can't be noise (microsteps: a few counts are ~1 mbar)
+            if n >= 2 * self.scale and expected > max(6 * noise, 3.0) and effect < 0.25 * expected:
                 self.stuck_in_row += 1
                 res["stuck"] = True
                 return res                           # don't learn from a stuck move
@@ -557,20 +622,28 @@ class PressureController:
                  emit: Callable[[str, Any], None] = lambda k, m: None,
                  on_fault: Optional[Callable[[str], None]] = None,
                  calibration: Optional[Dict[str, Any]] = None):
-        self.cfg = merged_cfg(cfg)
+        self.cfg = motor_cfg(cfg)
+        self.m = microsteps(self.cfg)
         self.syr, self.read_sensor = syringe, read_sensor
         self.emit, self.on_fault = emit, on_fault
         lo, hi = sensor_range or (-1e9, 1e9)
         self.sensor_range = (float(lo), float(hi))
         self.p_max = min(float(self.cfg["limit_mbar"]), 0.95 * self.sensor_range[1])
         self.p_min = max(float(self.cfg["min_mbar"]), 0.95 * self.sensor_range[0])
-        cal = calibration or {}
+        cal = rescale_calibration(calibration or {}, self.m)
         self.offset = float(cal.get("sensor_offset_mbar", 0.0))
-        self.est = GainEstimator(float(cal.get("gain_mbar_step", self.cfg["gain_init_mbar_step"])))
-        if cal.get("gain_push_mbar_step") and cal.get("gain_pull_mbar_step"):
-            self.est.g = {1: float(cal["gain_push_mbar_step"]), -1: float(cal["gain_pull_mbar_step"])}
+        self.est = GainEstimator(float(cal.get("gain_mbar_step", self.cfg["gain_init_mbar_step"])), scale=self.m)
+        if cal.get("gain_mbar_step"):
             self.est.n = {1: 3, -1: 3}
-        self.est.backlash = float(cal.get("backlash_steps", 0.0))
+        self.probe = {1: 2 * self.m, -1: 2 * self.m}   # next probe while a direction is unconfirmed (2 -> 4 steps)
+        self._unanswered = {1: 0, -1: 0}    # steps moved in a direction without the pressure responding yet
+        g1 = cal.get("gain_push_mbar_step") or cal.get("gain_pull_mbar_step")
+        g2 = cal.get("gain_pull_mbar_step") or cal.get("gain_push_mbar_step")
+        if g1 and g2:
+            self.est.g = {1: float(g1), -1: float(g2)}
+            self.est.n = {1: 3, -1: 3}
+        bl = cal.get("backlash_steps")
+        self.est.backlash = float(bl if bl is not None else (cal.get("backlash_min_steps") or 0.0))
         self.lock = threading.Lock()
         self.stop_flag = threading.Event()
         self.mode = "idle"                 # idle | hold | release | fault
@@ -579,6 +652,7 @@ class PressureController:
         self.p = float("nan")              # filtered pressure (offset removed)
         self.p_raw = float("nan")
         self.p_1s = float("nan")            # 1 s mean (settling, display)
+        self.p_win = float("nan")           # mean over settle_s
         self.t_last_sample = 0.0
         self.settled_since: Optional[float] = None
         self.fault_msg: Optional[str] = None
@@ -602,7 +676,7 @@ class PressureController:
     def open(self):
         self.syr.open()
         if self.port != "dummy":
-            self.restored_pos = restore_position(self.syr, self.state_path, self.port)
+            self.restored_pos = restore_position(self.syr, self.state_path, self.port, self.m)
         if self.dir:
             os.makedirs(self.dir, exist_ok=True)
             self._log_f = open(os.path.join(self.dir, "pressure.csv"), "a", newline="", encoding="utf-8")
@@ -658,10 +732,17 @@ class PressureController:
                 pass
 
     # ---- commands (any thread) ----
+    def limit_source(self) -> str:
+        lo, hi = self.sensor_range
+        if self.p_max < float(self.cfg["limit_mbar"]):
+            return f"95 % of the sensor range {lo:g}..{hi:g} mbar"
+        return "Max in the Pressure panel"
+
     def set_target(self, mbar: float):
         mbar = float(mbar)
         if not (self.p_min <= mbar <= self.p_max):
-            raise ValueError(f"{mbar:g} mbar is outside the allowed {self.p_min:g}..{self.p_max:g} mbar")
+            raise ValueError(f"{mbar:g} mbar is outside the allowed {self.p_min:g}..{self.p_max:g} mbar "
+                             f"(max: {self.limit_source()}; min: Min in the Pressure panel)")
         with self.lock:
             if self.mode == "fault":
                 raise RuntimeError(f"pressure controller in fault: {self.fault_msg}")
@@ -700,7 +781,22 @@ class PressureController:
             raise RuntimeError("stop the pressure control before jogging")
         if not self.syr.within(steps):
             raise RuntimeError("jog would leave the syringe range")
-        return self.syr.move(steps)
+        d = 1 if steps > 0 else -1
+        p = self.p if not math.isnan(self.p) else 0.0
+        if not (self.est.known(d) or self.est.known(-d)) and abs(steps) > 5 * self.m:
+            raise RuntimeError(f"the mbar per step isn't known yet (on a closed liquid line one full step can be 20 "
+                               f"mbar): jog at most {5 * self.m} steps at a time until it is (the jogs measure it)")
+        if self.est.known(d) or self.est.known(-d):
+            cap = self.safe_steps(d, p)
+            if abs(steps) > cap:
+                raise RuntimeError(f"{abs(steps)} steps would take the pressure past the limit (one step is about "
+                                   f"{self.est.step_gain():.1f} mbar here): at most {cap} now")
+        p0, t0 = p, clock()
+        ok = self.syr.move(steps)
+        if ok and not math.isnan(self.p):
+            p1 = self._wait_still(float(self.cfg["move_settle_s"]))
+            self.est.observe_move(steps, p1 - p0, clock() - t0)
+        return ok
 
     def zero_sensor(self, seconds: float = 2.0) -> float:
         """Vent to atmosphere first: the mean raw reading becomes the offset."""
@@ -714,16 +810,25 @@ class PressureController:
         if not vals:
             raise RuntimeError("no pressure readings")
         self.offset = sum(vals) / len(vals)
+        self._recent.clear()                         # the median filter held the old offset
         self._event("zero_sensor", f"offset {self.offset:.3f} mbar")
         return self.offset
 
     def apply_calibration(self, cal: Dict[str, Any]):
-        """Use calibrated values (sweep results, sensor offset) as the new anchors."""
-        if cal.get("gain_push_mbar_step") and cal.get("gain_pull_mbar_step"):
-            self.est.g = {1: float(cal["gain_push_mbar_step"]), -1: float(cal["gain_pull_mbar_step"])}
+        """Use calibrated values (sweep results, sensor offset) as starting values."""
+        g1 = cal.get("gain_push_mbar_step") or cal.get("gain_pull_mbar_step")
+        g2 = cal.get("gain_pull_mbar_step") or cal.get("gain_push_mbar_step")
+        if g1 and g2:                                    # one direction missing: same line, same gain
+            self.est.g = {1: float(g1), -1: float(g2)}
             self.est.n = {1: 3, -1: 3}
-        if cal.get("backlash_steps") is not None:
-            self.est.backlash = float(cal["backlash_steps"])
+        bl = cal.get("backlash_steps")
+        if bl is None:
+            bl = cal.get("backlash_min_steps")
+        if bl is not None:
+            self.est.backlash = float(bl)
+        self.est.n_s = {1: 0, -1: 0}            # starting values only: re-probed before big moves
+        self.probe = {1: 2 * self.m, -1: 2 * self.m}
+        self._unanswered = {1: 0, -1: 0}
         if cal.get("sensor_offset_mbar") is not None:
             self.offset = float(cal["sensor_offset_mbar"])
         self._event("calibration", json.dumps({k: v for k, v in cal.items() if k != "points"}))
@@ -764,12 +869,26 @@ class PressureController:
         pos = self.syr.position()
         if force or pos != self._saved_pos:
             self._saved_pos = pos
-            save_state(self.state_path, {"port": self.port, "pos": pos, "time": time.time()})
+            save_state(self.state_path, {"port": self.port, "pos": pos, "microsteps": self.m, "time": time.time()})
 
     # ---- status / statistics ----
+    def resolution(self) -> Optional[float]:
+        """mbar per step once known (the hold can't be finer than about half of it)."""
+        return self.est.step_gain() if (self.est.known(1) or self.est.known(-1)) else None
+
+    def tolerances(self) -> Tuple[float, float]:
+        """(band for the 1 s mean, band for the settle-window mean). With coarse steps the hold is
+        a sawtooth of about +- half a step around the target: the 1 s mean may swing that far,
+        the mean over settle_s must still be close."""
+        tol = float(self.cfg["tolerance_mbar"])
+        r = self.resolution() or 0.0
+        return max(tol, 0.6 * r), max(tol, 0.3 * r)
+
     def settled(self) -> bool:
         s = self.settled_since
-        return self.mode == "hold" and s is not None and clock() - s >= float(self.cfg["settle_s"])
+        if not (self.mode == "hold" and s is not None and clock() - s >= float(self.cfg["settle_s"])):
+            return False
+        return abs(self.p_win - self.target) <= self.tolerances()[1]
 
     def wait_settled(self, timeout_s: float, stop_flag: Optional[threading.Event] = None) -> bool:
         t_end = clock() + timeout_s
@@ -814,7 +933,10 @@ class PressureController:
         with self.lock:
             st = {"mode": self.mode, "target": self.target, "p_cmd": self.p_cmd, "p": self.p, "p_1s": self.p_1s,
                   "fault": self.fault_msg, "p_max": self.p_max, "p_min": self.p_min}
-        st.update(pos=self.syr.position(), settled=self.settled(), protocol=self.syr.protocol,
+        res = self.resolution()
+        st.update(pos=self.syr.position(), settled=self.settled(), protocol=self.syr.protocol, microsteps=self.m,
+                  resolution_mbar=round(res, 2) if res else None, sensor_range=self.sensor_range,
+                  limit_source=self.limit_source(), p_win=self.p_win,
                   blocked=self.blocked, remaining_pull=self.remaining_steps(-1),
                   steps_per_s=round(self.steps_rate(), 2),
                   stale=(clock() - self.t_last_sample) > float(self.cfg["stale_s"]), **self.learned())
@@ -847,6 +969,7 @@ class PressureController:
         dt = 1.0 / max(1.0, float(self.cfg["log_hz"]))
         n_flush = 0
         last_1s: deque = deque(maxlen=max(1, int(round(1.0 / dt))))    # for the 1 s mean
+        win: deque = deque(maxlen=max(2, int(round(float(self.cfg["settle_s"]) / dt))))
         while not self.stop_flag.is_set():
             t_next = clock() + dt
             ok, raw = self.read_sensor()
@@ -860,12 +983,13 @@ class PressureController:
                 self.plot_buf.append((t_s, p, self.target if self.mode == "hold" else float("nan")))
                 # Settled = the 1 s mean within tolerance (a stop-start v1 hold is a sawtooth)
                 last_1s.append(p)
+                win.append(p)
                 p1s = sum(last_1s) / len(last_1s)
+                tol_1s = self.tolerances()[0]
                 with self.lock:
-                    self.p, self.p_raw, self.p_1s = p, raw, p1s
+                    self.p, self.p_raw, self.p_1s, self.p_win = p, raw, p1s, sum(win) / len(win)
                     self.t_last_sample = now
-                    tol = float(self.cfg["tolerance_mbar"])
-                    if self.mode == "hold" and abs(p1s - self.target) <= tol and abs(self.p_cmd - self.target) < 1e-6:
+                    if self.mode == "hold" and abs(p1s - self.target) <= tol_1s and abs(self.p_cmd - self.target) < 1e-6:
                         if self.settled_since is None:
                             self.settled_since = now
                     else:
@@ -874,9 +998,10 @@ class PressureController:
                 if raw >= 0.99 * hi or raw <= 0.99 * lo:
                     self._fault(f"pressure sensor saturated ({raw:.1f} mbar): pressure unknown")
                 elif p > self.p_max:
-                    self._fault(f"pressure {p:.1f} mbar above the {self.p_max:g} mbar limit")
+                    self._fault(f"pressure {p:.1f} mbar above the {self.p_max:g} mbar limit ({self.limit_source()})")
                 elif p < self.p_min:
-                    self._fault(f"pressure {p:.1f} mbar below the {self.p_min:g} mbar limit")
+                    self._fault(f"pressure {p:.1f} mbar below the {self.p_min:g} mbar limit (Min in the Pressure "
+                                f"panel; sucking on a closed line?)")
                 if self._log_w:
                     with self.lock:
                         row = [f"{t_s:.4f}", f"{p:.3f}", f"{raw:.3f}", f"{self.target:.2f}", f"{self.p_cmd:.2f}",
@@ -893,6 +1018,29 @@ class PressureController:
                     self._fault(f"no pressure reading for {self.cfg['stale_s']:g} s")
             time.sleep(max(0.0, t_next - clock()))
 
+    def safe_steps(self, d: int, p: float) -> int:
+        """Most steps in direction d whose predicted effect keeps P inside the limits with a margin
+        (using the larger known gain, so the estimate errs on the safe side)."""
+        g = self.est.step_gain()
+        margin = max(5.0, 2 * float(self.cfg["tolerance_mbar"]))
+        room = (self.p_max - margin - p) if d > 0 else (p - (self.p_min + margin))
+        return max(0, int(room // g))
+
+    def _wait_still(self, t_min: float, t_max: float = 1.2) -> float:
+        """After a move: wait t_min, then until the pressure stops changing beyond the drift (soft
+        tubing keeps sagging for a while; judging the move early would mislead the learning)."""
+        time.sleep(t_min)
+        t_end = clock() + max(0.0, t_max - t_min)
+        p_prev, t_prev = self._wait_sample(0.5), clock()
+        thr = max(0.3, 0.05 * self.est.step_gain())
+        while clock() < t_end and not self.stop_flag.is_set():
+            time.sleep(0.15)
+            p, t = self._wait_sample(0.5), clock()
+            if abs((p - p_prev) - self.est.q * (t - t_prev)) < thr:
+                return p
+            p_prev, t_prev = p, t
+        return self.p
+
     def _wait_sample(self, timeout: float = 1.0) -> float:
         t0 = self.t_last_sample
         t_end = clock() + timeout
@@ -901,7 +1049,11 @@ class PressureController:
         return self.p
 
     def _control_loop(self):
-        if self.syr.protocol == "v2":
+        # Stop-start step moves on both firmwares (the tested loop). "control": "velocity" (v2 only)
+        # pulls continuously, which a stiff line with the pump on needs (the pump raises P ~100
+        # mbar/s whenever the syringe pauses), but it is NOT validated yet: in the x16 simulation
+        # it ran away; only use it while watching
+        if self.syr.protocol == "v2" and str(self.cfg.get("control") or "steps").lower() == "velocity":
             return self._control_v2()
         idle_p, idle_t = None, None
         t_ramp = clock()
@@ -975,7 +1127,7 @@ class PressureController:
             n = int(round(abs(delta) / g))
             n = max(1, min(n, int(self.cfg["max_chunk"])))
             if self.est.last_dir not in (0, d):
-                n += int(round(self.est.backlash))
+                n += int(round(min(self.est.backlash, 60.0 * self.m)))
             steps = d * n
             if not self.syr.within(steps, int(self.cfg["pos_margin"])):
                 avail = self.remaining_steps(-1 if d < 0 else 1)
@@ -1043,13 +1195,16 @@ class PressureController:
                 self.idle()
                 continue
             err = p_cmd - p
-            self._integral = max(-200.0, min(200.0, self._integral + err * dt))
-            d = 1 if err > 0 else -1
-            g = self.est.gain(d)
-            v = (float(self.cfg["kp"]) * 2.0 * err + float(self.cfg["ki"]) * self._integral - self.est.q) / g
-            vmax = float(self.cfg["vmax_sps"])
+            g = self.est.step_gain()
+            vmax = min(1500.0, float(self.cfg["vmax_sps"]) * self.m)
+            # The integral finds the pull rate that cancels the pump flow (the drift can't be
+            # observed while the syringe moves): limited to what vmax can deliver, not a fixed 200
+            ki = float(self.cfg["ki"])
+            i_lim = max(200.0, vmax * g / max(ki, 1e-3))
+            self._integral = max(-i_lim, min(i_lim, self._integral + err * dt))
+            v = (float(self.cfg["kp"]) * 2.0 * err + ki * self._integral - self.est.q) / g
             v = max(-vmax, min(vmax, v))
-            if v and not self.syr.within(int(math.copysign(5, v)), int(self.cfg["pos_margin"])):
+            if v and not self.syr.within(int(math.copysign(5 * self.m, v)), int(self.cfg["pos_margin"])):
                 direction = 1 if v > 0 else -1
                 v = 0.0
                 if self.remaining_steps(-1 if direction < 0 else 1) <= 0:
@@ -1107,11 +1262,17 @@ def save_calibration(path: str, cal: Dict[str, Any]):
     os.replace(tmp, path)
 
 
-def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.0, max_moves: int = 60,
-                     progress: Callable[[str], None] = lambda s: None) -> Dict[str, Any]:
-    """Pump OFF, line liquid-filled. Push `step` steps at a time until the pressure is p_top above
-    the start, then pull back to the start. Returns gain per direction (mbar/step), backlash
-    (steps, from the first move after the reversal) and the raw points.
+def calib_gain_sweep(ctl: PressureController, step: int = 0, p_top: float = 60.0, max_moves: int = 120,
+                     progress: Callable[[str], None] = lambda s: None, noise: float = 0.5) -> Dict[str, Any]:
+    """Pump OFF, line liquid-filled. Push until the pressure is p_top above the start, then pull
+    back to the start. Returns gain per direction (median mbar/step of full moves), backlash
+    (steps without effect after the reversal), the slack before the first push responded, and
+    the raw points. `step` > 0 forces a fixed move size.
+
+    Slack first: moves of 1, 2, 4 .. steps (capped so that even if the slack ends at once the
+    pressure can't overshoot) until the pressure responds; the move where it ends is split into
+    slack and effect. Then moves sized for ~8 points over the span. The drift (leak) is measured
+    before every move and taken out of its effect (a leak sags a stiff line by mbar per second).
 
     Never below the start pressure: sucking on the outlet draws liquid forward through the
     stopped pump (past the valves' cracking pressure; at once if valveless), so a pull below
@@ -1120,69 +1281,124 @@ def calib_gain_sweep(ctl: PressureController, step: int = 10, p_top: float = 60.
     if ctl.mode in ("hold", "release"):
         raise RuntimeError("stop the pressure control first")
     margin = int(ctl.cfg["pos_margin"])
-    need = int(p_top / max(0.05, ctl.est.gain(1))) + 2 * step
+    m = ctl.m
+    need = 40 * m + int(p_top / max(0.5 / m, ctl.est.step_gain()))
     if ctl.remaining_steps(1) < need:
         raise RuntimeError(
             f"no room to push: position {ctl.syr.position()}, the sweep needs about {need + margin}. Give the "
             f"syringe some liquid first: Output ON (e.g. 400 Hz), Hold 0 mbar for 20-30 s (the syringe takes "
             f"up the pump's flow), then Release, Output OFF, Stop")
-    first, span = 1, p_top
-    pts = []
+    med = lambda xs: sorted(xs)[len(xs) // 2] if xs else None
+    pts: List[Dict[str, Any]] = []
+    slack = {1: 0.0, -1: 0.0}
+    gains: Dict[int, List[float]] = {1: [], -1: []}
+    time.sleep(0.5)                                  # let the filtered reading settle (e.g. after zeroing)
     p_start = ctl._wait_sample(1.0)
-    for direction in (first, -first):
-        moved = 0
+    for d in (1, -1):
+        k = step if step > 0 else 1
+        in_slack = step <= 0
         for _ in range(max_moves):
             if ctl.stop_flag.is_set():
                 break
-            p0 = ctl._wait_sample(1.0)
-            if direction == first and (p0 - p_start) * first >= span:
+            pa, ta = ctl._wait_sample(1.0), clock()
+            time.sleep(0.3)
+            p0, t0 = ctl._wait_sample(1.0), clock()
+            q = (p0 - pa) / max(0.05, t0 - ta)
+            ctl.est.q = q
+            if d > 0 and p0 - p_start >= p_top:
                 break
-            if direction != first:
-                # Stop while the next pull would still end above the start (see the docstring)
-                up = sorted((p["p1"] - p["p0"]) / p["steps"] for p in pts if p["dir"] == first) or [1.0]
-                if p0 - p_start < up[len(up) // 2] * step + 1.0:
+            # Guard with the largest gain seen (a false small reading must not make a move huge)
+            g_max = max(gains[1] + gains[-1]) if (gains[1] or gains[-1]) else None
+            g_push = med(gains[1])
+            if d > 0 and g_max:
+                k = max(1, min(k, int((p_start + 1.25 * p_top - p0) // g_max)))
+            if d < 0:
+                # the next pull must end above the start even if all of it engages
+                room = p0 - p_start - 1.0
+                if room <= 0 or (g_max and room < g_max):
                     break
-            if not ctl.syr.within(direction * step, margin):
+                if g_max:
+                    k = max(1, min(k, int(room // g_max)))
+            if not ctl.syr.within(d * k, margin):
                 progress("syringe range end reached")
                 break
-            ctl.syr.move(direction * step)
-            time.sleep(0.4)
-            p1 = ctl._wait_sample(1.0)
-            pts.append({"dir": direction, "steps": step, "p0": p0, "p1": p1, "pos": ctl.syr.position()})
-            moved += 1
-            progress(f"{'push' if direction > 0 else 'pull'} {moved}: {p1:.1f} mbar")
+            ctl.syr.move(d * k)
+            p1 = ctl._wait_still(0.3)
+            dt = clock() - t0
+            dp = (p1 - p0 - q * dt) * d
+            pts.append({"dir": d, "steps": k, "p0": p0, "p1": p1, "pos": ctl.syr.position(), "dt": dt,
+                        "drift_mbar_s": q})
+            name = "push" if d > 0 else "pull"
+            engaged = max(3 * noise, 0.3 * g_max) if g_max else 3 * noise   # >= 30 % of one step
+            if not in_slack and d < 0 and g_push and dp < 0.3 * k * g_push:
+                in_slack = True                         # far weaker than the push: still slack
+            if in_slack:
+                # engaged only if the pressure really moved that way, not just after the drift
+                # correction (a misjudged drift must not end the slack early)
+                if dp < engaged or (p1 - p0) * d < 0.5 * engaged:
+                    slack[d] += k
+                    progress(f"{name}: {slack[d]:g} steps without effect so far")
+                    k = min(2 * k, (4 if d > 0 else 8) * m)
+                    continue
+                in_slack = False
+                if k > 1:
+                    # part of this move was still slack: count it, don't learn the gain from it
+                    g_ref = g_push if d < 0 else None
+                    if g_ref:
+                        slack[d] += max(0.0, k - dp / g_ref)
+                    progress(f"{name}: responds after ~{slack[d]:.0f} steps of slack ({p1:.1f} mbar)")
+                    k = 1
+                    continue
+            gains[d].append(dp / k)
+            progress(f"{name} {len(gains[d])}: {p1:.1f} mbar ({dp / k:.2f} mbar/step, drift {q:+.1f} mbar/s)")
+            if step <= 0:                               # ~8 points over the span, growing at most 2x
+                k = max(1, min(2 * k, 10 * m, int(round(p_top / 8.0 / max(0.05 / m, med(gains[d]))))))
         if ctl.stop_flag.is_set():
             break
-    out: Dict[str, Any] = {"sweep_first": "push" if first > 0 else "pull"}
+    ctl.est.q = 0.0
+    out: Dict[str, Any] = {"sweep_first": "push", "slack_push_steps": round(slack[1], 1)}
     for d, key in ((1, "gain_push_mbar_step"), (-1, "gain_pull_mbar_step")):
-        moves = [p for p in pts if p["dir"] == d]
-        body = moves if d == first else moves[1:]          # skip the first move after the reversal
-        gains = sorted((p["p1"] - p["p0"]) * d / p["steps"] for p in body if (p["p1"] - p["p0"]) * d > 0)
-        out[key] = round(gains[len(gains) // 2], 4) if gains else None
-    back = [p for p in pts if p["dir"] == -first]
-    g_back = out["gain_push_mbar_step" if -first > 0 else "gain_pull_mbar_step"]
-    if back and g_back:
-        eff = (back[0]["p1"] - back[0]["p0"]) * (-first) / g_back
-        out["backlash_steps"] = round(max(0.0, back[0]["steps"] - eff), 1)
+        g = med(gains[d])
+        out[key] = round(g, 4) if g else None
+    if gains[-1]:
+        out["backlash_steps"] = round(slack[-1], 1)
+    elif slack[-1]:
+        out["backlash_min_steps"] = round(slack[-1], 1)   # the pull never responded: at least this
     out["points"] = pts
     return out
 
 
 def calib_leak_test(ctl: PressureController, p_test: float = 80.0, seconds: float = 60.0,
                     progress: Callable[[str], None] = lambda s: None) -> Dict[str, Any]:
-    """Pump OFF. Bring the line to p_test, stop the syringe, watch the decay."""
+    """Pump OFF. Bring the line to about p_test (no need to settle exactly), stop the syringe,
+    and fit the pressure decay over `seconds` (mbar/s; the outlet valve's back-leak + fittings)."""
     ctl.set_target(p_test)
-    if not ctl.wait_settled(60.0):
+    t_end = clock() + 60.0
+    while clock() < t_end and ctl.mode == "hold":
+        if ctl.p_1s >= p_test - ctl.tolerances()[0] or ctl.settled():
+            break
+        if ctl.blocked == "empty":
+            ctl.idle()
+            raise RuntimeError("no room to push: give the syringe some liquid first (Output ON, Hold 0 mbar "
+                               "for 20-30 s, then Release, Output OFF, Stop)")
+        time.sleep(0.1)
+    else:
         ctl.idle()
-        raise RuntimeError(f"could not settle at {p_test:g} mbar for the leak test")
+        raise RuntimeError(f"could not bring the line to {p_test:g} mbar for the leak test (now {ctl.p:.1f})")
     ctl.idle()
-    t0, p0 = clock(), ctl._wait_sample(1.0)
+    time.sleep(1.0)                                  # let the last move settle
+    ts, ps, t0 = [], [], clock()
     while clock() - t0 < seconds and not ctl.stop_flag.is_set():
         time.sleep(1.0)
-        progress(f"leak test {clock() - t0:.0f}/{seconds:.0f} s: {ctl.p:.2f} mbar")
-    p1 = ctl._wait_sample(1.0)
-    rate = (p1 - p0) / (clock() - t0)
-    return {"leak_p_start_mbar": round(p0, 3), "leak_p_end_mbar": round(p1, 3), "leak_mbar_s": round(rate, 5)}
+        ts.append(clock() - t0)
+        ps.append(ctl.p_1s)
+        progress(f"leak test {ts[-1]:.0f}/{seconds:.0f} s: {ps[-1]:.2f} mbar")
+    if len(ts) < 3:
+        raise RuntimeError("leak test interrupted")
+    mt, mp = sum(ts) / len(ts), sum(ps) / len(ps)
+    slope = sum((t - mt) * (p - mp) for t, p in zip(ts, ps)) / sum((t - mt) ** 2 for t in ts)
+    return {"leak_p_start_mbar": round(ps[0], 3), "leak_p_end_mbar": round(ps[-1], 3),
+            "leak_mbar_s": round(slope, 5)}
 
 
 def calib_step_response(ctl: PressureController, targets=(25.0, 50.0, 100.0), timeout_s: float = 60.0,
