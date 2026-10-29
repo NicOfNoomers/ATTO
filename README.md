@@ -109,7 +109,7 @@ A 1 mL liquid-filled syringe on the pump **outlet**, driven by a stepper on an A
 
 ### Set up once
 1. **Pressure control (syringe)** panel: the syringe Uno's port, *Find* to pick the Fluigent pressure channel (the one in mbar). The flow and pressure sensors share one Fluigent session.
-2. Tick *Control pressure*, *Connect Manual* (pump output off), *Calibrate...*: zero the sensor (line vented), *Syringe emptied: pos 0*, the gain + backlash sweep (line closed, liquid-filled), optionally the leak test and step response. *Save calibration* keeps it in `%LOCALAPPDATA%\ATTO\pressure_cal.json`.
+2. Tick *Control pressure*, *Connect Manual* (pump output off), *Calibrate...*: zero the sensor (line vented), *Syringe emptied: pos 0*, give the syringe room to push (Output ON ~400 Hz, Hold 0 mbar for 20-30 s, Release, Output OFF, Stop), the gain + backlash sweep (pump off, line liquid-filled; it only pushes up from the start pressure and back, because sucking on the outlet draws liquid through the stopped pump; clamp the inlet of a valveless pump), optionally the leak test and step response. *Save calibration* keeps it in `%LOCALAPPDATA%\ATTO\pressure_cal.json`.
 
 The controller learns while it runs (mbar per step for pushing and pulling, backlash, the pressure drift from the pump flow) because steps per revolution and microstepping are unknown and the motor loses steps. The pressure limit is 95 % of the sensor range (at most `limit_mbar`, default 300). Above it, on a saturated or silent sensor, a stuck syringe or a full syringe, the controller faults: the syringe stops, overpressure is let down, the pump goes to 0 Hz and the run stops.
 

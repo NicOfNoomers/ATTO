@@ -3268,10 +3268,12 @@ class DashboardApp:
         ttk.Label(w, text=intro, wraplength=560, justify=tk.LEFT).pack(side=tk.TOP, anchor="w", padx=10, pady=(8, 4))
         steps = [
             ("zero", "1. Zero sensor", "Line open to atmosphere: the mean reading becomes 0 mbar."),
-            ("pos0", "2. Syringe emptied: pos 0", "Plunger fully in. To calibrate pushing too, open the line to "
-                                                  "the reservoir, Jog Pull ~500 steps, then close the line."),
-            ("sweep", "3. Gain + backlash sweep", "Line closed, liquid-filled, pump OFF: steps of 10 up to the "
-                                                  "span below and back (pushes first if there is room)."),
+            ("pos0", "2. Syringe emptied: pos 0", "Plunger fully in. Then give it room to push: Output ON "
+                                                  "(~400 Hz), Hold 0 mbar for 20-30 s, Release, Output OFF, Stop."),
+            ("sweep", "3. Gain + backlash sweep", "Pump OFF, line liquid-filled: pushes in steps of 10 up to "
+                                                  "the span, then back to the start (never below it: sucking "
+                                                  "pulls liquid through the pump). Valveless pump: clamp its "
+                                                  "inlet tube for the sweep."),
             ("leak", "4. Leak test (60 s)", "Holds 2/3 of the span, then stops the syringe and watches the decay."),
             ("step", "5. Step response", "Holds 1/4, 1/2 and 1 x the span, reports settling time, then releases."),
         ]
