@@ -1519,8 +1519,8 @@ class PumpTestRunner(LiveSessionBase):
         return self.ctl
 
     def _clear_syringe(self, why: str, log_event) -> bool:
-        """Pump to 0 Hz, let the pressure down, ask the operator to empty the syringe by hand,
-        then position = 0 (the empty end). False if the run was stopped meanwhile."""
+        """Pump to 0 Hz, let the pressure down, ask the operator to empty the syringe (motor or by
+        hand), then position = 0 (the empty end). False if the run was stopped meanwhile."""
         ctl = self.ctl
         self._set_freq(0)
         log_event()
@@ -1529,6 +1529,14 @@ class PumpTestRunner(LiveSessionBase):
         while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
             time.sleep(0.1)
         ctl.idle()
+        ctl.set_handling(True)          # the operator now works on the line: spikes mustn't end the run
+        try:
+            return self._clear_syringe_operator(ctl, why, log_event)
+        finally:
+            ctl.set_handling(False)
+
+    def _clear_syringe_operator(self, ctl, why: str, log_event) -> bool:
+        """The operator part of _clear_syringe, run with the controller in handling mode."""
         try:
             ctl.syr.set_hold(False)
         except Exception:
@@ -1544,6 +1552,17 @@ class PumpTestRunner(LiveSessionBase):
         if not ok:
             return False
         ctl.set_position(0)
+        # Plugging the liquid-filled line back in traps pressure (290-370 mbar in the lab): let it
+        # down with the syringe before the run goes on and the normal limits apply again
+        tol = float(ctl.cfg["tolerance_mbar"])
+        if abs(ctl.p_1s) > 2 * tol and not self.stop_flag.is_set():
+            self._emit("status", f"Letting down {ctl.p_1s:.0f} mbar trapped by reconnecting ...")
+            ctl.release()
+            t_end = CLOCK() + 40.0
+            while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
+                time.sleep(0.1)
+            ctl.idle()
+            ctl.note("let_down_after_clear", f"{ctl.p_1s:.1f} mbar")
         self.syringe_clears += 1
         ctl.note("syringe_cleared", str(self.syringe_clears))
         self._emit("status", f"Syringe cleared (#{self.syringe_clears}); position set to 0. Continuing.")
