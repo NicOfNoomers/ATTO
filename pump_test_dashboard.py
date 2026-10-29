@@ -1081,7 +1081,8 @@ class LiveSessionBase:
         try:
             syr = pc.make_syringe(c, self.plant)
             ctl = pc.PressureController(c, syr, read, sensor_range=rng, run_dir=self.run_dir,
-                                        emit=lambda k, m: None, on_fault=on_fault, calibration=cal)
+                                        emit=lambda k, m: None, on_fault=on_fault, calibration=cal,
+                                        pump_on=lambda: self._pump_hz() > 0)
             ctl.open()
         except Exception:
             if sensor is not None:
@@ -1683,7 +1684,7 @@ class PumpTestRunner(LiveSessionBase):
                     break
                 # Below the target with the push blocked at the empty end: wait while the pump
                 # still raises the pressure; a plateau (< 2 mbar in 5 s) means above shut-off
-                if ctl.blocked == "empty" and ctl.p_1s < p_t - 2 * float(ctl.cfg["tolerance_mbar"]):
+                if ctl.blocked in ("empty", "pump_below") and ctl.p_1s < p_t - 2 * float(ctl.cfg["tolerance_mbar"]):
                     if blocked_since is None or ctl.p_1s - p_ref >= 2.0:
                         blocked_since, p_ref = CLOCK(), ctl.p_1s
                     elif CLOCK() - blocked_since > 5.0:
@@ -3048,7 +3049,7 @@ class DashboardApp:
                      port=self.var_pr_port.get().strip() or "COM8",
                      firmware=self.var_pr_fw.get().strip() or "auto",
                      limit_mbar=safe_float(self.var_pr_limit.get(), 300.0),
-                     min_mbar=safe_float(self.var_pr_min.get(), -100.0),
+                     min_mbar=safe_float(self.var_pr_min.get(), -30.0),
                      microsteps=max(1, safe_int(self.var_pr_micro.get(), 1)), sensor=sensor)
         return p
 
@@ -3078,7 +3079,7 @@ class DashboardApp:
         self.var_pr_channel = tk.StringVar(value=str(d["sensor"].get("channel", 1)))
         self.var_pr_limit = tk.StringVar(value=str(d.get("limit_mbar", 300)))
         self.var_pr_micro = tk.StringVar(value=str(d.get("microsteps", 1)))
-        self.var_pr_min = tk.StringVar(value=str(d.get("min_mbar", -100)))
+        self.var_pr_min = tk.StringVar(value=str(d.get("min_mbar", -30)))
         self.var_pr_target = tk.StringVar(value="50")
         self.var_pr_jog = tk.StringVar(value="2")
         self.var_pr_live = tk.StringVar(value="Pressure control off." if PRESSURE_AVAILABLE
@@ -3260,7 +3261,8 @@ class DashboardApp:
         m = st.get("microsteps") or 1
         pos_txt = f"{st['pos']} ({st['pos'] / m:.0f} full steps)" if m > 1 else f"{st['pos']}"
         txt += (f"\nSyringe {st['protocol']}: position {pos_txt}, {st['remaining_pull']} steps to full"
-                f"{' · push blocked (empty end)' if st.get('blocked') else ''}"
+                f"{' · push blocked (empty end)' if st.get('blocked') == 'empty' else ''}"
+                f"{' · below target: waiting for the pump' if st.get('blocked') == 'pump_below' else ''}"
                 f"\nGain push {st['gain_push_mbar_step']:.2f} / pull {st['gain_pull_mbar_step']:.2f} mbar/step · "
                 f"backlash {st['backlash_steps']:.0f} · drift {st['drift_mbar_s']:+.1f} mbar/s"
                 f"\nAllowed {st['p_min']:g}..{st['p_max']:.0f} mbar (max: {st['limit_source']})")

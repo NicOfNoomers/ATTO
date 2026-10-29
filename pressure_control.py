@@ -48,7 +48,7 @@ PRESSURE_DEFAULTS: Dict[str, Any] = {
     "firmware": "auto",           # "auto" (asks VER?) | "v1" | "v2"
     "sensor": {"backend": "fluigent", "channel": 1, "server": "localhost:8765"},
     "limit_mbar": 300.0,          # never above 95 % of the sensor range either
-    "min_mbar": -100.0,
+    "min_mbar": -30.0,            # suction draws liquid through the pump and degasses the line
     "rate_mbar_s": 40.0,          # setpoint ramp limit (protects the membrane)
     "tolerance_mbar": 2.0,
     "settle_s": 3.0,              # within tolerance this long = settled
@@ -57,7 +57,7 @@ PRESSURE_DEFAULTS: Dict[str, Any] = {
     "pos_min": 0,
     "pos_max": 2470,
     "pos_margin": 30,             # stay this far from the ends (sticking)
-    "control": "steps",           # "steps" (both firmwares) | "velocity" (v2 only, not validated yet)
+    "control": "auto",            # "auto" (v2: velocity, v1: steps) | "steps" | "velocity" (v2 only)
     "max_chunk": 200,             # v1: largest move per cycle (steps)
     "move_settle_s": 0.25,        # v1: wait after a move before judging it
     "kp": 0.6,                    # fraction of the error corrected per move (v1) / gain (v2)
@@ -543,6 +543,7 @@ class GainEstimator:
 
     def __init__(self, g_init: float = 1.0, scale: int = 1):
         self.scale = scale               # motor counts per full step (microstepping)
+        self.since_rev, self.answered = 0, False   # at the start the slack is unknown too
         self.n_s = {1: 0, -1: 0}         # (kept for callers; this estimator anchors to the calibration)
         self.g0 = {1: abs(g_init), -1: abs(g_init)}
         self._g = dict(self.g0)
@@ -585,16 +586,29 @@ class GainEstimator:
         res = {"reversal": reversal, "stuck": False}
         g = self.gain(d)
         effect = (dp - self.q * dt) * d             # drift-corrected, positive if it worked
+        # Slack after a reversal (lab x16: ~350 counts, plunger seal + coupling): until the
+        # pressure answers, a move teaches nothing and is not "stuck"; when it answers, the
+        # counts moved so far minus what it did is the backlash
         if reversal:
-            if n >= 3:
-                lost = max(0.0, n - effect / g)
-                self.backlash += 0.3 * (min(lost, 60.0 * self.scale) - self.backlash)
+            self.since_rev, self.answered = 0, False
+        self.since_rev += n
+        if not self.answered:
+            if effect < max(3 * noise, 0.5 * n * g) and self.since_rev < 80 * self.scale:
+                return res
+            self.answered = True
+            lost = max(0.0, self.since_rev - effect / g)
+            self.backlash += 0.5 * (min(lost, 60.0 * self.scale) - self.backlash)
+            return res
+        if reversal:
             n_eff = max(0.0, n - self.backlash)
         else:
             n_eff = float(n)
             expected = n * g
             # only moves big enough that "no effect" can't be noise (microsteps: a few counts are ~1 mbar)
-            if n >= 2 * self.scale and expected > max(6 * noise, 3.0) and effect < 0.25 * expected:
+            # only moves whose expected effect stands well clear of noise and drift (false "stuck"
+            # verdicts in the lab and under CPU load came from small moves against the pump drift)
+            if (n >= 2 * self.scale and expected > max(6 * noise, 5.0, 2.0 * abs(self.q * dt))
+                    and effect < 0.1 * expected):
                 self.stuck_in_row += 1
                 res["stuck"] = True
                 return res                           # don't learn from a stuck move
@@ -621,8 +635,10 @@ class PressureController:
                  run_dir: Optional[str] = None,
                  emit: Callable[[str, Any], None] = lambda k, m: None,
                  on_fault: Optional[Callable[[str], None]] = None,
-                 calibration: Optional[Dict[str, Any]] = None):
+                 calibration: Optional[Dict[str, Any]] = None,
+                 pump_on: Optional[Callable[[], bool]] = None):
         self.cfg = motor_cfg(cfg)
+        self.pump_on = pump_on              # True while the pump runs: the syringe then only pulls
         self.m = microsteps(self.cfg)
         self.syr, self.read_sensor = syringe, read_sensor
         self.emit, self.on_fault = emit, on_fault
@@ -732,6 +748,12 @@ class PressureController:
                 pass
 
     # ---- commands (any thread) ----
+    def _pumping(self) -> bool:
+        try:
+            return bool(self.pump_on and self.pump_on())
+        except Exception:
+            return False
+
     def limit_source(self) -> str:
         lo, hi = self.sensor_range
         if self.p_max < float(self.cfg["limit_mbar"]):
@@ -752,6 +774,8 @@ class PressureController:
             self.mode = "hold"
             self.settled_since = None
             self._integral = 0.0
+            if not self._pumping():
+                self.est.q = 0.0                # pump off: the drift is just the leak; don't carry one over
         self._event("target", f"{mbar:g} mbar")
         try:
             self.syr.set_hold(True)
@@ -1049,11 +1073,12 @@ class PressureController:
         return self.p
 
     def _control_loop(self):
-        # Stop-start step moves on both firmwares (the tested loop). "control": "velocity" (v2 only)
-        # pulls continuously, which a stiff line with the pump on needs (the pump raises P ~100
-        # mbar/s whenever the syringe pauses), but it is NOT validated yet: in the x16 simulation
-        # it ran away; only use it while watching
-        if self.syr.protocol == "v2" and str(self.cfg.get("control") or "steps").lower() == "velocity":
+        # v2 firmware: velocity (continuous pull; on the stiff lab line the pump raises P ~100 mbar/s
+        # whenever the syringe pauses, so stop-start moves saw-tooth). Pull only while the pump runs
+        # (a reversal costs ~350 counts of slack at x16), which also rules out the push runaway seen
+        # in an earlier x16 simulation. v1 firmware, or "control": "steps": stop-start moves.
+        mode_cfg = str(self.cfg.get("control") or "auto").lower()
+        if self.syr.protocol == "v2" and mode_cfg in ("auto", "velocity"):
             return self._control_v2()
         idle_p, idle_t = None, None
         t_ramp = clock()
@@ -1113,11 +1138,19 @@ class PressureController:
             # near the setpoint, so ramps don't wind it up
             dt_i = min(1.0, now - (t_integ if t_integ else now))
             t_integ = now
-            if abs(err) < 5 * tol and p_cmd == self.target:
+            # (the window includes the saw-tooth a pumped hold makes, so the integral can centre it)
+            if abs(err) < 5 * max(tol, 0.5 * abs(q * T)) and p_cmd == self.target:
                 self._integral = max(-30.0, min(30.0, self._integral + err * dt_i))
             delta = kp_eff * err + float(self.cfg["ki"]) * self._integral - q * T   # wanted from this move
             d = 1 if delta > 0 else -1
             g = self.est.gain(d)
+            if d > 0 and mode == "hold" and self._pumping():
+                # Pump running: it raises the pressure, the syringe only pulls (a reversal costs
+                # ~350 counts of slack at x16); below the target just wait for the pump
+                self._integral = min(self._integral, 0.0)
+                self.blocked = "pump_below"          # PQ runner: a lasting plateau = above shut-off
+                time.sleep(0.05)
+                continue
             if abs(delta) < 0.5 * g:                  # less than half a step: wait
                 time.sleep(0.05)
                 continue
@@ -1153,13 +1186,14 @@ class PressureController:
                 self._fault(f"syringe did not confirm a move of {steps} steps"
                             + (f" ({self.syr.last_error})" if getattr(self.syr, "last_error", None) else ""))
                 continue
-            time.sleep(float(self.cfg["move_settle_s"]))
+            # pumping (pull only): short wait, the pump refills the line between moves anyway
+            time.sleep(0.08 if self._pumping() else float(self.cfg["move_settle_s"]))
             p1 = self._wait_sample(0.5)
             res = self.est.observe_move(steps, p1 - p0, clock() - t0)
             if res["stuck"]:
                 self._event("stuck", f"move {steps} steps changed P by {p1 - p0:+.2f} mbar at pos "
                                      f"{self.syr.position()}")
-                if self.est.stuck_in_row >= 4:
+                if self.est.stuck_in_row >= 6:
                     self._fault(f"syringe appears stuck at position {self.syr.position()} "
                                 f"({self.est.stuck_in_row} moves without effect)")
 
@@ -1204,6 +1238,10 @@ class PressureController:
             self._integral = max(-i_lim, min(i_lim, self._integral + err * dt))
             v = (float(self.cfg["kp"]) * 2.0 * err + ki * self._integral - self.est.q) / g
             v = max(-vmax, min(vmax, v))
+            if v > 0 and mode == "hold" and self._pumping():
+                v = 0.0                                  # pump running: pull only
+                self._integral = min(self._integral, 0.0)
+                self.blocked = "pump_below"
             if v and not self.syr.within(int(math.copysign(5 * self.m, v)), int(self.cfg["pos_margin"])):
                 direction = 1 if v > 0 else -1
                 v = 0.0
