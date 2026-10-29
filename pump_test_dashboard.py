@@ -1067,7 +1067,9 @@ class LiveSessionBase:
         sim = str(c["backend"]).lower() == "dummy"
         sensor = None
         if sim:
-            self.plant = pc.PressurePlant(get_freq=self._pump_hz, pos_max=int(c["pos_max"]))
+            m = pc.microsteps(c)
+            self.plant = pc.PressurePlant(get_freq=self._pump_hz, pos_max=int(c["pos_max"]) * m,
+                                          ul_per_step=0.405 / m, backlash=6 * m)
             read, rng = self.plant.read_sensor, self.plant.range
             cal = {}
         else:
@@ -3045,7 +3047,9 @@ class DashboardApp:
                      backend=self.var_pr_backend.get().strip() or "arduino",
                      port=self.var_pr_port.get().strip() or "COM8",
                      firmware=self.var_pr_fw.get().strip() or "auto",
-                     limit_mbar=safe_float(self.var_pr_limit.get(), 300.0), sensor=sensor)
+                     limit_mbar=safe_float(self.var_pr_limit.get(), 300.0),
+                     min_mbar=safe_float(self.var_pr_min.get(), -100.0),
+                     microsteps=max(1, safe_int(self.var_pr_micro.get(), 1)), sensor=sensor)
         return p
 
     def _cal_summary(self) -> str:
@@ -3073,8 +3077,10 @@ class DashboardApp:
         self.var_pr_sensor = tk.StringVar(value="fluigent" if FLUIGENT_AVAILABLE else "network")
         self.var_pr_channel = tk.StringVar(value=str(d["sensor"].get("channel", 1)))
         self.var_pr_limit = tk.StringVar(value=str(d.get("limit_mbar", 300)))
+        self.var_pr_micro = tk.StringVar(value=str(d.get("microsteps", 1)))
+        self.var_pr_min = tk.StringVar(value=str(d.get("min_mbar", -100)))
         self.var_pr_target = tk.StringVar(value="50")
-        self.var_pr_jog = tk.StringVar(value="20")
+        self.var_pr_jog = tk.StringVar(value="2")
         self.var_pr_live = tk.StringVar(value="Pressure control off." if PRESSURE_AVAILABLE
                                         else "Pressure control unavailable (pressure_control.py missing).")
         self.var_pr_cal = tk.StringVar(value=self._cal_summary())
@@ -3097,8 +3103,15 @@ class DashboardApp:
         ttk.Label(r1, text="Ch:").pack(side=tk.LEFT, padx=(6, 2))
         ttk.Entry(r1, textvariable=self.var_pr_channel, width=3).pack(side=tk.LEFT)
         ttk.Button(r1, text="Find", width=5, command=self._find_pressure_sensor).pack(side=tk.LEFT, padx=4)
-        ttk.Label(r1, text="Limit (mbar):").pack(side=tk.LEFT, padx=(6, 2))
-        ttk.Entry(r1, textvariable=self.var_pr_limit, width=5).pack(side=tk.LEFT)
+        ttk.Label(r1, text="Min/Max (mbar):").pack(side=tk.LEFT, padx=(4, 2))
+        ttk.Entry(r1, textvariable=self.var_pr_min, width=5).pack(side=tk.LEFT)
+        ttk.Entry(r1, textvariable=self.var_pr_limit, width=5).pack(side=tk.LEFT, padx=(2, 0))
+        r1b = ttk.Frame(parent); r1b.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(r1b, text="Microsteps:").pack(side=tk.LEFT)
+        ttk.Combobox(r1b, state="readonly", width=4, values=["1", "2", "4", "8", "16", "32"],
+                     textvariable=self.var_pr_micro).pack(side=tk.LEFT, padx=2)
+        ttk.Label(r1b, text="(driver setting; A4988 with MS1-3 high = 16. Ranges stay in full steps)")\
+            .pack(side=tk.LEFT, padx=4)
 
         r2 = ttk.Frame(parent); r2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
         self.lbl_pr_live = tk.Label(r2, textvariable=self.var_pr_live, anchor="w", wraplength=380, justify=tk.LEFT)
@@ -3244,10 +3257,17 @@ class DashboardApp:
             txt += f" -> {st['target']:g} mbar, " + ("settled" if st["settled"] else "settling")
         else:
             txt += f" · {st['mode']}"
-        txt += (f"\nSyringe {st['protocol']}: position {st['pos']}, {st['remaining_pull']} steps to full"
+        m = st.get("microsteps") or 1
+        pos_txt = f"{st['pos']} ({st['pos'] / m:.0f} full steps)" if m > 1 else f"{st['pos']}"
+        txt += (f"\nSyringe {st['protocol']}: position {pos_txt}, {st['remaining_pull']} steps to full"
                 f"{' · push blocked (empty end)' if st.get('blocked') else ''}"
                 f"\nGain push {st['gain_push_mbar_step']:.2f} / pull {st['gain_pull_mbar_step']:.2f} mbar/step · "
-                f"backlash {st['backlash_steps']:.0f} · drift {st['drift_mbar_s']:+.1f} mbar/s")
+                f"backlash {st['backlash_steps']:.0f} · drift {st['drift_mbar_s']:+.1f} mbar/s"
+                f"\nAllowed {st['p_min']:g}..{st['p_max']:.0f} mbar (max: {st['limit_source']})")
+        res = st.get("resolution_mbar")
+        if res and res > 3 * safe_float(self._pressure_cfg().get("tolerance_mbar", 2.0), 2.0):
+            txt += (f"\nCoarse: one step = {res:.0f} mbar, holds saw-tooth +-{res / 2:.0f} mbar "
+                    f"(microstepping or an air pocket would help)")
         if st["mode"] == "fault":
             txt = f"FAULT: {st['fault']}\n" + txt
         self.var_pr_live.set(txt)
@@ -3270,11 +3290,13 @@ class DashboardApp:
             ("zero", "1. Zero sensor", "Line open to atmosphere: the mean reading becomes 0 mbar."),
             ("pos0", "2. Syringe emptied: pos 0", "Plunger fully in. Then give it room to push: Output ON "
                                                   "(~400 Hz), Hold 0 mbar for 20-30 s, Release, Output OFF, Stop."),
-            ("sweep", "3. Gain + backlash sweep", "Pump OFF, line liquid-filled: pushes in steps of 10 up to "
-                                                  "the span, then back to the start (never below it: sucking "
-                                                  "pulls liquid through the pump). Valveless pump: clamp its "
-                                                  "inlet tube for the sweep."),
-            ("leak", "4. Leak test (60 s)", "Holds 2/3 of the span, then stops the syringe and watches the decay."),
+            ("sweep", "3. Gain + backlash sweep", "Pump OFF, line liquid-filled: takes up the slack 1-4 steps at "
+                                                  "a time, pushes up to the span, then back to the start (never "
+                                                  "below it: sucking pulls liquid through the pump). Valveless "
+                                                  "pump: clamp its inlet tube for the sweep. Optional: holds "
+                                                  "measure the gain themselves."),
+            ("leak", "4. Leak test (60 s)", "Brings the line to about 2/3 of the span, stops the syringe and "
+                                            "fits the decay."),
             ("step", "5. Step response", "Holds 1/4, 1/2 and 1 x the span, reports settling time, then releases."),
         ]
         for key, label, hint in steps:
@@ -3323,12 +3345,20 @@ class DashboardApp:
                     log("Syringe position set to 0 (empty end)")
                 elif key == "sweep":
                     log(f"Sweep to {span:g} mbar ...")
-                    r = pc.calib_gain_sweep(ctl, step=10, p_top=span, progress=log)
+                    r = pc.calib_gain_sweep(ctl, p_top=span, progress=log)
                     ctl.apply_calibration(r)
                     self._cal_result.update({k: v for k, v in r.items() if k != "points"})
                     self._cal_result["sweep_points"] = r["points"]
+                    bl = (f"{r['backlash_steps']:g}" if r.get("backlash_steps") is not None
+                          else f"at least {r['backlash_min_steps']:g}" if r.get("backlash_min_steps") else "?")
                     log(f"Gain push {r.get('gain_push_mbar_step')} / pull {r.get('gain_pull_mbar_step')} mbar/step, "
-                        f"backlash {r.get('backlash_steps')} steps ({len(r['points'])} moves, {r['sweep_first']} first)")
+                        f"backlash {bl} steps, slack before the first push {r.get('slack_push_steps')} "
+                        f"({len(r['points'])} moves)")
+                    g = max(x for x in (r.get("gain_push_mbar_step"), r.get("gain_pull_mbar_step"), 0) if x)
+                    if g > 3 * safe_float(self._pressure_cfg().get("tolerance_mbar", 2.0), 2.0):
+                        log(f"NOTE: one step changes the pressure by ~{g:.0f} mbar, so a hold saw-tooths about "
+                            f"+-{g / 2:.0f} mbar around the target. For finer holds: microstepping on the "
+                            f"driver, or a small air pocket in the line.")
                 elif key == "leak":
                     r = pc.calib_leak_test(ctl, p_test=round(2 * span / 3), seconds=60.0, progress=log)
                     self._cal_result.update(r)
@@ -3351,6 +3381,7 @@ class DashboardApp:
             return
         vals = dict(self._cal_result)
         vals["port"] = self.var_pr_port.get().strip()
+        vals["microsteps"] = max(1, safe_int(self.var_pr_micro.get(), 1))   # gains/backlash are per motor count
         try:
             self._save_cal_values(vals)
             self._cal_log(f"Saved to {pressure_cal_path()}")
@@ -4531,9 +4562,11 @@ class DashboardApp:
             self.var_pr_port.set(str(pressure.get("port") or self.var_pr_port.get()))
             self.var_pr_fw.set(str(pressure.get("firmware") or "auto"))
             self.var_pr_limit.set(str(pressure.get("limit_mbar", self.var_pr_limit.get())))
+            self.var_pr_min.set(str(pressure.get("min_mbar", self.var_pr_min.get())))
             sensor = pressure.get("sensor") if isinstance(pressure.get("sensor"), dict) else {}
             self.var_pr_sensor.set(str(sensor.get("backend") or self.var_pr_sensor.get()))
             self.var_pr_channel.set(str(sensor.get("channel", self.var_pr_channel.get())))
+            self.var_pr_micro.set(str(pressure.get("microsteps", self.var_pr_micro.get())))
 
         meta = self.cfg.get("meta", {})
         if not isinstance(meta, dict):

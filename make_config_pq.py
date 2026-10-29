@@ -22,10 +22,11 @@ Connect Manual and run Calibrate... (zero, sweep) once; the calibration is kept 
 import json
 
 PUMP_PORT = "COM3"
-SYRINGE_PORT = "COM8"          # the syringe Uno (old tool's default); check in Device Manager
+SYRINGE_PORT = "COM6"          # the syringe Uno on the lab PC (29 Oct)
 PRESSURE_CHANNEL = 1           # Fluigent index of the pressure sensor ("Find" in the Pressure panel)
+MICROSTEPS = 16                # A4988 with MS1-3 high (29 Oct); at full steps one step was 10-25 mbar
 FREQS_HZ = [200, 400, 700]
-PRESSURES_MBAR = [0, 25, 50, 75, 100, 150, 200, 250]     # sensor ~312 mbar max; the limit is 280
+PRESSURES_MBAR = [0, 25, 50, 75, 100, 150, 200, 250]     # the sensor reads to 345 mbar; the limit is 280
 MEASURE_S = 20.0
 SETTLE_TIMEOUT_S = 120.0
 
@@ -33,9 +34,10 @@ PRESSURE = {
     "enabled": True, "backend": "arduino", "port": SYRINGE_PORT, "baud": 115200, "firmware": "auto",
     "sensor": {"backend": "fluigent", "channel": PRESSURE_CHANNEL},
     "limit_mbar": 280.0, "min_mbar": -100.0, "rate_mbar_s": 40.0,
-    "tolerance_mbar": 2.0, "settle_s": 3.0,
+    "tolerance_mbar": 2.0, "settle_s": 3.0, "microsteps": MICROSTEPS,
+    # in FULL steps (multiplied by microsteps in the software)
     "pos_min": 0, "pos_max": 2470, "pos_margin": 30, "clear_reserve_steps": 150,
-    # 1 mL over the old tool's 0..2470 range: only for the syringe-flow cross-check column
+    # 1 mL over the old tool's 0..2470 range, per full step: only for the syringe-flow cross-check column
     "ul_per_step": round(1000.0 / 2470, 4),
 }
 
