@@ -1537,9 +1537,10 @@ class PumpTestRunner(LiveSessionBase):
         ctl.note("clear_request", why)
         ok = self._ask_operator(
             "syringe_clear", "Clear the syringe by hand",
-            f"{why}\nThe pump is at 0 Hz and the syringe motor is idle (line at {p:.0f} mbar). Empty the "
-            f"syringe by hand back to its empty end (plunger fully in), remove bubbles, reconnect and close "
-            f"the line, then press 'Done - continue'. The position is then set to 0.")
+            f"{why}\nThe pump is at 0 Hz and the syringe motor is idle (line at {p:.0f} mbar). Open the line "
+            f"to waste and press 'Push syringe empty' (or use the jog / hold-to-move buttons in the Pressure "
+            f"panel, or empty it by hand), remove bubbles, close the line, then press 'Done - continue'. "
+            f"The position is then set to 0.")
         if not ok:
             return False
         ctl.set_position(0)
@@ -2881,6 +2882,8 @@ class DashboardApp:
                  wraplength=1100).pack(side=tk.TOP, anchor="w", padx=10)
         orow = tk.Frame(self.operator_banner, bg=bg2)
         orow.pack(side=tk.TOP, anchor="w", padx=10, pady=(4, 8))
+        ttk.Button(orow, text="Push syringe empty (line open to waste!)",
+                   command=self._oprompt_push_empty).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Button(orow, text="Done - continue", command=self.confirm_operator_prompt).pack(side=tk.LEFT)
         self._oprompt_index: Optional[int] = None
 
@@ -3182,7 +3185,9 @@ class DashboardApp:
             lines.append(f"\nPressure channel set to {mbar[0]['index']}.")
         messagebox.showinfo("Fluigent sensors", "\n".join(lines) or "No Fluigent sensors found.")
 
-    def _ctl_for_ui(self, allow_run: bool = False):
+    def _ctl_for_ui(self, allow_run: bool = False, during_clear: bool = False):
+        """The running controller for a panel action. During a run only while it waits for the
+        syringe to be cleared (during_clear: jog, hold-to-move, position 0, reset fault)."""
         s = self.active_stream
         ctl = getattr(s, "ctl", None) if s is not None else None
         if ctl is None:
@@ -3190,8 +3195,12 @@ class DashboardApp:
                                                     "then Connect Manual (or start a run).")
             return None
         if isinstance(s, PumpTestRunner) and not allow_run:
-            messagebox.showinfo("Pressure control", "The run controls the pressure now. Stop the run first.")
-            return None
+            req = s.get_progress().get("operator_request") if during_clear else None
+            if not (req and req.get("kind") == "syringe_clear"):
+                messagebox.showinfo("Pressure control", "The run controls the pressure now. Stop the run first "
+                                                        "(the syringe can be moved while the run waits for it to "
+                                                        "be cleared).")
+                return None
         return ctl
 
     def _pressure_bg(self, label: str, fn):
@@ -3223,12 +3232,12 @@ class DashboardApp:
             ctl.idle()
 
     def _pr_reset(self):
-        ctl = self._ctl_for_ui()
+        ctl = self._ctl_for_ui(during_clear=True)
         if ctl is not None:
             ctl.reset_fault()
 
     def _pr_jog(self, sign: int):
-        ctl = self._ctl_for_ui()
+        ctl = self._ctl_for_ui(during_clear=True)
         if ctl is None:
             return
         value = abs(safe_float(self.var_pr_jog.get().replace(",", "."), 0.0))
@@ -3249,7 +3258,7 @@ class DashboardApp:
     def _pr_hold_start(self, d: int):
         """Hold-to-move: run while the button is pressed (v2 firmware), resent every 0.5 s
         because the firmware stops by itself 2 s after the last command."""
-        ctl = self._ctl_for_ui()
+        ctl = self._ctl_for_ui(during_clear=True)
         if ctl is None:
             return
         sps = d * abs(safe_float(self.var_pr_speed.get(), 20.0)) * ctl.m
@@ -3295,7 +3304,7 @@ class DashboardApp:
         self._pressure_bg("Zero pressure sensor", work)
 
     def _pr_set_empty(self):
-        ctl = self._ctl_for_ui()
+        ctl = self._ctl_for_ui(during_clear=True)
         if ctl is None or not messagebox.askokcancel(
                 "Syringe emptied", "Is the plunger at the empty end (fully in)?\n\nThe syringe position "
                                    "becomes 0; the controller only pulls from there."):
@@ -3600,6 +3609,26 @@ class DashboardApp:
             self.root.lift()
         except Exception:
             log_exception_limited("oprompt_raise", "Operator prompt: could not raise the window")
+
+    def _oprompt_push_empty(self):
+        """Clear prompt: drive the plunger to the empty end with the motor (no limits). The line
+        must be open to waste; if pressure builds the overpressure fault stops the motor."""
+        runner = self._active_runner()
+        ctl = runner.ctl if runner is not None else None
+        req = runner.get_progress().get("operator_request") if runner is not None else None
+        if ctl is None or not (req and req.get("kind") == "syringe_clear"):
+            return
+        n = ctl.syr.position() - ctl.syr.pos_min
+        if n <= 0:
+            messagebox.showinfo("Push syringe empty", "The syringe is already at its empty end.")
+            return
+        if not messagebox.askokcancel(
+                "Push syringe empty", f"Open the line to waste first: the pressure must not build up.\n\n"
+                                      f"The motor pushes {n} counts ({n / ctl.m:.0f} full steps) to the empty end. "
+                                      f"Then close the line and press 'Done - continue'."):
+            return
+        self._pressure_bg("Push syringe empty",
+                          lambda: (ctl.jog(n, unlimited=True), f"position {ctl.syr.position()}")[1])
 
     def confirm_operator_prompt(self):
         runner = self._active_runner()
