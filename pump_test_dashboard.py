@@ -3081,7 +3081,11 @@ class DashboardApp:
         self.var_pr_micro = tk.StringVar(value=str(d.get("microsteps", 1)))
         self.var_pr_min = tk.StringVar(value=str(d.get("min_mbar", -30)))
         self.var_pr_target = tk.StringVar(value="50")
-        self.var_pr_jog = tk.StringVar(value="2")
+        self.var_pr_jog = tk.StringVar(value="5")
+        self.var_pr_jog_unit = tk.StringVar(value="full steps")
+        self.var_pr_nolimits = tk.BooleanVar(value=False)
+        self.var_pr_speed = tk.StringVar(value="20")
+        self._pr_hold_dir = 0
         self.var_pr_live = tk.StringVar(value="Pressure control off." if PRESSURE_AVAILABLE
                                         else "Pressure control unavailable (pressure_control.py missing).")
         self.var_pr_cal = tk.StringVar(value=self._cal_summary())
@@ -3129,11 +3133,22 @@ class DashboardApp:
         ttk.Button(r3, text="Release", width=8, command=self._pr_release).pack(side=tk.LEFT, padx=2)
         ttk.Button(r3, text="Stop", width=5, command=self._pr_idle).pack(side=tk.LEFT, padx=2)
         r4 = ttk.Frame(parent); r4.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
-        ttk.Label(r4, text="Jog steps:").pack(side=tk.LEFT)
-        ttk.Entry(r4, textvariable=self.var_pr_jog, width=5).pack(side=tk.LEFT, padx=4)
+        ttk.Label(r4, text="Jog:").pack(side=tk.LEFT)
+        ttk.Entry(r4, textvariable=self.var_pr_jog, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Combobox(r4, state="readonly", width=9, values=["full steps", "uL", "counts"],
+                     textvariable=self.var_pr_jog_unit).pack(side=tk.LEFT, padx=2)
         ttk.Button(r4, text="Push (+P)", command=lambda: self._pr_jog(+1)).pack(side=tk.LEFT, padx=2)
         ttk.Button(r4, text="Pull (-P)", command=lambda: self._pr_jog(-1)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r4, text="Reset fault", command=self._pr_reset).pack(side=tk.LEFT, padx=2)
+        r4b = ttk.Frame(parent); r4b.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Checkbutton(r4b, text="No limits", variable=self.var_pr_nolimits).pack(side=tk.LEFT)
+        ttk.Label(r4b, text="Hold to move (v2), full steps/s:").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Entry(r4b, textvariable=self.var_pr_speed, width=5).pack(side=tk.LEFT)
+        for text, d in (("Pull (hold)", -1), ("Push (hold)", +1)):
+            b = ttk.Button(r4b, text=text)
+            b.pack(side=tk.LEFT, padx=2)
+            b.bind("<ButtonPress-1>", lambda _e, d=d: self._pr_hold_start(d))
+            b.bind("<ButtonRelease-1>", lambda _e: self._pr_hold_stop())
+        ttk.Button(r4b, text="Reset fault", command=self._pr_reset).pack(side=tk.LEFT, padx=(8, 2))
         r5 = ttk.Frame(parent); r5.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
         ttk.Button(r5, text="Zero sensor (vented)", command=self._pr_zero_sensor).pack(side=tk.LEFT, padx=2)
         ttk.Button(r5, text="Syringe emptied: pos 0", command=self._pr_set_empty).pack(side=tk.LEFT, padx=2)
@@ -3209,9 +3224,55 @@ class DashboardApp:
         ctl = self._ctl_for_ui()
         if ctl is None:
             return
-        steps = sign * abs(safe_int(self.var_pr_jog.get(), 0))
+        value = abs(safe_float(self.var_pr_jog.get().replace(",", "."), 0.0))
+        unit = self.var_pr_jog_unit.get()
+        if unit == "full steps":
+            counts = value * ctl.m
+        elif unit == "uL":
+            ulpc = ctl.cfg.get("ul_per_step") or (1000.0 / 2470 / ctl.m)    # per motor count
+            counts = value / float(ulpc)
+        else:
+            counts = value
+        steps = sign * int(round(counts))
         if steps:
-            self._pressure_bg(f"Jog {steps:+d} steps", lambda: (ctl.jog(steps), f"position {ctl.syr.position()}")[1])
+            free = bool(self.var_pr_nolimits.get())
+            self._pressure_bg(f"Jog {steps:+d} counts{' (no limits)' if free else ''}",
+                              lambda: (ctl.jog(steps, unlimited=free), f"position {ctl.syr.position()}")[1])
+
+    def _pr_hold_start(self, d: int):
+        """Hold-to-move: run while the button is pressed (v2 firmware), resent every 0.5 s
+        because the firmware stops by itself 2 s after the last command."""
+        ctl = self._ctl_for_ui()
+        if ctl is None:
+            return
+        sps = d * abs(safe_float(self.var_pr_speed.get(), 20.0)) * ctl.m
+        try:
+            ctl.manual_velocity(sps)
+        except Exception as e:
+            messagebox.showerror("Hold to move", str(e))
+            return
+        self._pr_hold_dir = d
+
+        def keepalive():
+            if self._pr_hold_dir == d and getattr(self.active_stream, "ctl", None) is ctl:
+                try:
+                    ctl.manual_velocity(sps)
+                except Exception:
+                    self._pr_hold_dir = 0
+                    return
+                self.root.after(500, keepalive)
+        self.root.after(500, keepalive)
+
+    def _pr_hold_stop(self):
+        if not self._pr_hold_dir:
+            return
+        self._pr_hold_dir = 0
+        ctl = getattr(self.active_stream, "ctl", None)
+        if ctl is not None:
+            try:
+                ctl.manual_velocity(0)
+            except Exception:
+                log_exception("Hold to move: stop failed")
 
     def _pr_zero_sensor(self):
         ctl = self._ctl_for_ui()

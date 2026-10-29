@@ -808,11 +808,28 @@ class PressureController:
         except Exception:
             pass
 
-    def jog(self, steps: int) -> bool:
+    def manual_velocity(self, sps: float):
+        """Hold-to-move (v2 firmware): run at sps counts/s (+ = push in), 0 = stop. The firmware
+        stops by itself 2 s after the last command; the overpressure fault still stops it."""
+        if self.mode in ("hold", "release"):
+            raise RuntimeError("stop the pressure control before moving by hand")
+        if self.syr.protocol != "v2":
+            raise RuntimeError("hold-to-move needs the v2 firmware; use the jog buttons")
+        if sps:
+            self.syr.set_velocity(sps)
+        else:
+            self.syr.stop()
+
+    def jog(self, steps: int, unlimited: bool = False) -> bool:
+        """Move by `steps` motor counts. unlimited: no range check, no pressure caps and nothing
+        learned (e.g. de-airing with the line open); the overpressure fault still stops the motor."""
         if self.mode in ("hold", "release"):
             raise RuntimeError("stop the pressure control before jogging")
+        if unlimited:
+            self._event("jog_unlimited", str(steps))
+            return self.syr.move(steps, timeout_s=max(10.0, abs(steps) / 300.0 + 5.0))
         if not self.syr.within(steps):
-            raise RuntimeError("jog would leave the syringe range")
+            raise RuntimeError("jog would leave the syringe range (tick 'No limits' to move anyway)")
         d = 1 if steps > 0 else -1
         p = self.p if not math.isnan(self.p) else 0.0
         if not (self.est.known(d) or self.est.known(-d)) and abs(steps) > 5 * self.m:

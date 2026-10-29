@@ -16,7 +16,7 @@
         700
       ],
       "pressures_mbar": [
-        0,
+        10,
         25,
         50,
         75,
@@ -33,7 +33,7 @@
   ],
   "meta": {
     "name": "PQ curves",
-    "description": "Flow vs outlet pressure at 200, 400, 700 Hz, 8 pressures 0..250 mbar, 20 s per point after settling. Syringe cleared by hand when full.",
+    "description": "Flow vs outlet pressure at 200, 400, 700 Hz, 8 pressures 10..250 mbar, 20 s per point after settling. Syringe cleared by hand when full.",
     "operator": "",
     "pump_id": "",
     "syringe_ml": 1.0,
