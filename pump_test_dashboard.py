@@ -178,6 +178,14 @@ except Exception:
     pc = None
     log_exception("Optional import failed: pressure_control not available; pressure control disabled.")
 
+SUPPLY_AVAILABLE = False
+try:
+    import supply_rsd                  # programmable bench supply (RSD3305P) for automatic voltage steps
+    SUPPLY_AVAILABLE = True
+except Exception:
+    supply_rsd = None
+    log_exception("Optional import failed: supply_rsd not available; automatic supply control disabled.")
+
 
 # ---------------- run clock ----------------
 # Every run time (events, merged, flow, power, frames) is CLOCK() - t0. On
@@ -354,7 +362,12 @@ def linspace_int(a: int, b: int, n: int) -> List[int]:
 #    "window": ["08:00", "20:00"]}   # optional: only ask during these hours
 # Its nominal duration is settle_s. The operator's delay is unknown in advance,
 # so run ETAs are "nominal time + window waits + your confirmation delays".
-SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10}
+# supply.mode "rsd3305p": a programmable RSD3305P (supply_rsd.py, at supply.address: COMx or
+# host:port of supply_bridge.py) sets each voltage itself: no prompt, no window, the run goes on
+# once the output reads the new voltage. "pause": true on a block still waits for Done afterwards.
+SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10,
+                   "address": "", "channel": 1, "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True}
+SUPPLY_MODES = ("manual", "rsd3305p")
 MAX_PLANNED_CHANGES = 2000   # cap for voltage steps inside long or endless groups
 # Pressure holds: the settling time is not known in advance; the plan counts this much per
 # hold (a PQ point = this + measure_s). Syringe clearing by hand comes on top.
@@ -413,6 +426,11 @@ def contains_pressure_block(blocks: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def supply_is_auto(supply: Optional[Dict[str, Any]]) -> bool:
+    """True when the programmable supply sets the voltage steps (no operator prompt)."""
+    return str((supply or {}).get("mode") or "manual").strip().lower() == "rsd3305p"
+
+
 def contains_voltage_block(blocks: List[Dict[str, Any]]) -> bool:
     for b in blocks:
         tt = block_type(b)
@@ -455,7 +473,7 @@ def next_in_window(dt: datetime, window: Optional[Tuple[int, int]]) -> datetime:
     return opens if opens > dt else opens + timedelta(days=1)
 
 
-def plan_schedule(tests: List[Dict[str, Any]], break_between: float = 0.0
+def plan_schedule(tests: List[Dict[str, Any]], break_between: float = 0.0, auto: bool = False
                   ) -> Tuple[float, List[Dict[str, Any]], bool]:
     """Nominal timeline of a test sequence -> (total_s, voltage changes, truncated).
 
@@ -463,6 +481,7 @@ def plan_schedule(tests: List[Dict[str, Any]], break_between: float = 0.0
     t_nom: the nominal running time before it (window waits and confirmation
     delays excluded), the same quantity PumpTestRunner counts in nominal_done,
     so a live ETA is now + (t_nom - nominal_done) + waits (project_changes).
+    auto: the programmable supply sets the voltages, so time windows don't apply.
     """
     changes: List[Dict[str, Any]] = []
     t = 0.0
@@ -479,7 +498,7 @@ def plan_schedule(tests: List[Dict[str, Any]], break_between: float = 0.0
                 changes.append({
                     "index": len(changes) + 1, "t_nom": t,
                     "mv": int(round(safe_float(b.get("voltage_mv", 0), 0.0))),
-                    "window": voltage_window(b),
+                    "window": None if auto else voltage_window(b),
                     "hold": str(b.get("while_waiting", "zero")).lower() == "hold",
                     "where": f"block {label}{cycle}",
                 })
@@ -553,20 +572,21 @@ def format_schedule(total_s: float, proj: List[Tuple[Dict[str, Any], datetime, b
                     now: datetime, nominal_now: float, supply: Dict[str, Any], truncated: bool,
                     heading: str) -> str:
     """Human-readable voltage-change schedule (also saved as schedule.txt)."""
+    auto = supply_is_auto(supply)
     lines = [heading, ""]
     if math.isinf(total_s):
         lines.append(f"Runs until Stop (endless group). Now: {fmt_clock(now)}")
     else:
         remaining = max(0.0, total_s - nominal_now) + shift_s
-        extra = " + your confirmation delays" if proj else ""
+        extra = " + your confirmation delays" if proj and not auto else ""
         lines.append(f"Run time left: {fmt_duration(remaining)}{extra}")
         lines.append(f"Now: {fmt_clock(now)}    Earliest end: {fmt_clock(now + timedelta(seconds=remaining))}")
     lines.append("")
     if not proj:
         lines.append("No voltage changes left in this sequence.")
         return "\n".join(lines)
-    lines.append(f"Voltage changes (bench supply current limit "
-                 f"{safe_float(supply.get('current_limit_ma', 0), 0.0):g} mA):")
+    lines.append(f"Voltage changes ({'set automatically by the RSD3305P, ' if auto else ''}bench supply "
+                 f"current limit {safe_float(supply.get('current_limit_ma', 0), 0.0):g} mA):")
     lines.append(f"  {'#':>4}  {'due':<18}  {'set supply to':<13}  where")
     for c, due, moved in proj:
         mark = " *" if moved else "  "
@@ -578,8 +598,12 @@ def format_schedule(total_s: float, proj: List[Tuple[Dict[str, Any], datetime, b
     lines.append("")
     if any(m for _, _, m in proj):
         lines.append("* moved to the start of its allowed time window.")
-    lines.append("Each change waits for your confirmation; any delay pushes all later changes back")
-    lines.append("by the same amount. The dashboard keeps this list up to date.")
+    if auto:
+        lines.append("The programmable supply sets each voltage; the run goes on once its output reads the")
+        lines.append("new voltage (a few seconds). Blocks with \"pause\": true still wait for you.")
+    else:
+        lines.append("Each change waits for your confirmation; any delay pushes all later changes back")
+        lines.append("by the same amount. The dashboard keeps this list up to date.")
     return "\n".join(lines)
 
 
@@ -871,7 +895,7 @@ class DataLogger:
     with_voltage (runs with manual voltage steps) appends a v_set_mv column to
     events.csv and merged.csv and opens voltage_changes.csv.
     """
-    VOLTAGE_CHANGE_COLS = ["index", "t_s", "requested_mv", "confirmed_mv", "asked_at", "confirmed_at",
+    VOLTAGE_CHANGE_COLS = ["index", "t_s", "requested_mv", "confirmed_mv", "set_by", "asked_at", "confirmed_at",
                            "wait_s", "pump_while_waiting"]
 
     def __init__(self, run_dir: str, with_voltage: bool = False):
@@ -998,6 +1022,8 @@ class LiveSessionBase:
     meter: Optional["PowerMeter"] = None      # PPK2 power meter when enabled
     ctl = None                                # pressure_control.PressureController when enabled
     plant = None                              # simulated line (pressure backend "dummy")
+    supply = None                             # supply_rsd.RSDSupply when supply.mode is "rsd3305p"
+    supply_mon = None                         # supply_rsd.SupplyMonitor (V/I log, CC trip)
 
     def get_plot_data(self) -> Tuple[List[float], List[float], List[float]]:
         return [], [], []
@@ -1047,6 +1073,84 @@ class LiveSessionBase:
                 self.meter.close()
             except Exception:
                 log_exception(f"{who}: failed to close power meter")
+
+    # ---- programmable bench supply ----
+    def _supply_settings(self) -> Dict[str, Any]:
+        return {**SUPPLY_DEFAULTS, **(self.cfg.get("supply") or {})}
+
+    def get_supply_live(self) -> Optional[Dict[str, Any]]:
+        mon = self.supply_mon
+        return mon.get_live() if mon is not None else None
+
+    def _make_supply(self, who: str, on_trip, on_lost):
+        """Programmable supply from cfg['supply'] (None in manual mode): connects, sets the current
+        limit and supply.initial_mv, switches the output on and waits until it reads that voltage.
+        Its monitor (supply/supply.csv, CC trip) starts at t0 in _start_supply."""
+        s = self._supply_settings()
+        if not supply_is_auto(s):
+            return
+        if not SUPPLY_AVAILABLE:
+            raise RuntimeError(f"{who}: supply control is RSD3305P but supply_rsd.py could not be imported.")
+        mv = safe_float(s.get("initial_mv"), -1.0)
+        max_mv = safe_float(s.get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
+        if not 0.0 <= mv <= max_mv:
+            raise RuntimeError(f"{who}: supply voltage at start ({mv / 1000:.3f} V) must be within "
+                               f"0..{max_mv / 1000:.3f} V.")
+        drv = supply_rsd.make_supply(s)
+        self._emit("status", f"{who}: connecting programmable supply {drv.address} ...")
+        drv.open()
+        self.supply = drv
+        try:
+            i_lim = drv.set_current(safe_float(s.get("current_limit_ma"), 60.0) / 1000.0)
+            self.supply_mon = supply_rsd.SupplyMonitor(drv, self.run_dir, on_trip=on_trip, on_lost=on_lost)
+            self.supply_mon.i_set = i_lim
+            v = self._apply_supply_mv(mv, output_on=True)
+        except Exception:
+            self._close_supply(who)
+            raise
+        self._emit("status", f"{who}: supply {drv.idn} at {v / 1000:.3f} V, limit {i_lim * 1000:.0f} mA")
+
+    def _apply_supply_mv(self, mv: float, output_on: bool = False) -> float:
+        """Set the programmable supply to mv (refused above supply.max_mv) and wait until its output
+        reads it within tolerance_mv (step_timeout_s). Returns the measured mV."""
+        s = self._supply_settings()
+        max_mv = safe_float(s.get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
+        if not 0.0 <= mv <= max_mv:
+            raise ValueError(f"{mv / 1000:.3f} V is outside 0..{max_mv / 1000:.3f} V (supply.max_mv)")
+        drv = self.supply
+        drv.set_voltage(mv / 1000.0)
+        if self.supply_mon is not None:
+            self.supply_mon.v_set = mv / 1000.0
+        if output_on:
+            drv.output(True)
+        m = drv.wait_for(mv / 1000.0, safe_float(s.get("tolerance_mv"), 50.0) / 1000.0,
+                         safe_float(s.get("step_timeout_s"), 10.0))
+        return m["v"] * 1000.0
+
+    def _start_supply(self, t0: float):
+        if self.supply_mon is not None:
+            self.supply_mon.start(t0)
+
+    def _close_supply(self, who: str):
+        """Stop the monitor; output OFF unless supply.off_on_exit is false; disconnect."""
+        mon, drv = self.supply_mon, self.supply
+        self.supply_mon = self.supply = None
+        if mon is not None:
+            try:
+                mon.stop()
+            except Exception:
+                log_exception(f"{who}: failed to stop the supply monitor")
+        if drv is None:
+            return
+        try:
+            if self._supply_settings().get("off_on_exit", True):
+                drv.output(False)
+        except Exception:
+            log_exception(f"{who}: failed to switch the programmable supply off")
+        try:
+            drv.close()
+        except Exception:
+            log_exception(f"{who}: failed to close the programmable supply")
 
     # ---- pressure control ----
     def _pump_hz(self) -> float:
@@ -1189,16 +1293,42 @@ class ManualSession(LiveSessionBase):
         self._emit("manual_output_off", None)
         self._emit("error", f"Pressure control: {msg}. Pump output switched OFF (0 Hz).")
 
+    def _on_supply_trip(self, info: Dict[str, Any]):
+        self.set_output_enabled(False)
+        self._emit("manual_output_off", None)
+        self._emit("error", f"Programmable supply in current limiting: {info['i_ma']:.1f} mA at {info['v']:.3f} V "
+                            f"for {info['n']} readings. Pump output switched OFF (0 Hz). Details: supply/supply.csv")
+
+    def _on_supply_lost(self, msg: str):
+        self.set_output_enabled(False)
+        self._emit("manual_output_off", None)
+        self._emit("error", msg + " Pump output switched OFF (0 Hz).")
+
+    def set_supply_voltage(self, mv: float) -> float:
+        """Panel 'Apply': set the programmable supply (blocks until the output reads it; run it off
+        the UI thread). Returns the measured mV."""
+        if self.supply is None:
+            raise RuntimeError("no programmable supply in this session (Supply control: RSD3305P)")
+        got = self._apply_supply_mv(float(mv))
+        if self.meter:
+            self.meter.set_voltage(mv)
+        return got
+
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
         baud = int(self.cfg.get("baud", 115200))
         timeout_s = float(self.cfg.get("read_timeout_s", 0.2))
 
-        # Power meter first: if it fails, nothing else has been opened yet
-        self.meter = self._make_meter("Manual", self._meter_state, self._on_power_trip, self._on_power_fatal)
-        if self.meter:
-            self._emit("status", "Manual: connecting power meter ...")
-            self.meter.open()
+        # Supply and power meter first: if they fail, nothing else has been opened yet
+        self._make_supply("Manual", self._on_supply_trip, self._on_supply_lost)
+        try:
+            self.meter = self._make_meter("Manual", self._meter_state, self._on_power_trip, self._on_power_fatal)
+            if self.meter:
+                self._emit("status", "Manual: connecting power meter ...")
+                self.meter.open()
+        except Exception:
+            self._close_supply("Manual")
+            raise
         try:
             if bool(self.cfg.get("dry_run", False)):
                 self.ser = None
@@ -1219,6 +1349,7 @@ class ManualSession(LiveSessionBase):
                     log_exception("Manual: failed to close serial after a setup error")
                 self.ser = None
             self._close_meter("Manual")
+            self._close_supply("Manual")
             raise
 
         if self.logger:
@@ -1250,6 +1381,7 @@ class ManualSession(LiveSessionBase):
         except Exception:
             log_exception("ManualSession teardown: failed to close logger")
         self._close_meter("ManualSession teardown")
+        self._close_supply("ManualSession teardown")
 
     def _set_freq_internal(self, hz: int):
         hz = int(hz)
@@ -1336,6 +1468,7 @@ class ManualSession(LiveSessionBase):
         self._hires = True
         self.t0 = CLOCK()
         self.stop_flag.clear()
+        self._start_supply(self.t0)
         if self.meter:
             self.meter.start(self.t0)
         if self.ctl:
@@ -1392,7 +1525,7 @@ class PumpTestRunner(LiveSessionBase):
         init_mv = self.supply_cfg.get("initial_mv")
         self.v_set_mv: Optional[int] = int(init_mv) if init_mv is not None else None
         self.plan_total_s, self.plan_changes, _ = plan_schedule(
-            tests, float(cfg.get("break_seconds_between_tests", 0.0)))
+            tests, float(cfg.get("break_seconds_between_tests", 0.0)), auto=supply_is_auto(self.supply_cfg))
         self.nominal_done = 0.0
         self._nominal_step: Optional[Tuple[float, float]] = None   # (monotonic start, nominal s)
         self.changes_done = 0
@@ -1448,6 +1581,13 @@ class PumpTestRunner(LiveSessionBase):
 
     def _on_pressure_fault(self, msg: str):
         self._power_stop(f"Pressure control: {msg}. Run stopped, pump at 0 Hz.")
+
+    def _on_supply_trip(self, info: Dict[str, Any]):
+        self._power_stop(f"Programmable supply in current limiting: {info['i_ma']:.1f} mA at {info['v']:.3f} V for "
+                         f"{info['n']} readings in a row. Run stopped, pump at 0 Hz. Details: supply/supply.csv")
+
+    def _on_supply_lost(self, msg: str):
+        self._power_stop(msg + " Run stopped, pump at 0 Hz.")
 
     def _nominal_begin(self, t_start: float, dur_s: float):
         with self.lock:
@@ -1801,7 +1941,8 @@ class PumpTestRunner(LiveSessionBase):
 
     def _exec_voltage(self, test, log_event):
         """Manual voltage step: (pump to 0 Hz) -> wait for the allowed window ->
-        ask the operator -> wait for confirmation -> log -> settle."""
+        ask the operator -> wait for confirmation -> log -> settle. With the
+        programmable supply: (pump to 0 Hz) -> set and verify -> log -> settle."""
         mv = int(round(safe_float(test.get("voltage_mv", 0), 0.0)))
         hold = str(test.get("while_waiting", "zero")).lower() == "hold"
         settle_s = max(0.0, safe_float(test.get("settle_s", 0), 0.0))
@@ -1809,6 +1950,9 @@ class PumpTestRunner(LiveSessionBase):
         if not hold:
             self._set_freq(0)
             log_event()
+        if self.supply is not None:
+            self._exec_voltage_auto(test, log_event, mv, hold, settle_s, index)
+            return
 
         now = datetime.now()
         opens = next_in_window(now, voltage_window(test))
@@ -1850,13 +1994,16 @@ class PumpTestRunner(LiveSessionBase):
             self.meter.set_voltage(confirmed)
         self.logger.log_voltage_change({
             "index": index, "t_s": f"{CLOCK() - self.t0:.3f}", "requested_mv": mv,
-            "confirmed_mv": confirmed, "asked_at": req["asked_at"],
+            "confirmed_mv": confirmed, "set_by": "operator", "asked_at": req["asked_at"],
             "confirmed_at": datetime.now().isoformat(timespec="seconds"),
             "wait_s": f"{wait_s:.1f}", "pump_while_waiting": "hold" if hold else "zero",
         })
         log_event()
         self._emit("status", f"Voltage change #{index} confirmed: {confirmed / 1000:.3f} V after "
                              f"{fmt_duration(wait_s)}" + (f"; settling {settle_s:g} s" if settle_s > 0 else ""))
+        self._voltage_settle(settle_s)
+
+    def _voltage_settle(self, settle_s: float):
         if settle_s > 0:
             t_start = CLOCK()
             self._nominal_begin(t_start, settle_s)
@@ -1864,16 +2011,57 @@ class PumpTestRunner(LiveSessionBase):
             if not self.stop_flag.is_set():
                 self._nominal_end(settle_s)
 
+    def _exec_voltage_auto(self, test, log_event, mv: int, hold: bool, settle_s: float, index: int):
+        """Programmable supply: set mv, wait until the output reads it, log, settle. Time windows
+        don't apply. A supply that refuses, limits or doesn't follow stops the run. 'pause': true
+        waits for Done afterwards (e.g. to re-centre the camera stage)."""
+        asked_wall, asked_mono = datetime.now(), CLOCK()
+        self._emit("status", f"Voltage change #{index}: supply -> {mv / 1000:.3f} V ...")
+        try:
+            got = self._apply_supply_mv(mv)
+        except Exception as e:
+            log_exception(f"Voltage change #{index} failed")
+            self._power_stop(f"Voltage change #{index}: the supply did not reach {mv / 1000:.3f} V ({e}). "
+                             f"Run stopped, pump at 0 Hz.")
+            return
+        wait_s = CLOCK() - asked_mono
+        with self.lock:
+            self.v_set_mv = mv
+            self.changes_done = index
+        if self.meter:
+            self.meter.set_voltage(mv)
+        self.logger.log_voltage_change({
+            "index": index, "t_s": f"{CLOCK() - self.t0:.3f}", "requested_mv": mv,
+            "confirmed_mv": int(round(got)), "set_by": "supply",
+            "asked_at": asked_wall.isoformat(timespec="seconds"),
+            "confirmed_at": datetime.now().isoformat(timespec="seconds"),
+            "wait_s": f"{wait_s:.1f}", "pump_while_waiting": "hold" if hold else "zero",
+        })
+        log_event()
+        self._emit("status", f"Voltage change #{index}: supply at {got / 1000:.3f} V after {wait_s:.1f} s"
+                             + (f"; settling {settle_s:g} s" if settle_s > 0 else ""))
+        if test.get("pause"):
+            note = str(test.get("note") or "").strip()
+            if not self._ask_operator("voltage_pause", f"paused at {mv / 1000:.3f} V (voltage change #{index})",
+                                      (note + "\n" if note else "") + "Press 'Done - continue' when ready."):
+                return
+        self._voltage_settle(settle_s)
+
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
         baud = int(self.cfg.get("baud", 115200))
         timeout_s = float(self.cfg.get("read_timeout_s", 0.2))
 
-        # Power meter first: if it fails, nothing else has been opened yet
-        self.meter = self._make_meter("Runner", self._meter_state, self._on_power_trip, self._on_power_fatal)
-        if self.meter:
-            self._emit("status", "Runner: connecting power meter ...")
-            self.meter.open()
+        # Supply and power meter first: if they fail, nothing else has been opened yet
+        self._make_supply("Runner", self._on_supply_trip, self._on_supply_lost)
+        try:
+            self.meter = self._make_meter("Runner", self._meter_state, self._on_power_trip, self._on_power_fatal)
+            if self.meter:
+                self._emit("status", "Runner: connecting power meter ...")
+                self.meter.open()
+        except Exception:
+            self._close_supply("Runner")
+            raise
         try:
             if bool(self.cfg.get("dry_run", False)):
                 self.ser = None
@@ -1894,6 +2082,7 @@ class PumpTestRunner(LiveSessionBase):
                     log_exception("Runner: failed to close serial after a setup error")
                 self.ser = None
             self._close_meter("Runner")
+            self._close_supply("Runner")
             raise
 
         self.logger.open()
@@ -1914,6 +2103,7 @@ class PumpTestRunner(LiveSessionBase):
             except Exception:
                 log_exception("PumpTestRunner teardown: failed to close pq_points.csv")
         self._close_meter("PumpTestRunner teardown")
+        self._close_supply("PumpTestRunner teardown")
         try:
             if self.ser:
                 self.ser.close()
@@ -2141,6 +2331,7 @@ class PumpTestRunner(LiveSessionBase):
         self._hires = True
         self.t0 = CLOCK()
         self.stop_flag.clear()
+        self._start_supply(self.t0)
         if self.meter:
             self.meter.start(self.t0)
         if self.ctl:
@@ -2683,7 +2874,7 @@ class DashboardApp:
         P.add_panel("hardware", "Hardware", "left", self._build_hardware)
         P.add_panel("config", "Config builder", "left", self._build_config_builder)
         P.add_panel("manual", "Manual control", "right", self._build_manual_panel)
-        P.add_panel("power", "Power meter (PPK2)", "right", self._build_power_panel)
+        P.add_panel("power", "Power: supply + PPK2", "right", self._build_power_panel)
         P.add_panel("pressure", "Pressure control (syringe)", "right", self._build_pressure_panel)
         P.add_panel("camera", "Camera", "right",
                     lambda body: self._build_video_controls(body).pack(side=tk.TOP, fill=tk.X))
@@ -2799,7 +2990,7 @@ class DashboardApp:
         bar = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
         bar.pack(side=tk.BOTTOM, fill=tk.X)
         self._status_lights: Dict[str, tk.Label] = {}
-        for key in ("arduino", "flow", "ppk2", "pressure", "camera"):
+        for key in ("arduino", "flow", "supply", "ppk2", "pressure", "camera"):
             lbl = tk.Label(bar, text=f"● {key}", fg="#888888", padx=8)
             lbl.pack(side=tk.LEFT)
             self._status_lights[key] = lbl
@@ -2828,6 +3019,15 @@ class DashboardApp:
             self._set_light("flow", "ok" if fresh else "bad", f"Flow {backend}" + ("" if fresh else " (no data)"))
         else:
             self._set_light("flow", "off", f"Flow {backend}")
+        sl = s.get_supply_live() if s is not None else None
+        if sl is None:
+            self._set_light("supply", "off", "Supply " + ("RSD3305P" if supply_is_auto(self._supply_cfg()) else "manual"))
+        elif "v" not in sl or sl.get("state") != "ok":
+            self._set_light("supply", "bad" if sl.get("state") in ("tripped", "no answer") else "busy",
+                            f"Supply {sl.get('state', '?')}")
+        else:
+            self._set_light("supply", "bad" if sl["mode"] == "CC" or not sl["output"] else "ok",
+                            f"Supply {sl['v']:.2f} V {sl['i_ma']:.0f} mA {sl['mode']}")
         live = s.get_power_live() if s is not None else None
         if live is None:
             self._set_light("ppk2", "off", "PPK2")
@@ -2908,9 +3108,10 @@ class DashboardApp:
                  wraplength=1100).pack(side=tk.TOP, anchor="w", padx=10)
         orow = tk.Frame(self.operator_banner, bg=bg2)
         orow.pack(side=tk.TOP, anchor="w", padx=10, pady=(4, 8))
-        ttk.Button(orow, text="Push syringe empty (line open to waste!)",
-                   command=self._oprompt_push_empty).pack(side=tk.LEFT, padx=(0, 12))
-        ttk.Button(orow, text="Done - continue", command=self.confirm_operator_prompt).pack(side=tk.LEFT)
+        self.btn_oprompt_push = ttk.Button(orow, text="Push syringe empty (line open to waste!)",
+                                           command=self._oprompt_push_empty)
+        self.btn_oprompt_done = ttk.Button(orow, text="Done - continue", command=self.confirm_operator_prompt)
+        self.btn_oprompt_done.pack(side=tk.LEFT)
         self._oprompt_index: Optional[int] = None
 
         self.root.after(1000, self._tick_progress)
@@ -2923,6 +3124,9 @@ class DashboardApp:
             if v:
                 s["initial_mv"] = int(round(safe_float(v, 2.5) * 1000))
             s["current_limit_ma"] = safe_float(self.var_supply_limit.get(), float(s.get("current_limit_ma") or 60))
+            s["mode"] = self.var_supply_mode.get().strip() or "manual"
+            s["address"] = self.var_supply_addr.get().strip()
+            s["channel"] = max(1, safe_int(self.var_supply_ch.get(), 1))
         return s
 
     def _power_cfg(self) -> Dict[str, Any]:
@@ -2948,6 +3152,35 @@ class DashboardApp:
         self.var_supply_limit = tk.StringVar(value=str(s.get("current_limit_ma", 60)))
         self.var_pw_live = tk.StringVar(value="Power meter off." if POWER_AVAILABLE
                                         else "Power meter unavailable (power_ppk2.py / numpy missing).")
+        self.var_supply_mode = tk.StringVar(value=str(s["mode"]))
+        self.var_supply_addr = tk.StringVar(value=str(s["address"]))
+        self.var_supply_ch = tk.StringVar(value=str(s["channel"]))
+        self.var_supply_now = tk.StringVar(value="")
+        self.var_supply_live = tk.StringVar(value="Supply control: manual (you set the bench supply)."
+                                            if SUPPLY_AVAILABLE else "supply_rsd.py missing: manual supply only.")
+        self._supply_busy = False
+
+        # Programmable supply (RSD3305P): sets the start voltage and every voltage step itself
+        rs = ttk.Frame(parent); rs.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
+        ttk.Label(rs, text="Supply control:").pack(side=tk.LEFT)
+        ttk.Combobox(rs, state="readonly" if SUPPLY_AVAILABLE else tk.DISABLED, width=9, values=list(SUPPLY_MODES),
+                     textvariable=self.var_supply_mode).pack(side=tk.LEFT, padx=(2, 8))
+        ttk.Label(rs, text="Address:").pack(side=tk.LEFT)
+        ttk.Entry(rs, textvariable=self.var_supply_addr, width=20).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rs, text="Ch:").pack(side=tk.LEFT, padx=(6, 2))
+        ttk.Entry(rs, textvariable=self.var_supply_ch, width=3).pack(side=tk.LEFT)
+        ttk.Button(rs, text="Test", command=self._supply_test).pack(side=tk.LEFT, padx=4)
+        rs2 = ttk.Frame(parent); rs2.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(rs2, text="Set now (V):").pack(side=tk.LEFT)
+        ent = ttk.Entry(rs2, textvariable=self.var_supply_now, width=7)
+        ent.pack(side=tk.LEFT, padx=4)
+        ent.bind("<Return>", lambda _e: self._supply_apply())
+        ttk.Button(rs2, text="Apply (manual session)", command=self._supply_apply).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rs2, text="address: COM7, host:5025 (supply_bridge.py) or dummy").pack(side=tk.LEFT, padx=6)
+        self.lbl_supply_live = tk.Label(parent, textvariable=self.var_supply_live, anchor="w", wraplength=380,
+                                        justify=tk.LEFT)
+        self.lbl_supply_live.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 4))
+        ttk.Separator(parent).pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
 
         r0 = ttk.Frame(parent); r0.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(6, 2))
         ttk.Checkbutton(r0, text="Measure power", variable=self.var_pw_enabled,
@@ -3044,6 +3277,90 @@ class DashboardApp:
             self.var_pw_live.set(f"PPK2 found on {', '.join(ports)}.")
         else:
             self.var_pw_live.set("No PPK2 found (plugged in, switched on, nRF Connect app closed?).")
+
+    # ---- programmable supply (panel) ----
+    def _supply_msg(self, text: str, bad: bool = False):
+        self._supply_busy = False
+        self.var_supply_live.set(text)
+        self.lbl_supply_live.configure(fg="#b00000" if bad else self._pw_live_fg)
+
+    def _supply_bg(self, busy_text: str, work: Callable[[], str]):
+        """Run a supply action off the UI thread (network round trips); the result lands in the panel."""
+        if self._supply_busy:
+            return
+        self._supply_busy = True
+        self.var_supply_live.set(busy_text)
+
+        def run():
+            try:
+                self.ui_events.put(("supply_msg", (work(), False)))
+            except Exception as e:
+                log_exception("Supply panel action failed")
+                self.ui_events.put(("supply_msg", (f"Supply: {e}", True)))
+
+        threading.Thread(target=run, name="supply-panel", daemon=True).start()
+
+    def _supply_test(self):
+        """Connect, read identity, settings and output, disconnect. Changes nothing on the supply."""
+        if not SUPPLY_AVAILABLE:
+            return
+        if self.active_stream is not None and getattr(self.active_stream, "supply", None) is not None:
+            self.var_supply_live.set("The running session is using the supply (live line below).")
+            return
+        s = self._supply_cfg()
+
+        def work():
+            drv = supply_rsd.make_supply(s)
+            idn = drv.open()
+            try:
+                st, m = drv.read_settings(), drv.measure()
+            finally:
+                drv.close()
+            txt = (f"{idn} on {drv.address}: output {'ON' if m['output'] else 'off'}, reads {m['v']:.3f} V / "
+                   f"{m['i'] * 1000:.1f} mA, set {st['v_set']:.2f} V / {st['i_set'] * 1000:.0f} mA, "
+                   f"{'CV' if m['cv'] else 'CC'} (status 0x{m['status']:02X}). Nothing changed.")
+            LOG.info(f"Supply test: {txt}")
+            return txt
+
+        self._supply_bg(f"Connecting to {s.get('address') or '(no address)'} ...", work)
+
+    def _supply_apply(self):
+        s = self.active_stream
+        if not isinstance(s, ManualSession) or s.supply is None:
+            messagebox.showinfo("Supply", "Connect a manual session with Supply control = rsd3305p first "
+                                          "(scheduled runs set the voltage from their voltage blocks).")
+            return
+        raw = self.var_supply_now.get().strip().replace(",", ".")
+        mv = safe_float(raw, -1.0) * 1000.0
+        max_mv = safe_float(self._supply_cfg().get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
+        if not 0.0 <= mv <= max_mv:
+            messagebox.showerror("Supply", f"Type a voltage between 0 and {max_mv / 1000:.3f} V (supply.max_mv).")
+            return
+        self._supply_bg(f"Setting the supply to {mv / 1000:.3f} V ...",
+                        lambda: f"Supply set to {mv / 1000:.3f} V, output reads {s.set_supply_voltage(mv) / 1000:.3f} V.")
+
+    def _update_supply_ui(self):
+        s = self.active_stream
+        live = s.get_supply_live() if s is not None else None
+        if live is None:
+            if getattr(self, "_supply_last_txt", None):
+                self._supply_msg("Stopped. Last reading: " + self._supply_last_txt)
+                self._supply_last_txt = None
+            return
+        if self._supply_busy:
+            return
+        st = live.get("state", "?")
+        if "v" in live:
+            v_set = live.get("v_set")
+            txt = (f"{live['v']:.3f} V" + (f" (set {v_set:.3f})" if v_set is not None else "")
+                   + f" · {live['i_ma']:.1f} mA · {live['mode']} · output {'on' if live['output'] else 'OFF'}")
+        else:
+            txt = "connecting ..."
+        bad = st in ("tripped", "no answer") or live.get("mode") == "CC" or live.get("output") is False
+        txt = f"RSD3305P {live.get('address', '')}: " + ("" if st == "ok" else f"{st.upper()} · ") + txt
+        self.var_supply_live.set(txt)
+        self._supply_last_txt = txt
+        self.lbl_supply_live.configure(fg="#b00000" if bad else self._pw_live_fg)
 
     def _update_power_ui(self):
         s = self.active_stream
@@ -3511,6 +3828,10 @@ class DashboardApp:
         except Exception:
             log_exception_limited("pressure_tick", "Pressure control: live update failed")
         try:
+            self._update_supply_ui()
+        except Exception:
+            log_exception_limited("supply_tick", "Supply: live update failed")
+        try:
             self._update_status_bar()
         except Exception:
             log_exception_limited("status_bar", "Status bar update failed")
@@ -3520,6 +3841,7 @@ class DashboardApp:
         now = datetime.now()
         runner = self._active_runner()
         lead_s = 60.0 * safe_float(self._supply_cfg().get("lead_min", 10), 10.0)
+        auto = supply_is_auto(runner.supply_cfg if runner is not None else self._supply_cfg())
 
         if runner is None:
             self._show_voltage_banner(None)
@@ -3530,16 +3852,17 @@ class DashboardApp:
                 self.var_next_change.set("")
                 self.pbar["value"] = 0
                 return
-            total, changes, _ = plan_schedule(tests, safe_float(self.var_break_between.get(), 0.0))
+            total, changes, _ = plan_schedule(tests, safe_float(self.var_break_between.get(), 0.0), auto=auto)
             proj, shift = project_changes(changes, now, 0.0, 0)
             self.pbar["value"] = 0
             if math.isinf(total):
                 self.var_progress.set("Planned: runs until Stop (endless group)")
             else:
-                extra = " + your confirmations" if changes else ""
+                extra = " + your confirmations" if changes and not auto else ""
                 self.var_progress.set(f"Planned: {fmt_duration(total + shift)}{extra} · "
                                       f"ends ~{fmt_clock(now + timedelta(seconds=total + shift))} if started now")
-            self.var_next_change.set(f"{len(changes)} voltage change(s) planned" if changes else "")
+            self.var_next_change.set(f"{len(changes)} voltage change(s) planned"
+                                     + (" (automatic)" if auto else "") if changes else "")
             self.lbl_next_change.configure(fg=self._next_change_fg)
             return
 
@@ -3556,7 +3879,7 @@ class DashboardApp:
             self.pbar["value"] = 0
         else:
             remaining = max(0.0, total - nominal) + shift
-            extra = " + your confirmations" if proj else ""
+            extra = " + your confirmations" if proj and not auto else ""
             frac = min(1.0, nominal / total) if total > 0 else 1.0
             self.var_progress.set(f"Elapsed {fmt_duration(elapsed)} · Remaining {fmt_duration(remaining)}{extra} · "
                                   f"Ends ~{fmt_clock(now + timedelta(seconds=remaining))} · {100 * frac:.0f}%")
@@ -3569,8 +3892,8 @@ class DashboardApp:
             c, due, _moved = proj[0]
             until = (due - now).total_seconds()
             self.var_next_change.set(f"Next voltage change #{c['index']} → {c['mv'] / 1000:.3f} V "
-                                     f"at {fmt_clock(due)} (in {fmt_duration(until)})")
-            self.lbl_next_change.configure(fg="#b00000" if until <= lead_s else self._next_change_fg)
+                                     f"at {fmt_clock(due)} (in {fmt_duration(until)})" + (", automatic" if auto else ""))
+            self.lbl_next_change.configure(fg="#b00000" if until <= lead_s and not auto else self._next_change_fg)
         else:
             self.var_next_change.set("")
             self.lbl_next_change.configure(fg=self._next_change_fg)
@@ -3627,6 +3950,10 @@ class DashboardApp:
             return
         self._oprompt_index = req["index"]
         self.var_oprompt_title.set(f"WAITING FOR YOU: {req['title']}")
+        if req.get("kind") == "syringe_clear":
+            self.btn_oprompt_push.pack(side=tk.LEFT, padx=(0, 12), before=self.btn_oprompt_done)
+        else:
+            self.btn_oprompt_push.pack_forget()
         self.operator_banner.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 6), after=self._progress_row)
         self._last_bell = time.monotonic()
         self.root.bell()
@@ -3707,6 +4034,7 @@ class DashboardApp:
             "next_voltage_changes": [{"index": c["index"], "mv": c["mv"], "due": due.isoformat(timespec="seconds")}
                                      for c, due, _ in proj[:10]],
             "power": self.active_stream.get_power_live() if self.active_stream is not None else None,
+            "supply": self.active_stream.get_supply_live() if self.active_stream is not None else None,
         }
         path = os.path.join(run_dir, "status.json")
         try:
@@ -3724,10 +4052,12 @@ class DashboardApp:
             proj, shift = project_changes(runner.plan_changes, now, p["nominal_done_s"], p["changes_done"])
             return format_schedule(runner.plan_total_s, proj, shift, now, p["nominal_done_s"],
                                    runner.supply_cfg, False, "Voltage schedule (live, from now)")
+        supply = self._supply_cfg()
         total, changes, truncated = plan_schedule(self.cfg.get("tests", []),
-                                                  safe_float(self.var_break_between.get(), 0.0))
+                                                  safe_float(self.var_break_between.get(), 0.0),
+                                                  auto=supply_is_auto(supply))
         proj, shift = project_changes(changes, now, 0.0, 0)
-        return format_schedule(total, proj, shift, now, 0.0, self._supply_cfg(), truncated,
+        return format_schedule(total, proj, shift, now, 0.0, supply, truncated,
                                "Voltage schedule (if the run starts now)")
 
     def show_voltage_schedule(self):
@@ -4209,6 +4539,10 @@ class DashboardApp:
         ttk.Entry(vrow2, textvariable=self.var_edit_vfrom, width=6).pack(side=tk.LEFT, padx=4)
         ttk.Label(vrow2, text="and").pack(side=tk.LEFT)
         ttk.Entry(vrow2, textvariable=self.var_edit_vto, width=6).pack(side=tk.LEFT, padx=4)
+        self.var_edit_vpause = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.edit_voltage, variable=self.var_edit_vpause,
+                        text="Programmable supply: still wait for 'Done' after setting it (e.g. re-centre the stage)")\
+            .pack(side=tk.TOP, anchor="w", pady=2)
 
         # Pressure editor (hold / release / idle)
         self.var_edit_ptarget = tk.StringVar(value="50")
@@ -4672,6 +5006,12 @@ class DashboardApp:
                 self.var_supply_v.set(f"{safe_float(supply['initial_mv'], 2500.0) / 1000:.3f}")
             if supply.get("current_limit_ma") is not None:
                 self.var_supply_limit.set(str(supply["current_limit_ma"]))
+            mode = str(supply.get("mode") or "manual").strip().lower()
+            self.var_supply_mode.set(mode if mode in SUPPLY_MODES and SUPPLY_AVAILABLE else "manual")
+            if supply.get("address") is not None:
+                self.var_supply_addr.set(str(supply["address"]))
+            if supply.get("channel") is not None:
+                self.var_supply_ch.set(str(supply["channel"]))
         power = self.cfg.get("power")
         if isinstance(power, dict):
             self.var_pw_enabled.set(bool(power.get("enabled", False)) and POWER_AVAILABLE)
@@ -4876,6 +5216,7 @@ class DashboardApp:
             w = t.get("window") if voltage_window(t) else None
             self.var_edit_vfrom.set(str(w[0]) if w else "")
             self.var_edit_vto.set(str(w[1]) if w else "")
+            self.var_edit_vpause.set(bool(t.get("pause", False)))
         elif ttype == "pressure":
             tgt = t.get("target_mbar", "release")
             self.var_edit_ptarget.set(str(tgt) if not is_pressure_target(t) else f"{safe_float(tgt, 0.0):g}")
@@ -4944,6 +5285,8 @@ class DashboardApp:
                                                          "(e.g. 08:00 and 20:00), or leave both blank.")
                     return
                 block["window"] = [frm, to]
+            if self.var_edit_vpause.get():
+                block["pause"] = True
             old = self._block_at(path)
             if block_type(old) == "voltage" and old.get("note"):
                 block["note"] = old["note"]
@@ -5164,13 +5507,19 @@ class DashboardApp:
             messagebox.showerror("Supply voltage", f"Supply voltage at start ({supply_now['initial_mv'] / 1000:.3f} V) "
                                                    f"is above the {supply_now['max_mv'] / 1000:.3f} V maximum.")
             return
+        auto = supply_is_auto(supply_now)
+        if auto and not (SUPPLY_AVAILABLE and str(supply_now.get("address") or "").strip()):
+            messagebox.showerror("Supply", "Supply control is rsd3305p but no supply address is set (Power panel: "
+                                           "COM7, host:5025 for supply_bridge.py, or dummy).")
+            return
 
         # Voltage steps: refuse voltages above the pump's maximum, then show the
-        # schedule so the operator can set alarms before anything starts.
+        # schedule so the operator can set alarms before anything starts (manual supply).
         schedule_txt = None
         if contains_voltage_block(cfg["tests"]):
             supply = {**SUPPLY_DEFAULTS, **(cfg.get("supply") or {})}
-            total, changes, truncated = plan_schedule(cfg["tests"], float(cfg.get("break_seconds_between_tests", 0.0)))
+            total, changes, truncated = plan_schedule(cfg["tests"], float(cfg.get("break_seconds_between_tests", 0.0)),
+                                                      auto=auto)
             max_mv = safe_float(supply.get("max_mv"), SUPPLY_DEFAULTS["max_mv"])
             too_high = sorted({c["mv"] for c in changes if c["mv"] > max_mv})
             if too_high:
@@ -5186,7 +5535,7 @@ class DashboardApp:
             preview = "\n".join(schedule_txt.splitlines()[:28])
             if len(schedule_txt.splitlines()) > 28:
                 preview += "\n  ... (full list: 'Voltage schedule...' button, and schedule.txt in the run folder)"
-            if not messagebox.askokcancel(
+            if not auto and not messagebox.askokcancel(
                     "Voltage schedule - set your alarms",
                     preview + "\n\nThe run pauses at each change until you confirm the new voltage. Start the run?"):
                 return
@@ -5425,6 +5774,8 @@ class DashboardApp:
                     self.var_manual_enabled.set(False)
                 elif kind == "pip_done":
                     self._on_pip_done(*payload)
+                elif kind == "supply_msg":
+                    self._supply_msg(*payload)
                 elif kind == "session_ended":
                     self._on_session_ended(*payload)
                 elif kind == "error":

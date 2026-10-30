@@ -94,14 +94,28 @@ The dashboard can log the pump's supply current, power and energy with a Nordic 
 Close the dashboard while the probe runs (only one program can use the PPK2), and close the nRF Connect Power Profiler app.
 
 ### Use
-In the **Power meter (PPK2)** panel tick *Measure power* (port `auto` or *Detect*), set the supply voltage at start and the bench supply's current limit. The PPK2 then starts and stops with every scheduled run or manual session. The live line shows current, power, voltage and energy; the supply current is drawn in red on the frequency plot. If the current stays at or above the trip level (default 95 % of the bench supply limit) for 200 ms, the supply is clamping: the run stops, the pump goes to 0 Hz and the PPK2's output is switched off.
+In the **Power: supply + PPK2** panel tick *Measure power* (port `auto` or *Detect*), set the supply voltage at start and the bench supply's current limit. The PPK2 then starts and stops with every scheduled run or manual session. The live line shows current, power, voltage and energy; the supply current is drawn in red on the frequency plot. If the current stays at or above the trip level (default 95 % of the bench supply limit) for 200 ms, the supply is clamping: the run stops, the pump goes to 0 Hz and the PPK2's output is switched off.
 
-**Voltage steps** (*Add Voltage Step* in the config builder) pause the run until you have set the bench supply and confirmed the voltage in the yellow banner. Before the run starts the dashboard lists when each change is due (also saved as `schedule.txt`; *Voltage schedule...* shows the live list) so you can set alarms.
+**Voltage steps** (*Add Voltage Step* in the config builder) pause the run until you have set the bench supply and confirmed the voltage in the yellow banner. Before the run starts the dashboard lists when each change is due (also saved as `schedule.txt`; *Voltage schedule...* shows the live list) so you can set alarms. With the programmable supply (below) the steps happen by themselves.
+
+### Programmable supply (RS PRO RSD3305P)
+The dashboard can drive an RSD3305P (Korad KA3305P protocol) itself: it sets the current limit and the start voltage when a run or manual session connects, applies every voltage step without stopping, and switches the output off at the end.
+
+- **Supply on this PC**: USB cable, then the address is its COM port (e.g. `COM7`).
+- **Supply on another PC on the network**: on that PC run the bridge (needs only Python + pyserial):
+  `python supply_bridge.py --list` (find the port), then `python supply_bridge.py --port COM5 --allow <rig PC IP>`
+  It listens on TCP 5025 (allow it in Windows Firewall) and takes one client at a time. The address in the dashboard is then `<that PC's name or IP>:5025`.
+- In the **Power: supply + PPK2** panel: *Supply control* `rsd3305p`, the address, channel (1 = CH1), then **Test** (reads identity, settings and output; changes nothing). *Supply voltage at start* and *Bench limit (mA)* are sent to the supply. In a manual session *Set now* + *Apply* changes the voltage.
+- Each voltage step: pump to 0 Hz (unless `while_waiting` is `hold`), set the voltage, wait until the supply's output reads it (within `tolerance_mv`, default 50 mV, at most `step_timeout_s`, default 10 s), log, settle. No banner, no alarms, time windows are ignored. `"pause": true` on a voltage block still waits for *Done - continue* afterwards (e.g. to re-centre the camera stage: the stroke-volume configs used voltage blocks as such pauses).
+- Safety: voltages above `supply.max_mv` are refused (never sent); a step the supply can't reach (current limiting, output off) stops the run with the pump at 0 Hz; the supply is read every second and two readings in a row in current limiting (CC) stop the run (pump 0 Hz) like the PPK2 trip; a supply that stops answering for 5 s stops the run. `"off_on_exit": false` in `supply` leaves the output on after a run.
+- `OUT1`/`OUT0` switch **all** outputs of the RSD3305P: keep nothing else on CH2/CH3.
+- Config: `"supply": {"mode": "rsd3305p", "address": "labpc:5025", "channel": 1, "initial_mv": 2500, "current_limit_ma": 60, "max_mv": 2500}`. `"address": "dummy"` simulates a supply with an 80 ohm load.
 
 ### Files (in each run folder)
 - `power/bins_*.csv(.gz)`: every 10 ms: mean/min/max current (mA), power (mW), supply voltage, cumulative charge (mC) and energy (mJ), logic inputs, lost samples. A new file every hour; closed files are gzipped
 - `power/power_1s.csv` (1 s summary), `power/raw/` (2 s of raw 100 kS/s data every 10 min, and around a trip), `power/power_events.csv`, `power/anchors.csv`, `power/summary.json`
-- `voltage_changes.csv` (requested/confirmed voltage, how long the confirmation took), `schedule.txt`, `status.json` (progress heartbeat every 10 s)
+- `voltage_changes.csv` (requested/confirmed voltage, `set_by` operator or supply, how long the confirmation / the step took), `schedule.txt`, `status.json` (progress heartbeat every 10 s)
+- `supply/supply.csv` (programmable supply only): every second the set and measured voltage, current, CV/CC, output state, raw status byte
 
 ## Pressure Control and PQ Curves (stepper syringe)
 
