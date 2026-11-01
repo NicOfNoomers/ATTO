@@ -96,12 +96,14 @@ Close the dashboard while the probe runs (only one program can use the PPK2), an
 ### Use
 In the **Power meter (PPK2)** panel tick *Measure power* (port `auto` or *Detect*), set the supply voltage at start and the bench supply's current limit. The PPK2 then starts and stops with every scheduled run or manual session. The live line shows current, power, voltage and energy; the supply current is drawn in red on the frequency plot. If the current stays at or above the trip level (default 95 % of the bench supply limit) for 200 ms, the supply is clamping: the run stops, the pump goes to 0 Hz and the PPK2's output is switched off.
 
+When the test sequence ends on its own, the pump goes to 0 Hz and power, flow and video keep recording for a short tail (`"power": {"post_run_tail_s": 10}` in the config, 0 = none), then everything stops by itself: the PPK2 port is released, the last bins file is gzipped, `summary.json` is written, the video is finalised and `status.json` says `"finished": true`. Stop, a trip or an error stop the same things straight away (no tail).
+
 **Voltage steps** (*Add Voltage Step* in the config builder) pause the run until you have set the bench supply and confirmed the voltage in the yellow banner. Before the run starts the dashboard lists when each change is due (also saved as `schedule.txt`; *Voltage schedule...* shows the live list) so you can set alarms.
 
 ### Files (in each run folder)
-- `power/bins_*.csv(.gz)`: every 10 ms: mean/min/max current (mA), power (mW), supply voltage, cumulative charge (mC) and energy (mJ), logic inputs, lost samples. A new file every hour; closed files are gzipped
+- `power/bins_*.csv(.gz)`: every 10 ms: mean/min/max current (mA), power (mW), supply voltage, cumulative charge (mC) and energy (mJ), logic inputs, lost samples. A new file every hour; closed files (and the last one, when the run ends) are gzipped to a hidden `.bins_*.csv.gz.part` first and renamed when complete, so a `.gz` is never half-written
 - `power/power_1s.csv` (1 s summary), `power/raw/` (2 s of raw 100 kS/s data every 10 min, and around a trip), `power/power_events.csv`, `power/anchors.csv`, `power/summary.json`
-- `voltage_changes.csv` (requested/confirmed voltage, how long the confirmation took), `schedule.txt`, `status.json` (progress heartbeat every 10 s)
+- `voltage_changes.csv` (requested/confirmed voltage, how long the confirmation took), `schedule.txt`, `status.json` (progress heartbeat every 10 s; `"finished": true` and `"status": "finished"`/`"stopped"` once the run has ended)
 
 ## Pressure Control and PQ Curves (stepper syringe)
 

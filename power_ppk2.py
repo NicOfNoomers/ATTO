@@ -61,6 +61,7 @@ POWER_DEFAULTS: Dict[str, Any] = {
     "watch_hold_ms": 200,
     "cut_power_on_trip": True,  # also switch off the PPK2's output path on a trip
     "reconnect_timeout_s": 30,
+    "post_run_tail_s": 10.0,    # after a run's last block (pump at 0 Hz): keep recording this long, then stop
 }
 
 BIN_COLS = ["t_s", "i_mean_ma", "i_min_ma", "i_max_ma", "p_mean_mw", "v_mv",
@@ -389,6 +390,8 @@ class PowerMeter:
         self._ring: deque = deque()
         self._ring_n = 0
         self._ring_max = int(FS * max(5.0, float(self.cfg["raw_length_s"])))
+        self._gz_threads: List[threading.Thread] = []
+        self._closed = False
 
     # ---- public API ----
     def open(self):
@@ -426,6 +429,11 @@ class PowerMeter:
             return list(self.plot_t), list(self.plot_i)
 
     def close(self):
+        """Stop measuring, release the port, write the stop event and summary.json, close and gzip the
+        last bins file. Safe to call twice (the run's end and Stop can both close it)."""
+        if self._closed:
+            return
+        self._closed = True
         self.stop_flag.set()
         if self.thread:
             self.thread.join(timeout=3.0)
@@ -444,10 +452,17 @@ class PowerMeter:
                                "last_live": self.get_live()}, f, indent=2, default=str)
             except Exception:
                 pass
+        bins_f, bins_path = self._files.pop("bins", None), self._bins_path
+        self._writers.pop("bins", None)
+        self._close_quietly(bins_f)
         for f in list(self._files.values()):
             self._close_quietly(f)
         self._files.clear()
         self._writers.clear()
+        for th in self._gz_threads:              # earlier hours still being compressed
+            th.join(timeout=120.0)
+        if bins_path and self.cfg.get("compress_closed", True) and os.path.exists(bins_path):
+            self._gzip(bins_path)
         with self.lock:
             self.live["state"] = "closed"
 
@@ -663,16 +678,27 @@ class PowerMeter:
         self._close_quietly(old_f)
         self._open_bins()
         if old_path and self.cfg.get("compress_closed", True):
-            threading.Thread(target=self._gzip, args=(old_path,), daemon=True).start()
+            th = threading.Thread(target=self._gzip, args=(old_path,), daemon=True)
+            th.start()
+            self._gz_threads = [t for t in self._gz_threads if t.is_alive()] + [th]
 
     @staticmethod
     def _gzip(path):
+        """Compress a closed bins file into bins_*.csv.gz. The data goes to a hidden .part file first
+        and is renamed when complete, so a reader never sees a truncated .gz (a half-written one broke
+        the analysis loader, 30 Oct); the .csv is removed only after that."""
+        folder, base = os.path.split(path)
+        part = os.path.join(folder, "." + base + ".gz.part")
         try:
-            with open(path, "rb") as fi, gzip.open(path + ".gz", "wb", compresslevel=6) as fo:
+            with open(path, "rb") as fi, gzip.open(part, "wb", compresslevel=6) as fo:
                 shutil.copyfileobj(fi, fo)
+            os.replace(part, path + ".gz")
             os.remove(path)
         except Exception:
-            pass        # the uncompressed file stays; nothing lost
+            try:
+                os.remove(part)
+            except Exception:
+                pass    # the uncompressed file stays; nothing lost
 
     @staticmethod
     def _close_quietly(f):
