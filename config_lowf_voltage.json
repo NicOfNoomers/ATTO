@@ -1,0 +1,1178 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 1/6: set the bench supply to 2.50 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2000,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 2/6: set the bench supply to 2.00 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 2000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 3/6: set the bench supply to 1.50 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 1500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 4/6: set the bench supply to 1.00 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 5/6: set the bench supply to 0.80 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 6/6: set the bench supply to 2.50 V (limit 60 mA). Measure VM at the driver with the multimeter and type the MEASURED value, then confirm."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_1300",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_end",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Low frequency vs voltage",
+    "description": "MEASURE POWER ON. Flow and supply current at 1, 2, 5 Hz (60 s) and 10, 20, 50, 100 Hz (20 s) at 2.5, 2.0, 1.5, 1.0, 0.8 V and 2.5 V again, 600 and 1300 Hz references per level, 3 x 600 Hz 60 s conditioning at the start. Type the MEASURED VM at every voltage step. Supply limit 60 mA.",
+    "operator": "",
+    "pump_id": "261030-1",
+    "levels_mv": [
+      2500,
+      2000,
+      1500,
+      1000,
+      800,
+      2500
+    ],
+    "low_f_hz": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100
+    ],
+    "analysis": "Paper/analysis_2026-11-01_pump_261030-1 (q1-style extraction, zero-referenced dwell means)"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": true,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
