@@ -366,7 +366,8 @@ def linspace_int(a: int, b: int, n: int) -> List[int]:
 # host:port of supply_bridge.py) sets each voltage itself: no prompt, no window, the run goes on
 # once the output reads the new voltage. "pause": true on a block still waits for Done afterwards.
 SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10,
-                   "address": "", "channel": 1, "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True}
+                   "address": "", "channel": 1, "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True,
+                   "eol": "LF"}   # RS-D3305P V7.1 wants a line ending; the driver falls back for old KA firmware
 SUPPLY_MODES = ("manual", "rsd3305p")
 MAX_PLANNED_CHANGES = 2000   # cap for voltage steps inside long or endless groups
 # Pressure holds: the settling time is not known in advance; the plan counts this much per

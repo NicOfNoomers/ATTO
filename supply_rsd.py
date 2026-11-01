@@ -54,11 +54,13 @@ class RSDSupply:
     EOLS = {"": "", "none": "", "lf": "\n", "cr": "\r", "crlf": "\r\n"}
 
     def __init__(self, address: str, channel: int = 1, max_v: float = 2.5, timeout_s: float = 0.6,
-                 gap_s: float = 0.06, eol: str = "", baud: int = 9600):
+                 gap_s: float = 0.06, eol: str = "", baud: int = 9600, output_on: str = "OUT1",
+                 output_off: str = "OUT0"):
         self.address = parse_address(address)
         self.ch = int(channel)
         self.max_v = float(max_v)
         self.baud = int(baud)
+        self.out_cmds = (str(output_on or "OUT1"), str(output_off or "OUT0"))   # --probe-output finds them
         self.timeout_s, self.gap_s = float(timeout_s), float(gap_s)
         self.eol = self.EOLS[str(eol or "").strip().lower()]    # the KA protocol has none; "LF" if a firmware wants one
         self.ser = None
@@ -74,12 +76,18 @@ class RSDSupply:
                                          timeout=0.02, write_timeout=1.0)
         time.sleep(0.1)
         self._drain()
-        self.idn = self.query("*IDN?")
-        if not self.idn:
-            self.close()
-            raise SupplyError(f"no answer to *IDN? from {self.address} (supply on, cable/bridge connected, "
-                              f"right COM port? some firmwares want \"eol\": \"LF\" in supply)")
-        return self.idn
+        # Old KA firmware wants no line ending and ignores commands that have one; the RS-D3305P V7.1
+        # wants one. Try the configured ending first, then the others, and keep the one that answers.
+        for eol in [self.eol] + [e for e in ("", "\n", "\r\n") if e != self.eol]:
+            self.eol = eol
+            self.idn = self.query("*IDN?")
+            if self.idn:
+                return self.idn
+            time.sleep(0.3)               # let the supply drop the half command before the next try
+            self._drain()
+        self.close()
+        raise SupplyError(f"no answer to *IDN? from {self.address} with or without a line ending (supply on, "
+                          f"USB cable in, right COM port, baud rate? python supply_rsd.py {self.address} --probe)")
 
     def close(self):
         with self._lock:
@@ -177,7 +185,7 @@ class RSDSupply:
         raise SupplyError(f"supply kept ISET at {back * 1000:.0f} mA instead of {a * 1000:.0f} mA")
 
     def output(self, on: bool):
-        self.write("OUT1" if on else "OUT0")
+        self.write(self.out_cmds[0] if on else self.out_cmds[1])
 
     def read_settings(self) -> Dict[str, float]:
         """Set voltage (V) and current limit (A) of the channel."""
@@ -222,6 +230,7 @@ class DummySupply(RSDSupply):
         self.address, self.ch, self.max_v = "dummy", int(channel), float(max_v)
         self.r_ohm = float(r_ohm)
         self.vset, self.iset, self.on = 0.0, 0.1, False
+        self.out_cmds = ("OUT1", "OUT0")
         self.idn = "DUMMY RSD3305P (simulated)"
         self._lock = threading.RLock()
         self._rng = random.Random(3)
@@ -242,8 +251,8 @@ class DummySupply(RSDSupply):
             m = re.fullmatch(r"ISET\d:(\d+\.\d+)", cmd)
             if m:
                 self.iset = float(m.group(1))
-            if cmd in ("OUT1", "OUT0"):
-                self.on = cmd == "OUT1"
+            if cmd in self.out_cmds:
+                self.on = cmd == self.out_cmds[0]
 
     def _operating_point(self):
         if not self.on:
@@ -271,7 +280,8 @@ def make_supply(cfg: Dict[str, Any]) -> RSDSupply:
     ch = int(cfg.get("channel") or 1)
     if addr.lower() == "dummy":
         return DummySupply(channel=ch, max_v=max_v, r_ohm=float(cfg.get("dummy_r_ohm", 80.0)))
-    return RSDSupply(addr, channel=ch, max_v=max_v, eol=str(cfg.get("eol") or ""), baud=int(cfg.get("baud") or 9600))
+    return RSDSupply(addr, channel=ch, max_v=max_v, eol=str(cfg.get("eol") or ""), baud=int(cfg.get("baud") or 9600),
+                     output_on=cfg.get("output_on") or "OUT1", output_off=cfg.get("output_off") or "OUT0")
 
 
 def is_limiting(m: Dict[str, Any], v_set: Optional[float], i_set: Optional[float]) -> bool:
@@ -605,8 +615,118 @@ def probe(address: str, log_dir: str = ".") -> int:
     return 0 if hits else 1
 
 
+OUTPUT_CANDIDATES = [("OUT1", "OUT0"), ("OUTPUT1", "OUTPUT0"), ("OUT1:1", "OUT1:0"), ("OUT:1", "OUT:0"),
+                     ("OUT 1", "OUT 0"), ("OUTP 1", "OUTP 0"), ("OUTP ON", "OUTP OFF"), ("OUTPUT ON", "OUTPUT OFF"),
+                     ("OUTP1:1", "OUTP1:0"), ("OUTPUT1:1", "OUTPUT1:0")]
+
+
+def probe_output(address: str, channel: int = 1, baud: int = 9600, eol: str = "", log_dir: str = ".",
+                 assume_yes: bool = False) -> int:
+    """OUT1 didn't switch the output on: with CH1 at 1.00 V / 60 mA and nothing connected, try output-on
+    commands (each with every line ending) and check STATUS bit 6 and VOUT after each; switch off with
+    the matching command. Then ask the operator to press OUTPUT on the panel, to check that the driver
+    reads the output state right. Writes supply_output_probe_<time>.txt."""
+    rep = _Report(not assume_yes)
+    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol, "baud": baud})
+    rep.say(f"RSD3305P output-command probe {time.strftime('%Y-%m-%d %H:%M:%S')}, address {drv.address}")
+    try:
+        rep.check(True, f"connected: {drv.open()!r}, line ending {drv.eol!r}")
+    except Exception as e:
+        rep.check(False, f"connect: {e}")
+        rep.save(log_dir, "supply_output_probe")
+        return 1
+    ch, found = channel, None
+    orig = drv.read_settings()
+
+    def state():
+        raw = drv.query_raw("STATUS?")
+        st = raw[0] if raw else None
+        return st, drv._query_float(f"VOUT{ch}?")
+
+    def send(cmd, ending):
+        with drv._lock:
+            drv.ser.write((cmd + ending).encode("ascii"))
+            drv.ser.flush()
+            time.sleep(0.15)              # silence ends the command on terminator-less firmware
+            drv._last = clock()
+
+    def is_on(st, v):
+        return (st is not None and bool(st & 0x40)) or v > 0.5
+
+    try:
+        rep.say(f"CH{ch} gets 1.00 V / 60 mA; the outputs may switch on (all channels). Nothing connected, or only "
+                f"the multimeter.")
+        if rep.interactive:
+            rep.ask("Press Enter to start, Ctrl+C to stop ... ")
+        drv.set_current(0.060)
+        drv.set_voltage(1.0)
+        st, v = state()
+        rep.say(f"      start: status {_bits(st)}, output reads {v:.3f} V")
+        endings = [drv.eol] + [e for e in ("\n", "\r\n", "\r", "") if e != drv.eol]
+        for on_cmd, off_cmd in OUTPUT_CANDIDATES:
+            for ending in endings:
+                send(on_cmd, ending)
+                time.sleep(0.8)
+                st, v = state()
+                if is_on(st, v):
+                    found = (on_cmd, off_cmd, ending)
+                    rep.check(True, f"{on_cmd!r} + {ending!r} switched the output ON: status {_bits(st)}, {v:.3f} V")
+                    break
+            if found:
+                break
+            rep.say(f"      {on_cmd!r}: no effect with any line ending")
+        if found:
+            send(found[1], found[2])
+            time.sleep(0.8)
+            st, v = state()
+            rep.check(not is_on(st, v), f"{found[1]!r} switched it OFF again: status {_bits(st)}, {v:.3f} V")
+        else:
+            rep.check(False, "none of the output commands switched the output on")
+        for _, off_cmd in OUTPUT_CANDIDATES:                 # make sure it is off whatever worked
+            send(off_cmd, drv.eol)
+
+        if rep.interactive:
+            rep.say()
+            rep.say("Now the panel button, to check the readings:")
+            rep.ask("      Press the supply's OUTPUT button (output ON at 1.00 V), then Enter ... ")
+            time.sleep(0.5)
+            st, v = state()
+            rep.check(is_on(st, v), f"output switched on by hand is seen: status {_bits(st)}, output reads {v:.3f} V")
+            x = rep.ask_number("      Multimeter reading on CH1 in V? (Enter = skip) ")
+            if x is not None:
+                rep.say(f"      multimeter {x:.3f} V, supply reads {v:.3f} V")
+            rep.ask("      Press OUTPUT again (output OFF), then Enter ... ")
+            time.sleep(0.5)
+            st, v = state()
+            rep.check(not is_on(st, v), f"output switched off by hand is seen: status {_bits(st)}, output reads {v:.3f} V")
+    except KeyboardInterrupt:
+        rep.say("stopped by Ctrl+C")
+    except Exception as e:
+        rep.check(False, f"stopped by an error: {e}")
+    finally:
+        try:
+            for _, off_cmd in OUTPUT_CANDIDATES:
+                send(off_cmd, drv.eol)
+            drv.write(f"VSET{ch}:{orig['v_set']:05.2f}")
+            drv.write(f"ISET{ch}:{orig['i_set']:05.3f}")
+            rep.say(f"      restored CH{ch} {orig['v_set']:.2f} V / {orig['i_set'] * 1000:.0f} mA")
+        except Exception as e:
+            rep.say(f"      could not restore the settings: {e}")
+        drv.close()
+    rep.say()
+    if found:
+        rep.say(f"Output command on this unit: {found[0]!r} / {found[1]!r} with line ending {found[2]!r}. "
+                f"Send this log to Nic's Claude session.")
+    else:
+        rep.say("No output command worked. Send this log to Nic's Claude session (the panel-button part shows "
+                "whether the readings are right).")
+    rep.save(log_dir, "supply_output_probe")
+    return 0 if found else 1
+
+
 def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = False, log_dir: str = ".",
-             load: bool = True, only_load: bool = False, baud: int = 9600) -> int:
+             load: bool = True, only_load: bool = False, baud: int = 9600, output_on: str = "OUT1",
+             output_off: str = "OUT0") -> int:
     """Everything the dashboard relies on: connection and identity, set + read back, output on/off,
     the voltage at the terminals (supply reading, and the operator's multimeter if typed in), steps up
     to 2.5 V and how fast the output follows, what the STATUS bits mean on this unit, the spacing the
@@ -614,7 +734,8 @@ def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = F
     when asked) the current limit. Restores the old settings with the output off. Writes
     supply_selftest_<time>.txt. Returns the number of failed checks."""
     rep = _Report(not assume_yes)
-    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol, "baud": baud})
+    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol, "baud": baud,
+                       "output_on": output_on, "output_off": output_off})
     rep.say(f"RSD3305P self-test {time.strftime('%Y-%m-%d %H:%M:%S')}, address {drv.address}, channel {channel}")
     t = clock()
     try:
@@ -670,7 +791,12 @@ def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = F
             rep.check(abs(drv.set_voltage(1.0) - 1.0) < 1e-6, "1.00 V set and read back")
             t = clock()
             drv.output(True)
-            m = drv.wait_for(1.0, 0.05, 10.0)
+            try:
+                m = drv.wait_for(1.0, 0.05, 10.0)
+            except SupplyError:
+                rep.say(f"      {drv.out_cmds[0]!r} did not switch the output on: run "
+                        f"python supply_rsd.py {address} --probe-output")
+                raise
             rep.check(True, f"output on: supply reads {m['v']:.3f} V / {m['i'] * 1000:.1f} mA after {clock() - t:.2f} s")
             st_on = drv.status()
             rep.say(f"      output on, no load: status {_bits(st_on)}")
@@ -754,7 +880,8 @@ def main(argv=None):
         python supply_rsd.py COM7 --load-test      only the current-limit test (resistor / meter on mA)
         python supply_rsd.py labpc:5025 --set 1.5  set 1.5 V (limit --limit-ma, default 60), output on, read
         python supply_rsd.py COM7 --off            output off
-        python supply_rsd.py COM7 --probe          no answer? try baud rates / line endings (queries only)"""
+        python supply_rsd.py COM7 --probe          no answer? try baud rates / line endings (queries only)
+        python supply_rsd.py COM7 --probe-output   output doesn't switch on? find the on/off command"""
     import argparse
     ap = argparse.ArgumentParser(description="RSD3305P bench check")
     ap.add_argument("address", help="COM7, host:port (supply_bridge.py) or dummy")
@@ -770,14 +897,20 @@ def main(argv=None):
     ap.add_argument("--no-load", action="store_true", help="self-test without the current-limit part")
     ap.add_argument("--yes", action="store_true", help="no prompts (skips the multimeter and load parts)")
     ap.add_argument("--baud", type=int, default=9600)
+    ap.add_argument("--out-on", default="OUT1", help="output-on command (from --probe-output)")
+    ap.add_argument("--out-off", default="OUT0", help="output-off command")
     ap.add_argument("--probe", action="store_true", help="find baud rate / line ending when *IDN? gets no answer")
+    ap.add_argument("--probe-output", action="store_true", help="find the output on/off command (1.00 V, 60 mA)")
     a = ap.parse_args(argv)
     if a.probe:
         return probe(a.address)
+    if a.probe_output:
+        return probe_output(a.address, a.ch, a.baud, a.eol, assume_yes=a.yes)
     if a.selftest or a.load_test:
         return 1 if selftest(a.address, a.ch, a.eol, a.yes, load=not a.no_load, only_load=a.load_test,
-                             baud=a.baud) else 0
-    cfg = {"address": a.address, "channel": a.ch, "max_mv": a.max * 1000, "eol": a.eol, "baud": a.baud}
+                             baud=a.baud, output_on=a.out_on, output_off=a.out_off) else 0
+    cfg = {"address": a.address, "channel": a.ch, "max_mv": a.max * 1000, "eol": a.eol, "baud": a.baud,
+           "output_on": a.out_on, "output_off": a.out_off}
     drv = make_supply(cfg)
     print("IDN:", drv.open())
     try:
