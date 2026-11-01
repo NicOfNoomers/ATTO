@@ -198,6 +198,7 @@ def clock_info() -> Dict[str, Any]:
 
 _HIRES_USERS = 0
 _HIRES_LOCK = threading.Lock()
+_HIRES_RELEASE_LOCK = threading.Lock()     # a session's release can come from two threads
 _SWITCH_INTERVAL_DEFAULT = sys.getswitchinterval()
 RUN_SWITCH_INTERVAL_S = 0.0005
 
@@ -270,6 +271,23 @@ MEM_CRITICAL_MB = 400.0    # flush data + shed load (stop video) below this
 
 
 # ---------------- util ----------------
+def write_json_atomic(path: str, doc: Dict[str, Any]) -> bool:
+    """Write path via path.tmp + rename; on failure the .tmp is removed (a 0-byte status.json.tmp
+    was left in a run folder on the share, 30 Oct)."""
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2, default=str)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
 def iso_now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -355,6 +373,7 @@ def linspace_int(a: int, b: int, n: int) -> List[int]:
 # Its nominal duration is settle_s. The operator's delay is unknown in advance,
 # so run ETAs are "nominal time + window waits + your confirmation delays".
 SUPPLY_DEFAULTS = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "lead_min": 10}
+POST_RUN_TAIL_S = 10.0       # default power.post_run_tail_s: recording after the last block, pump at 0 Hz
 MAX_PLANNED_CHANGES = 2000   # cap for voltage steps inside long or endless groups
 # Pressure holds: the settling time is not known in advance; the plan counts this much per
 # hold (a PQ point = this + measure_s). Syringe clearing by hand comes on top.
@@ -1007,9 +1026,10 @@ class LiveSessionBase:
     _hires = False
 
     def _release_hires(self):
-        if self._hires:
-            hires_timer(False)
-            self._hires = False
+        with _HIRES_RELEASE_LOCK:
+            if self._hires:
+                hires_timer(False)
+                self._hires = False
 
     def overlay_info(self) -> Tuple[float, int, float]:
         """(t_s, frequency, latest flow) for the optional video overlay."""
@@ -1409,6 +1429,8 @@ class PumpTestRunner(LiveSessionBase):
         self.meter = None
         self._ser_lock = threading.Lock()   # the power meter's trip handler also writes to the Arduino
         self._force_zero = False            # after a power trip every frequency command becomes 0 Hz
+        self._teardown_lock = threading.Lock()
+        self._torn_down = False
         self._last_cmd: Optional[Tuple[float, float]] = None   # (t_cmd_s, t_cmd_done_s) of the last frequency command
         # Operator pauses other than voltage steps (clearing the syringe by hand), PQ points
         self.operator_request: Optional[Dict[str, Any]] = None
@@ -1901,6 +1923,12 @@ class PumpTestRunner(LiveSessionBase):
         self._set_duty(0.0)
 
     def _teardown_hardware(self):
+        """Pump to 0 Hz, close pressure control, PPK2, serial, flow sensor and logger. Runs once:
+        at the end of the sequence (_end_sequence) and again harmlessly from join()."""
+        with self._teardown_lock:
+            if self._torn_down:
+                return
+            self._torn_down = True
         try:
             if bool(self.cfg.get("send_zero_on_exit", True)):
                 self._set_freq(0)
@@ -2131,7 +2159,41 @@ class PumpTestRunner(LiveSessionBase):
                 self.t_end = CLOCK()
                 self.voltage_request = None
                 self.operator_request = None
+            self._end_sequence(log_event)
+
+    def _end_sequence(self, log_event):
+        """The sequence is over (complete, stopped, tripped or crashed). Pump to 0 Hz, record an
+        optional tail (power.post_run_tail_s, only when it finished on its own; Stop cuts it short),
+        then stop everything that records: PPK2 (last bins file gzipped, summary.json, port released),
+        pressure control, flow, serial, logger and the video. Before this fix that only happened on
+        Stop or when the app closed, so finished runs kept recording power and video for days."""
+        try:
+            if not self.stop_flag.is_set():
+                self._set_freq(0)
+                log_event()
+                pcfg = self.cfg.get("power") or {}
+                tail = max(0.0, safe_float(pcfg.get("post_run_tail_s", POST_RUN_TAIL_S), POST_RUN_TAIL_S))
+                if tail > 0:
+                    self._emit("status", f"Test sequence complete; recording a {tail:g} s tail, then stopping.")
+                    self.stop_flag.wait(tail)
+        except Exception:
+            log_exception("PumpTestRunner: end of sequence (tail) failed")
+        finally:
             self.stop_flag.set()
+            try:
+                if self.t_sample is not None and self.t_sample is not threading.current_thread():
+                    self.t_sample.join(timeout=3.0)
+                self._teardown_hardware()
+            except Exception:
+                log_exception("PumpTestRunner: teardown at the end of the sequence failed")
+            try:
+                vr = self.video_recorder
+                if vr is not None and vr.is_recording():
+                    vr.stop_recording()
+            except Exception:
+                log_exception("PumpTestRunner: stopping the video at the end of the sequence failed")
+            self._release_hires()
+            self._emit("run_finished", None)
 
     def start(self, before_run: Optional[Callable[[], Any]] = None):
         """Open hardware, set t0, start sampling, call before_run (e.g. start the
@@ -3581,7 +3643,8 @@ class DashboardApp:
             self._last_bell = time.monotonic()
             self.root.bell()
 
-        if self.run_dir and time.monotonic() - self._last_status_json >= 10.0:
+        # not while stopping: the stop thread writes the final status.json and must not be overwritten
+        if self.run_dir and not getattr(self, "_stopping", False) and time.monotonic() - self._last_status_json >= 10.0:
             self._last_status_json = time.monotonic()
             self._write_status_json(self.run_dir, now, p, proj, shift)
 
@@ -3709,12 +3772,27 @@ class DashboardApp:
             "power": self.active_stream.get_power_live() if self.active_stream is not None else None,
         }
         path = os.path.join(run_dir, "status.json")
-        try:
-            with open(path + ".tmp", "w", encoding="utf-8") as f:
-                json.dump(doc, f, indent=2)
-            os.replace(path + ".tmp", path)
-        except Exception:
+        if not write_json_atomic(path, doc):
             log_exception_limited("status_json", f"Could not write {path}")
+
+    @staticmethod
+    def _final_status_json(run_dir: str, stream: "PumpTestRunner", stopped_by_user: bool):
+        """Last heartbeat after the session ended (no Tk calls: runs in the stop thread)."""
+        path = os.path.join(run_dir, "status.json")
+        doc: Dict[str, Any] = {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+        except Exception:
+            pass
+        p = stream.get_progress()
+        doc.update({"updated": datetime.now().isoformat(timespec="seconds"),
+                    "status": "stopped" if stopped_by_user else "finished",
+                    "finished": True, "elapsed_s": round(p["elapsed_s"], 1), "remaining_s": 0.0,
+                    "waiting_for_voltage": None, "next_voltage_changes": [],
+                    "power": stream.get_power_live()})
+        if not write_json_atomic(path, doc):
+            log_exception_limited("status_json", f"Could not write the final {path}")
 
     def _schedule_text(self) -> str:
         now = datetime.now()
@@ -5294,8 +5372,9 @@ class DashboardApp:
             self.stop_active()
 
     def stop_active(self):
-        if not self.active_stream:
+        if not self.active_stream or getattr(self, "_stopping", False):
             return
+        self._stopping = True
         self.var_status.set("Stopping ...")
         self.btn_stop.config(state=tk.DISABLED)
         threading.Thread(target=self._join_active_bg, daemon=True).start()
@@ -5310,8 +5389,11 @@ class DashboardApp:
             # Capture data before stopping the stream
             if stream is not None:
                 captured_data = stream.get_plot_data()
+                by_user = isinstance(stream, PumpTestRunner) and stream.t_end is None
                 stream.stop()
                 stream.join(timeout=5.0)
+                if run_dir and isinstance(stream, PumpTestRunner):
+                    self._final_status_json(run_dir, stream, by_user)
         except Exception:
             log_exception("Stop: failed while stopping the session")
         finally:
@@ -5326,6 +5408,7 @@ class DashboardApp:
 
     def _on_session_ended(self, run_dir: Optional[str], captured_data):
         """Main thread: reset the controls after a session ended."""
+        self._stopping = False
         self.btn_stop.config(state=tk.DISABLED)
         self.btn_start.config(state=tk.NORMAL if self.var_mode.get() == "scheduled" else tk.DISABLED)
         self.btn_manual_connect.config(state=tk.NORMAL)
@@ -5427,6 +5510,11 @@ class DashboardApp:
                     self._on_pip_done(*payload)
                 elif kind == "session_ended":
                     self._on_session_ended(*payload)
+                elif kind == "run_finished":
+                    # The runner already stopped its hardware and the video; reset the UI the same way
+                    # as Stop (summary plot, PQ plot, final status.json)
+                    if isinstance(self.active_stream, PumpTestRunner) and self.active_stream.t_end is not None:
+                        self.stop_active()
                 elif kind == "error":
                     self.var_status.set(payload)
                     try:
