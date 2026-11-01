@@ -54,10 +54,11 @@ class RSDSupply:
     EOLS = {"": "", "none": "", "lf": "\n", "cr": "\r", "crlf": "\r\n"}
 
     def __init__(self, address: str, channel: int = 1, max_v: float = 2.5, timeout_s: float = 0.6,
-                 gap_s: float = 0.06, eol: str = ""):
+                 gap_s: float = 0.06, eol: str = "", baud: int = 9600):
         self.address = parse_address(address)
         self.ch = int(channel)
         self.max_v = float(max_v)
+        self.baud = int(baud)
         self.timeout_s, self.gap_s = float(timeout_s), float(gap_s)
         self.eol = self.EOLS[str(eol or "").strip().lower()]    # the KA protocol has none; "LF" if a firmware wants one
         self.ser = None
@@ -69,7 +70,7 @@ class RSDSupply:
     def open(self):
         import serial
         # read timeout = the silence that ends an answer (bytes come ~1 ms apart at 9600 baud)
-        self.ser = serial.serial_for_url(self.address, baudrate=9600, bytesize=8, parity="N", stopbits=1,
+        self.ser = serial.serial_for_url(self.address, baudrate=self.baud, bytesize=8, parity="N", stopbits=1,
                                          timeout=0.02, write_timeout=1.0)
         time.sleep(0.1)
         self._drain()
@@ -270,7 +271,7 @@ def make_supply(cfg: Dict[str, Any]) -> RSDSupply:
     ch = int(cfg.get("channel") or 1)
     if addr.lower() == "dummy":
         return DummySupply(channel=ch, max_v=max_v, r_ohm=float(cfg.get("dummy_r_ohm", 80.0)))
-    return RSDSupply(addr, channel=ch, max_v=max_v, eol=str(cfg.get("eol") or ""))
+    return RSDSupply(addr, channel=ch, max_v=max_v, eol=str(cfg.get("eol") or ""), baud=int(cfg.get("baud") or 9600))
 
 
 def is_limiting(m: Dict[str, Any], v_set: Optional[float], i_set: Optional[float]) -> bool:
@@ -415,8 +416,8 @@ class _Report:
             except ValueError:
                 self.say("      type a number like 1.002, or just Enter to skip")
 
-    def save(self, log_dir: str):
-        path = os.path.join(log_dir, time.strftime("supply_selftest_%Y%m%d_%H%M%S.txt"))
+    def save(self, log_dir: str, prefix: str = "supply_selftest"):
+        path = os.path.join(log_dir, time.strftime(prefix + "_%Y%m%d_%H%M%S.txt"))
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write("\n".join(self.lines) + "\n")
@@ -539,8 +540,73 @@ def _load_test(drv: RSDSupply, rep: _Report, ch: int, v: float = 2.0):
             rep.ask("      Output is OFF, limit back at 60 mA. Disconnect the load, then Enter ... ")
 
 
+def probe(address: str, log_dir: str = ".") -> int:
+    """No answer to *IDN?: try baud rates x line endings x DTR/RTS with harmless queries only (Korad
+    and SCPI style) and print every answer. Stops after the first baud rate that answers."""
+    import serial
+    queries = ["*IDN?", "VSET1?", "STATUS?"]           # SCPI instruments answer *IDN? too
+    eols = [("none", ""), ("LF", "\n"), ("CRLF", "\r\n"), ("CR", "\r")]
+    rep = _Report(False)
+    rep.say(f"RSD3305P probe {time.strftime('%Y-%m-%d %H:%M:%S')}, address {address}: queries only, nothing is set")
+    rep.say("Watch the supply's display: a remote / lock indicator lighting up means it hears us.")
+    hits = []
+    url = parse_address(address)
+    try:
+        for dtr in (True, False):
+            for baud in (9600, 115200, 19200, 38400, 57600, 4800):
+                try:
+                    ser = serial.serial_for_url(url, baudrate=baud, timeout=0.05, do_not_open=True)
+                    ser.dtr = ser.rts = dtr
+                    ser.open()
+                except Exception as e:
+                    rep.say(f"FAIL  cannot open {url} at {baud}: {e}")
+                    _list_ports(rep)
+                    rep.save(log_dir, "supply_probe")
+                    return 1
+                time.sleep(0.2)
+                n_before = len(hits)
+                try:
+                    for eol_name, eol in eols:
+                        for q in queries:
+                            ser.reset_input_buffer()
+                            ser.write((q + eol).encode("ascii"))
+                            ser.flush()
+                            data, t_end = b"", clock() + 0.4
+                            while clock() < t_end:
+                                chunk = ser.read(64)
+                                if chunk:
+                                    data += chunk
+                                elif data:
+                                    break
+                            if data:
+                                hits.append((baud, eol_name, dtr, q, data))
+                                rep.say(f"ANSWER  {baud} baud, end {eol_name:4s}, DTR/RTS {'on' if dtr else 'off'}: "
+                                        f"{q!r} -> {data!r} (hex {data.hex(' ')})")
+                            time.sleep(0.12)        # silence: ends the command on a terminator-less supply
+                finally:
+                    ser.close()
+                rep.say(f"      {baud:6d} baud, DTR/RTS {'on' if dtr else 'off'}: {len(hits) - n_before} answers")
+                if len(hits) > n_before:
+                    break
+            if hits:
+                break
+    except KeyboardInterrupt:
+        rep.say("stopped by Ctrl+C")
+    rep.say()
+    if hits:
+        b, e, d, _, _ = hits[0]
+        rep.say(f"It answers at {b} baud, line end {e}, DTR/RTS {'on' if d else 'off'}. Send this log to Nic's Claude session.")
+        rep.say(f"Then try: python supply_rsd.py {address} --selftest --baud {b}" + (f" --eol {e}" if e != "none" else ""))
+    else:
+        rep.say("No answer at any setting. Check: USB cable in the supply's USB port (not only power), supply")
+        rep.say("switched on, no other program (e.g. the maker's PC software) using the port, and on the supply")
+        rep.say("whether remote control has to be enabled or the interface set to USB in a menu.")
+    rep.save(log_dir, "supply_probe")
+    return 0 if hits else 1
+
+
 def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = False, log_dir: str = ".",
-             load: bool = True, only_load: bool = False) -> int:
+             load: bool = True, only_load: bool = False, baud: int = 9600) -> int:
     """Everything the dashboard relies on: connection and identity, set + read back, output on/off,
     the voltage at the terminals (supply reading, and the operator's multimeter if typed in), steps up
     to 2.5 V and how fast the output follows, what the STATUS bits mean on this unit, the spacing the
@@ -548,7 +614,7 @@ def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = F
     when asked) the current limit. Restores the old settings with the output off. Writes
     supply_selftest_<time>.txt. Returns the number of failed checks."""
     rep = _Report(not assume_yes)
-    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol})
+    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol, "baud": baud})
     rep.say(f"RSD3305P self-test {time.strftime('%Y-%m-%d %H:%M:%S')}, address {drv.address}, channel {channel}")
     t = clock()
     try:
@@ -687,7 +753,8 @@ def main(argv=None):
         python supply_rsd.py COM7 --selftest       full check: multimeter prompts, current limit with a load
         python supply_rsd.py COM7 --load-test      only the current-limit test (resistor / meter on mA)
         python supply_rsd.py labpc:5025 --set 1.5  set 1.5 V (limit --limit-ma, default 60), output on, read
-        python supply_rsd.py COM7 --off            output off"""
+        python supply_rsd.py COM7 --off            output off
+        python supply_rsd.py COM7 --probe          no answer? try baud rates / line endings (queries only)"""
     import argparse
     ap = argparse.ArgumentParser(description="RSD3305P bench check")
     ap.add_argument("address", help="COM7, host:port (supply_bridge.py) or dummy")
@@ -702,10 +769,15 @@ def main(argv=None):
     ap.add_argument("--load-test", action="store_true", help="only the current-limit test (load on the output)")
     ap.add_argument("--no-load", action="store_true", help="self-test without the current-limit part")
     ap.add_argument("--yes", action="store_true", help="no prompts (skips the multimeter and load parts)")
+    ap.add_argument("--baud", type=int, default=9600)
+    ap.add_argument("--probe", action="store_true", help="find baud rate / line ending when *IDN? gets no answer")
     a = ap.parse_args(argv)
+    if a.probe:
+        return probe(a.address)
     if a.selftest or a.load_test:
-        return 1 if selftest(a.address, a.ch, a.eol, a.yes, load=not a.no_load, only_load=a.load_test) else 0
-    cfg = {"address": a.address, "channel": a.ch, "max_mv": a.max * 1000, "eol": a.eol}
+        return 1 if selftest(a.address, a.ch, a.eol, a.yes, load=not a.no_load, only_load=a.load_test,
+                             baud=a.baud) else 0
+    cfg = {"address": a.address, "channel": a.ch, "max_mv": a.max * 1000, "eol": a.eol, "baud": a.baud}
     drv = make_supply(cfg)
     print("IDN:", drv.open())
     try:

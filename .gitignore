@@ -46,3 +46,4 @@ pump_runs/
 
 # RSD3305P self-test logs (supply_rsd.py --selftest)
 supply_selftest_*.txt
+supply_probe_*.txt
