@@ -1312,7 +1312,24 @@ class ManualSession(LiveSessionBase):
         got = self._apply_supply_mv(float(mv))
         if self.meter:
             self.meter.set_voltage(mv)
+        if self.supply_mon is not None:
+            self.supply_mon.rearm()
         return got
+
+    def set_supply_limit(self, ma: float) -> float:
+        """Panel 'Apply limit': lower the supply's current limit (at most the session's Bench limit),
+        e.g. to watch the supply limit the running pump and the CC trip switch it off. The PPK2 trip
+        level stays at 95 % of the Bench limit, so only the supply trip fires below it. Returns mA."""
+        if self.supply is None:
+            raise RuntimeError("no programmable supply in this session (Supply control: RSD3305P)")
+        cap = safe_float(self._supply_settings().get("current_limit_ma"), 60.0)
+        if not 0.0 < ma <= cap:
+            raise ValueError(f"limit {ma:g} mA: allowed 1..{cap:g} mA (the session's Bench limit)")
+        got = self.supply.set_current(ma / 1000.0)
+        if self.supply_mon is not None:
+            self.supply_mon.i_set = got
+            self.supply_mon.rearm()
+        return got * 1000.0
 
     def _setup_hardware(self):
         port = self.cfg.get("port", "COM22")
@@ -1400,6 +1417,8 @@ class ManualSession(LiveSessionBase):
 
     def set_output_enabled(self, enabled: bool):
         enabled = bool(enabled)
+        if enabled and self.supply_mon is not None:
+            self.supply_mon.rearm()
         with self.lock:
             self.output_enabled = enabled
             f = self.freq_set
@@ -3176,7 +3195,14 @@ class DashboardApp:
         ent.pack(side=tk.LEFT, padx=4)
         ent.bind("<Return>", lambda _e: self._supply_apply())
         ttk.Button(rs2, text="Apply (manual session)", command=self._supply_apply).pack(side=tk.LEFT, padx=2)
-        ttk.Label(rs2, text="address: COM7, host:5025 (supply_bridge.py) or dummy").pack(side=tk.LEFT, padx=6)
+        rs3 = ttk.Frame(parent); rs3.pack(side=tk.TOP, fill=tk.X, padx=8, pady=2)
+        ttk.Label(rs3, text="Limit now (mA):").pack(side=tk.LEFT)
+        self.var_supply_lim_now = tk.StringVar(value="")
+        ent = ttk.Entry(rs3, textvariable=self.var_supply_lim_now, width=7)
+        ent.pack(side=tk.LEFT, padx=4)
+        ent.bind("<Return>", lambda _e: self._supply_apply_limit())
+        ttk.Button(rs3, text="Apply limit (manual session)", command=self._supply_apply_limit).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rs3, text="address: COM7, host:5025 (supply_bridge.py) or dummy").pack(side=tk.LEFT, padx=6)
         self.lbl_supply_live = tk.Label(parent, textvariable=self.var_supply_live, anchor="w", wraplength=380,
                                         justify=tk.LEFT)
         self.lbl_supply_live.pack(side=tk.TOP, fill=tk.X, padx=8, pady=(0, 4))
@@ -3338,6 +3364,23 @@ class DashboardApp:
             return
         self._supply_bg(f"Setting the supply to {mv / 1000:.3f} V ...",
                         lambda: f"Supply set to {mv / 1000:.3f} V, output reads {s.set_supply_voltage(mv) / 1000:.3f} V.")
+
+    def _supply_apply_limit(self):
+        """Lower the current limit in a manual session (at most the Bench limit): with the pump running
+        this shows where the supply starts limiting; the CC trip then switches the pump output off."""
+        s = self.active_stream
+        if not isinstance(s, ManualSession) or s.supply is None:
+            messagebox.showinfo("Supply", "Connect a manual session with Supply control = rsd3305p first.")
+            return
+        ma = safe_float(self.var_supply_lim_now.get().strip().replace(",", "."), -1.0)
+        cap = safe_float(s._supply_settings().get("current_limit_ma"), 60.0)
+        if not 0.0 < ma <= cap:
+            messagebox.showerror("Supply", f"Type a limit between 1 and {cap:g} mA (the session's Bench limit; "
+                                           f"raise that before connecting if you need more).")
+            return
+        self._supply_bg(f"Setting the current limit to {ma:g} mA ...",
+                        lambda: f"Current limit now {s.set_supply_limit(ma):.0f} mA. If the supply limits for 2 s "
+                                f"the pump output is switched off.")
 
     def _update_supply_ui(self):
         s = self.active_stream

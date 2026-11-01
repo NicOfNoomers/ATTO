@@ -43,3 +43,6 @@ pump_runs/
 *.log
 *.csv
 *.json
+
+# RSD3305P self-test logs (supply_rsd.py --selftest)
+supply_selftest_*.txt

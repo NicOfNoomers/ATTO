@@ -306,6 +306,7 @@ class SupplyMonitor:
         self._f = self._w = None
         self.t0: Optional[float] = None
         self.tripped = False
+        self._cc_run = 0
         self.lock = threading.Lock()
 
     def start(self, t0: float):
@@ -331,12 +332,18 @@ class SupplyMonitor:
                 pass
             self._f = None
 
+    def rearm(self):
+        """Allow another trip (manual session: output switched on again, limit or voltage changed)."""
+        self._cc_run = 0
+        self.tripped = False
+
     def get_live(self) -> Dict[str, Any]:
         with self.lock:
             return dict(self.live)
 
     def _loop(self):
-        cc_run, errors = 0, 0
+        errors = 0
+        self._cc_run = 0
         while not self._stop.is_set():
             t_next = clock() + self.period_s
             try:
@@ -361,16 +368,324 @@ class SupplyMonitor:
                 self._w.writerow([f"{t_s:.3f}", "" if self.v_set is None else f"{self.v_set:.3f}", f"{m['v']:.3f}",
                                   f"{m['i'] * 1000:.2f}", mode, int(m["output"]), m["status"]])
                 self._f.flush()
-            cc_run = cc_run + 1 if limiting else 0
-            if cc_run >= self.cc_trip_n and not self.tripped and self.on_trip:
+            self._cc_run = self._cc_run + 1 if limiting else 0
+            if self._cc_run >= self.cc_trip_n and not self.tripped and self.on_trip:
                 self.tripped = True
-                self.on_trip({"v": m["v"], "i_ma": m["i"] * 1000.0, "n": cc_run, "period_s": self.period_s})
+                self.on_trip({"v": m["v"], "i_ma": m["i"] * 1000.0, "n": self._cc_run, "period_s": self.period_s})
             self._stop.wait(max(0.0, t_next - clock()))
+
+
+def _bits(st: Optional[int]) -> str:
+    if st is None:
+        return "no answer"
+    return (f"0x{st:02X} = {st:08b}: CH1 {'CV' if st & 1 else 'CC'} (bit 0), CH2 {'CV' if st & 2 else 'CC'} (bit 1), "
+            f"output {'on' if st & 0x40 else 'off'} (bit 6)")
+
+
+class _Report:
+    """Self-test console + log lines, PASS/FAIL tally, operator prompts (none with --yes)."""
+
+    def __init__(self, interactive: bool):
+        self.lines, self.fails, self.interactive = [], [], interactive
+
+    def say(self, s: str = ""):
+        print(s, flush=True)
+        self.lines.append(s)
+
+    def check(self, ok: bool, what: str) -> bool:
+        self.say(("PASS  " if ok else "FAIL  ") + what)
+        if not ok:
+            self.fails.append(what)
+        return ok
+
+    def ask(self, prompt: str) -> str:
+        if not self.interactive:
+            return ""
+        ans = input(prompt).strip()           # Ctrl+C stops the test (settings are restored)
+        self.lines.append(prompt + ans)
+        return ans
+
+    def ask_number(self, prompt: str) -> Optional[float]:
+        while True:
+            ans = self.ask(prompt).lower().replace(",", ".").rstrip("vam ").strip()
+            if not ans:
+                return None
+            try:
+                return float(ans)
+            except ValueError:
+                self.say("      type a number like 1.002, or just Enter to skip")
+
+    def save(self, log_dir: str):
+        path = os.path.join(log_dir, time.strftime("supply_selftest_%Y%m%d_%H%M%S.txt"))
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(self.lines) + "\n")
+            print(f"log: {os.path.abspath(path)}")
+        except OSError as e:
+            print(f"could not write the log: {e}")
+
+
+def _list_ports(rep: _Report):
+    try:
+        from serial.tools import list_ports
+        ports = list(list_ports.comports())
+    except Exception as e:
+        rep.say(f"      (could not list serial ports: {e})")
+        return
+    rep.say("      serial ports on this PC:" if ports else "      no serial ports on this PC (USB cable, supply on?)")
+    for p in ports:
+        rep.say(f"        {p.device:8s} {p.description}  [{p.hwid}]")
+
+
+def _meter_check(drv: RSDSupply, rep: _Report, ch: int, v_set: float):
+    """The operator's multimeter on the terminals vs the set voltage and the supply's own reading."""
+    v_read = drv.measure()["v"]
+    x = rep.ask_number(f"      Multimeter (V DC) on CH{ch} + and -: reading in V? (Enter = skip) ")
+    if x is None:
+        rep.say(f"      multimeter check at {v_set:.2f} V skipped (supply reads {v_read:.3f} V at its terminals)")
+        return
+    rep.check(abs(x - v_set) <= 0.05, f"multimeter {x:.3f} V at {v_set:.2f} V set (supply reads {v_read:.3f} V, "
+                                      f"meter - supply = {(x - v_read) * 1000:+.0f} mV; pass = within 50 mV of set)")
+
+
+def _probe_spacing(drv: RSDSupply, rep: _Report, ch: int):
+    """The supply ends a command by silence: send set + read-back pairs closer and closer together
+    (output off) and see where it stops understanding them."""
+    rep.say()
+    rep.say("Command spacing (output off): the supply only knows a command ended when the line goes quiet.")
+    saved, good = drv.gap_s, []
+    try:
+        for gap in (0.06, 0.04, 0.03, 0.02, 0.01):
+            drv.gap_s = gap
+            n_ok = 0
+            for k in range(6):
+                v = 1.1 + 0.1 * (k % 4)
+                drv.write(f"VSET{ch}:{v:05.2f}")
+                try:
+                    n_ok += abs(drv._query_float(f"VSET{ch}?") - v) < 0.006
+                except SupplyError:
+                    pass
+            rep.say(f"      {gap * 1000:3.0f} ms between commands: {n_ok}/6 set + read-back pairs understood")
+            if n_ok == 6:
+                good.append(gap)
+    finally:
+        drv.gap_s = saved
+        if getattr(drv, "ser", None) is not None:
+            time.sleep(0.3)
+            drv._drain()
+    rep.check(saved in good, f"commands understood at the driver's {saved * 1000:.0f} ms spacing"
+                             + (f" (worked down to {min(good) * 1000:.0f} ms)" if good else ""))
+    back = drv.set_voltage(1.0)
+    rep.check(bool(drv.query("*IDN?")) and abs(back - 1.0) < 1e-6, "supply answers normally after the fast commands")
+
+
+def _load_test(drv: RSDSupply, rep: _Report, ch: int, v: float = 2.0):
+    """Current limit with a load: step the limit down, log V / I / CC, check that the voltage drops once
+    the supply limits and that the dashboard's CC trip (is_limiting) sees it, and doesn't see a load
+    that is below the limit."""
+    rep.say()
+    rep.say(f"Current-limit test: needs a load on CH{ch}: a resistor (47-100 ohm, at least 0.25 W), or the")
+    rep.say("multimeter on its mA range across the terminals (that is a short: the supply limits at every step).")
+    drv.output(False)
+    if rep.interactive and rep.ask("      Output is OFF. Connect the load, then Enter (s = skip) ... ").lower().startswith("s"):
+        rep.say("      current-limit test skipped")
+        return
+    try:
+        drv.set_current(0.060)
+        drv.set_voltage(v)
+        drv.output(True)
+        time.sleep(1.0)
+        m0 = drv.measure()
+        rep.say(f"      {v:.2f} V, limit 60 mA: reads {m0['v']:.3f} V / {m0['i'] * 1000:.1f} mA, status "
+                f"{'CV' if m0['cv'] else 'CC'}")
+        if m0["i"] < 0.002:
+            rep.check(False, "current-limit test: no current flows (is the load connected?)")
+            return
+        short = m0["v"] < v - 0.05            # the load wants 60 mA or more
+        i_cv = None if short else m0["i"]
+        rep.say("      load wants >= 60 mA (short or low resistance)" if short else
+                f"      load ~{m0['v'] / m0['i']:.0f} ohm, draws {m0['i'] * 1000:.1f} mA at {v:.2f} V")
+        rep.say(f"      {'limit':>8}  {'V out':>8}  {'I out':>8}  status bit  dashboard sees")
+        rows = []
+        for lim_ma in (60, 40, 30, 20, 10, 5):
+            drv.set_current(lim_ma / 1000.0)
+            time.sleep(0.8)
+            m = drv.measure()
+            lim = is_limiting(m, v, lim_ma / 1000.0)
+            rows.append((lim_ma, m, lim))
+            rep.say(f"      {lim_ma:>5} mA  {m['v']:>6.3f} V  {m['i'] * 1000:>5.1f} mA  {'CV' if m['cv'] else 'CC':>10}  "
+                    f"{'CC -> would trip' if lim else 'CV, ok'}")
+        want_cc = [r for r in rows if i_cv is None or r[0] / 1000.0 < 0.7 * i_cv]
+        want_cv = [r for r in rows if i_cv is not None and r[0] / 1000.0 > 1.3 * i_cv]
+        if want_cc:
+            rep.check(all(m["v"] < v - 0.05 and abs(m["i"] - l / 1000.0) <= max(0.002, 0.1 * l / 1000.0)
+                          for l, m, _ in want_cc),
+                      f"limited at {', '.join(str(l) for l, _, _ in want_cc)} mA: voltage drops, current = the limit")
+            rep.check(all(not m["cv"] for _, m, _ in want_cc), "status bit reads CC while limiting")
+            rep.check(all(lim for _, _, lim in want_cc), "the dashboard's CC trip would fire while limiting")
+        if want_cv:
+            rep.check(not any(lim for _, _, lim in want_cv),
+                      f"no false trip at {', '.join(str(l) for l, _, _ in want_cv)} mA (load below the limit)")
+        if short and rep.interactive:
+            drv.set_current(0.020)
+            time.sleep(0.8)
+            x = rep.ask_number("      Limit now 20 mA. Multimeter on mA: reading in mA? (Enter = skip) ")
+            if x is not None:
+                rep.check(abs(x - 20.0) <= 2.0, f"multimeter {x:.1f} mA at a 20 mA limit")
+    finally:
+        drv.set_current(0.060)
+        drv.output(False)
+        if rep.interactive:
+            rep.ask("      Output is OFF, limit back at 60 mA. Disconnect the load, then Enter ... ")
+
+
+def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = False, log_dir: str = ".",
+             load: bool = True, only_load: bool = False) -> int:
+    """Everything the dashboard relies on: connection and identity, set + read back, output on/off,
+    the voltage at the terminals (supply reading, and the operator's multimeter if typed in), steps up
+    to 2.5 V and how fast the output follows, what the STATUS bits mean on this unit, the spacing the
+    supply needs between commands, refusal above 2.5 V, repeated reads, and (with a load connected
+    when asked) the current limit. Restores the old settings with the output off. Writes
+    supply_selftest_<time>.txt. Returns the number of failed checks."""
+    rep = _Report(not assume_yes)
+    drv = make_supply({"address": address, "channel": channel, "max_mv": 2500, "eol": eol})
+    rep.say(f"RSD3305P self-test {time.strftime('%Y-%m-%d %H:%M:%S')}, address {drv.address}, channel {channel}")
+    t = clock()
+    try:
+        idn = drv.open()
+    except Exception as e:
+        rep.check(False, f"connect / *IDN?: {e}")
+        _list_ports(rep)
+        rep.save(log_dir)
+        return 1
+    ch = channel
+    rep.check(True, f"connected: *IDN? -> {idn!r} ({clock() - t:.2f} s incl. opening the port)")
+    orig, orig_out = None, False
+    try:
+        t = clock()
+        orig = drv.read_settings()
+        rep.say(f"      one query + answer takes ~{(clock() - t) / 2 * 1000:.0f} ms")
+        try:
+            ch2 = drv._query_float("VSET2?") if ch == 1 else None
+        except SupplyError:
+            ch2 = None
+        raw = drv.query_raw("STATUS?")
+        orig_out = bool(raw and raw[0] & 0x40)
+        rep.say(f"      now: CH{ch} set {orig['v_set']:.2f} V / {orig['i_set'] * 1000:.0f} mA, output "
+                f"{'ON' if orig_out else 'off'}, status {_bits(raw[0] if raw else None)}")
+        rep.say()
+        rep.say(f"The test switches the outputs ON (all channels together) at up to 2.5 V / 60 mA on CH{ch}"
+                + (f"; CH2 is set to {ch2:.2f} V and will be live too" if ch2 is not None else "") + ".")
+        rep.say("Only the multimeter (V DC range) on the outputs" + (" for now." if not only_load else
+                "; the load test asks for the load when it needs it."))
+        if rep.interactive:
+            try:
+                rep.ask("Press Enter to start, Ctrl+C to stop ... ")
+            except (KeyboardInterrupt, EOFError):
+                rep.say("stopped, nothing changed")
+                drv.close()
+                return 1
+
+        if not only_load:
+            drv.output(False)
+            time.sleep(0.5)
+            raw = drv.query_raw("STATUS?")
+            st_off = raw[0] if raw else None
+            rep.say(f"      output off: status {_bits(st_off)}")
+            rep.check(st_off is None or not st_off & 0x40, "status bit 6 reads 0 with the output off")
+            if st_off is None:
+                rep.say("      (STATUS? is silent with the output off: fine, the dashboard reads it with the output on)")
+
+            _probe_spacing(drv, rep, ch)
+
+            rep.say()
+            rep.say("Voltage at the terminals:")
+            rep.check(abs(drv.set_current(0.060) - 0.060) < 1e-6, "current limit 60 mA set and read back")
+            rep.check(abs(drv.set_voltage(1.0) - 1.0) < 1e-6, "1.00 V set and read back")
+            t = clock()
+            drv.output(True)
+            m = drv.wait_for(1.0, 0.05, 10.0)
+            rep.check(True, f"output on: supply reads {m['v']:.3f} V / {m['i'] * 1000:.1f} mA after {clock() - t:.2f} s")
+            st_on = drv.status()
+            rep.say(f"      output on, no load: status {_bits(st_on)}")
+            rep.check(bool(st_on & 0x40), "status bit 6 reads 1 with the output on")
+            if not rep.check(bool(st_on >> (ch - 1) & 1), f"CH{ch} status bit reads CV (1) with no load"):
+                rep.say("      (the dashboard's CC trip also checks the V/I readings, so this alone doesn't block runs)")
+            _meter_check(drv, rep, ch, 1.0)
+
+            rep.say()
+            rep.say("Steps (time until the output reads the new voltage, = the wait in each voltage block):")
+            for v in (1.5, 2.0, 2.5, 0.5, 1.0):
+                t = clock()
+                drv.set_voltage(v)
+                try:
+                    m = drv.wait_for(v, 0.05, 10.0)
+                    rep.check(True, f"step to {v:.2f} V: reads {m['v']:.3f} V after {clock() - t:.2f} s")
+                except SupplyError as e:
+                    rep.check(False, f"step to {v:.2f} V: {e}")
+                if v == 2.5:
+                    _meter_check(drv, rep, ch, 2.5)
+            try:
+                drv.set_voltage(3.0)
+                rep.check(False, "3.0 V refused (above the 2.5 V maximum)")
+            except SupplyError:
+                rep.check(True, "3.0 V refused before sending (above the 2.5 V maximum)")
+
+            bad, t = 0, clock()
+            for _ in range(20):
+                try:
+                    bad += abs(drv.measure()["v"] - 1.0) > 0.05
+                except SupplyError:
+                    bad += 1
+            rep.check(bad == 0, f"20 read cycles (V, I, status): {bad} bad, {(clock() - t) / 20 * 1000:.0f} ms per cycle")
+            t, ok = clock(), True
+            try:
+                for k in range(10):
+                    drv.set_voltage(1.0 + 0.1 * (k % 5))
+            except SupplyError as e:
+                ok = False
+                rep.say(f"      {e}")
+            rep.check(ok, f"10 quick set + read-back cycles ({(clock() - t) / 10 * 1000:.0f} ms each)")
+
+            drv.output(False)
+            time.sleep(1.0)
+            raw = drv.query_raw("STATUS?")
+            v_off = drv._query_float(f"VOUT{ch}?")
+            rep.say(f"      output off again: status {_bits(raw[0] if raw else None)}, supply reads {v_off:.3f} V")
+            rep.check(not (raw and raw[0] & 0x40), "output switched off")
+            x = rep.ask_number("      Multimeter with the output off (should be ~0 V): reading in V? (Enter = skip) ")
+            if x is not None:
+                rep.check(abs(x) < 0.1, f"multimeter {x:.3f} V with the output off")
+
+        if (load and rep.interactive) or only_load:
+            _load_test(drv, rep, ch)
+    except KeyboardInterrupt:
+        rep.say("stopped by Ctrl+C")
+        rep.fails.append("stopped by Ctrl+C")
+    except Exception as e:
+        rep.check(False, f"stopped by an error: {e}")
+    finally:
+        try:
+            drv.output(False)
+            if orig is not None:
+                drv.write(f"VSET{ch}:{orig['v_set']:05.2f}")
+                drv.write(f"ISET{ch}:{orig['i_set']:05.3f}")
+                rep.say(f"      restored CH{ch} {orig['v_set']:.2f} V / {orig['i_set'] * 1000:.0f} mA, output left OFF"
+                        + (" (it was ON before)" if orig_out else ""))
+        except Exception as e:
+            rep.say(f"      could not restore the settings: {e}")
+        drv.close()
+    rep.say()
+    rep.say("ALL PASSED" if not rep.fails else f"{len(rep.fails)} FAILED: " + "; ".join(rep.fails))
+    rep.save(log_dir)
+    return len(rep.fails)
 
 
 def main(argv=None):
     """Bench check without the dashboard:
         python supply_rsd.py COM7                  identity, settings, output reading (changes nothing)
+        python supply_rsd.py COM7 --selftest       full check: multimeter prompts, current limit with a load
+        python supply_rsd.py COM7 --load-test      only the current-limit test (resistor / meter on mA)
         python supply_rsd.py labpc:5025 --set 1.5  set 1.5 V (limit --limit-ma, default 60), output on, read
         python supply_rsd.py COM7 --off            output off"""
     import argparse
@@ -382,7 +697,14 @@ def main(argv=None):
     ap.add_argument("--limit-ma", type=float, default=60.0)
     ap.add_argument("--off", action="store_true")
     ap.add_argument("--eol", default="", help="LF / CR / CRLF if the firmware wants a terminator")
+    ap.add_argument("--selftest", action="store_true",
+                    help="full check (multimeter prompts, then a current-limit test with a load); writes a log")
+    ap.add_argument("--load-test", action="store_true", help="only the current-limit test (load on the output)")
+    ap.add_argument("--no-load", action="store_true", help="self-test without the current-limit part")
+    ap.add_argument("--yes", action="store_true", help="no prompts (skips the multimeter and load parts)")
     a = ap.parse_args(argv)
+    if a.selftest or a.load_test:
+        return 1 if selftest(a.address, a.ch, a.eol, a.yes, load=not a.no_load, only_load=a.load_test) else 0
     cfg = {"address": a.address, "channel": a.ch, "max_mv": a.max * 1000, "eol": a.eol}
     drv = make_supply(cfg)
     print("IDN:", drv.open())
@@ -403,4 +725,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())
