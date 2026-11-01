@@ -7,7 +7,7 @@ so commands are spaced >= 60 ms. Answers have no terminator either.
   VSET1:2.50     channel 1 voltage (V, 2 decimals)      VSET1? -> "02.50"
   ISET1:0.060    channel 1 current limit (A, 3 decimals) ISET1? -> "0.060"
   VOUT1? IOUT1?  measured output voltage / current
-  OUT1 / OUT0    outputs on / off (all channels)
+  OUT1 / OUT0    outputs on / off (KA docs); our RS-D3305P V7.1 ignores them and wants OUT1:1 / OUT1:0
   STATUS?        one byte: bit 0 = CH1 CV (1) / CC (0), bit 1 = CH2, bit 6 = output on
 
 Address: "COM7" (the supply's USB virtual COM port on this PC), or "host:port" / "socket://host:port"
@@ -28,6 +28,10 @@ import threading
 import time
 from collections import deque
 from typing import Any, Callable, Dict, Optional
+
+# Output on/off: the KA docs say OUT1 / OUT0, but our RS-D3305P V7.1 SN:00358804 ignores those; it switches
+# with OUT1:1 / OUT1:0 (supply_rsd.py --probe-output, 1 Nov 2026). Config output_on/output_off override.
+DEFAULT_OUT_ON, DEFAULT_OUT_OFF = "OUT1:1", "OUT1:0"
 
 clock = time.perf_counter
 
@@ -54,13 +58,13 @@ class RSDSupply:
     EOLS = {"": "", "none": "", "lf": "\n", "cr": "\r", "crlf": "\r\n"}
 
     def __init__(self, address: str, channel: int = 1, max_v: float = 2.5, timeout_s: float = 0.6,
-                 gap_s: float = 0.06, eol: str = "", baud: int = 9600, output_on: str = "OUT1",
-                 output_off: str = "OUT0"):
+                 gap_s: float = 0.06, eol: str = "", baud: int = 9600, output_on: str = DEFAULT_OUT_ON,
+                 output_off: str = DEFAULT_OUT_OFF):
         self.address = parse_address(address)
         self.ch = int(channel)
         self.max_v = float(max_v)
         self.baud = int(baud)
-        self.out_cmds = (str(output_on or "OUT1"), str(output_off or "OUT0"))   # --probe-output finds them
+        self.out_cmds = (str(output_on or DEFAULT_OUT_ON), str(output_off or DEFAULT_OUT_OFF))   # --probe-output
         self.timeout_s, self.gap_s = float(timeout_s), float(gap_s)
         self.eol = self.EOLS[str(eol or "").strip().lower()]    # the KA protocol has none; "LF" if a firmware wants one
         self.ser = None
@@ -230,7 +234,7 @@ class DummySupply(RSDSupply):
         self.address, self.ch, self.max_v = "dummy", int(channel), float(max_v)
         self.r_ohm = float(r_ohm)
         self.vset, self.iset, self.on = 0.0, 0.1, False
-        self.out_cmds = ("OUT1", "OUT0")
+        self.out_cmds = (DEFAULT_OUT_ON, DEFAULT_OUT_OFF)
         self.idn = "DUMMY RSD3305P (simulated)"
         self._lock = threading.RLock()
         self._rng = random.Random(3)
@@ -281,7 +285,8 @@ def make_supply(cfg: Dict[str, Any]) -> RSDSupply:
     if addr.lower() == "dummy":
         return DummySupply(channel=ch, max_v=max_v, r_ohm=float(cfg.get("dummy_r_ohm", 80.0)))
     return RSDSupply(addr, channel=ch, max_v=max_v, eol=str(cfg.get("eol") or ""), baud=int(cfg.get("baud") or 9600),
-                     output_on=cfg.get("output_on") or "OUT1", output_off=cfg.get("output_off") or "OUT0")
+                     output_on=cfg.get("output_on") or DEFAULT_OUT_ON,
+                     output_off=cfg.get("output_off") or DEFAULT_OUT_OFF)
 
 
 def is_limiting(m: Dict[str, Any], v_set: Optional[float], i_set: Optional[float]) -> bool:
@@ -725,8 +730,8 @@ def probe_output(address: str, channel: int = 1, baud: int = 9600, eol: str = ""
 
 
 def selftest(address: str, channel: int = 1, eol: str = "", assume_yes: bool = False, log_dir: str = ".",
-             load: bool = True, only_load: bool = False, baud: int = 9600, output_on: str = "OUT1",
-             output_off: str = "OUT0") -> int:
+             load: bool = True, only_load: bool = False, baud: int = 9600, output_on: str = DEFAULT_OUT_ON,
+             output_off: str = DEFAULT_OUT_OFF) -> int:
     """Everything the dashboard relies on: connection and identity, set + read back, output on/off,
     the voltage at the terminals (supply reading, and the operator's multimeter if typed in), steps up
     to 2.5 V and how fast the output follows, what the STATUS bits mean on this unit, the spacing the
@@ -897,8 +902,8 @@ def main(argv=None):
     ap.add_argument("--no-load", action="store_true", help="self-test without the current-limit part")
     ap.add_argument("--yes", action="store_true", help="no prompts (skips the multimeter and load parts)")
     ap.add_argument("--baud", type=int, default=9600)
-    ap.add_argument("--out-on", default="OUT1", help="output-on command (from --probe-output)")
-    ap.add_argument("--out-off", default="OUT0", help="output-off command")
+    ap.add_argument("--out-on", default=DEFAULT_OUT_ON, help="output-on command (from --probe-output)")
+    ap.add_argument("--out-off", default=DEFAULT_OUT_OFF, help="output-off command")
     ap.add_argument("--probe", action="store_true", help="find baud rate / line ending when *IDN? gets no answer")
     ap.add_argument("--probe-output", action="store_true", help="find the output on/off command (1.00 V, 60 mA)")
     a = ap.parse_args(argv)
