@@ -30,10 +30,16 @@ the low-f regime, at the usual operating frequencies, and at low voltage (best e
   frequencies, 20 s each (30 s at <= 5 Hz), 20 s zeros, 3 x 600 Hz 60 s priming at the start. Run it right
   before connecting the syringe and right after removing it.
 
+- SHORT variant (Nic, 2 Nov: a complete PQ in one day, short set-ups): 600 Hz only (best flow) at 2.5, 1.0 and
+  0.8 V (0.8 V: the most efficient setting, 3.8 J/mL free-flow), same pressures, 20 s per point, plus its own
+  free-flow anchors (priming, then 600 Hz 20 s at each voltage).
+
 Writes:
-  config_pq_smoke.json                one frequency, 3 pressures: checks the chain
-  config_pq_261030-1.json             the curves for 261030-1 (config_pq_261030-1_lean.json with --lean)
-  config_pq_261030-1_freeflow.json    the 0 mbar anchors
+  config_pq_smoke.json                     one frequency, 3 pressures: checks the chain
+  config_pq_261030-1.json                  the curves for 261030-1 (config_pq_261030-1_lean.json with --lean)
+  config_pq_261030-1_freeflow.json         the 0 mbar anchors
+  config_pq_261030-1_short.json            600 Hz at 2.5 / 1.0 / 0.8 V
+  config_pq_261030-1_short_freeflow.json   its 0 mbar anchors
 The estimate printed at the end simulates the syringe (1 mL, 2470 full steps) with the free-outlet flows
 below, for two cases: no shut-off below 250 mbar (every point measured: the upper bound) and a linear PQ
 line to SHUTOFF_GUESS_MBAR (like 260930-2: ~54 mbar at 400 Hz on 29 Oct).
@@ -86,6 +92,8 @@ LEAN_DROP = {5, 1300}
 # free-outlet flow, uL/min (top of the 1-2 Nov ranges; for the syringe estimate only)
 Q_FREE = {(2500, 1): 17, (2500, 5): 66, (2500, 20): 143, (2500, 100): 126, (2500, 600): 230, (2500, 1300): 210,
           (1000, 1): 10, (1000, 20): 100, (1000, 600): 140}
+SHORT_LEVELS = [(2500, [600]), (1000, [600]), (800, [600])]
+Q_FREE_SHORT = {(2500, 600): 210, (1000, 600): 135, (800, 600): 93}     # uL/min free outlet (2 Nov estimate)
 LIMIT_MA, TRIP_MA, HOLD_MS = 60, 57, 300
 STEP_SETTLE_S = 5
 FF_DRIVE_S, FF_DRIVE_LOW_S, FF_ZERO_S = 20.0, 30.0, 20.0
@@ -155,10 +163,11 @@ def levels():
     return [(mv, [f for f in fs if not (args.lean and f in LEAN_DROP)]) for mv, fs in LEVELS]
 
 
-def build_pq():
+def build_pq(lv, name, ff_file, drift_index=2):
     tests = []
-    for i, (mv, fs) in enumerate(levels()):
-        tests.append(voltage(mv, f"{mv / 1000:.1f} V by the supply" + (" (drift / state check)" if i == 2 else "")))
+    for i, (mv, fs) in enumerate(lv):
+        tests.append(voltage(mv, f"{mv / 1000:.1f} V by the supply" +
+                             (" (drift / state check)" if i == drift_index else "")))
         low = [f for f in fs if f <= LOW_F_MAX]
         high = [f for f in fs if f > LOW_F_MAX]
         if low:
@@ -168,22 +177,21 @@ def build_pq():
     for t in tests:
         if t["type"] == "pq":
             t["level_mv"] = next(x["voltage_mv"] for x in reversed(tests[:tests.index(t)]) if x["type"] == "voltage")
-    curves = ", ".join(f"{mv / 1000:g} V: {'/'.join(map(str, fs))} Hz" for mv, fs in levels())
+    curves = ", ".join(f"{mv / 1000:g} V: {'/'.join(map(str, fs))} Hz" for mv, fs in lv)
     desc = (f"PQ curves for pump {args.pump_id} with the syringe on the outlet: {curves}; "
             f"{', '.join(map(str, PRESSURES_MBAR))} mbar (limit 280), {MEASURE_LOW_S:g} s per point at <= "
             f"{LOW_F_MAX} Hz, {MEASURE_S:g} s above, settle timeout {SETTLE_TIMEOUT_S:g} s, above_shutoff skips the "
             f"rest of a curve. Voltages by the RSD3305P, PPK2 on. NO priming: run "
-            f"config_pq_261030-1_freeflow.json (outlet vented, no syringe) before connecting the syringe and after "
+            f"{ff_file} (outlet vented, no syringe) before connecting the syringe and after "
             f"removing it. Start with an empty syringe; clear it when the banner asks (line open to waste, Push "
             f"syringe empty, close the line, Done).")
-    name = f"PQ curves {args.pump_id}" + (" (lean)" if args.lean else "")
     return config(name, desc, tests, args.pump_id, True, supply_section(), power_section())
 
 
-def build_freeflow():
+def build_freeflow(lv, name, check_index=2):
     tests = [zero(FF_ZERO_S)]
     first = True
-    for i, (mv, fs) in enumerate(LEVELS):           # always every frequency: anchors for full and lean
+    for i, (mv, fs) in enumerate(lv):
         tests.append(voltage(mv, f"{mv / 1000:.1f} V by the supply"))
         tests.append(zero(FF_ZERO_S))
         if first:
@@ -192,17 +200,16 @@ def build_freeflow():
             first = False
         for f in fs:
             tests += [drive(f, FF_DRIVE_LOW_S if f <= LOW_F_MAX else FF_DRIVE_S, section="free_flow", level_mv=mv,
-                            check=(i == 2)),
+                            check=(i == check_index)),
                       zero(FF_ZERO_S)]
     desc = (f"Free-flow (0 mbar) anchors for the PQ curves of pump {args.pump_id}: outlet VENTED, NO syringe. "
             f"3 x 600 Hz 60 s priming, then the PQ voltages and frequencies, {FF_DRIVE_S:g} s each ({FF_DRIVE_LOW_S:g} "
             f"s at <= {LOW_F_MAX} Hz), {FF_ZERO_S:g} s zeros. Run right before connecting the syringe and right after "
             f"removing it. Voltages by the RSD3305P, PPK2 on.")
-    return config(f"PQ free-flow anchors {args.pump_id}", desc, tests, args.pump_id, False, supply_section(),
-                  power_section())
+    return config(name, desc, tests, args.pump_id, False, supply_section(), power_section())
 
 
-def estimate(cfg, shutoff):
+def estimate(cfg, shutoff, q_free):
     """Simulated run: (minutes incl. clears, clears per PQ block, measured points)."""
     usable_ul = (PRESSURE["pos_max"] - PRESSURE["pos_min"] - 2 * PRESSURE["pos_margin"]) * PRESSURE["ul_per_step"]
     reserve_ul = PRESSURE["clear_reserve_steps"] * PRESSURE["ul_per_step"]
@@ -219,7 +226,7 @@ def estimate(cfg, shutoff):
             used = 0.0
         fs = blk["frequency_hz"] if isinstance(blk["frequency_hz"], list) else [blk["frequency_hz"]]
         for f in fs:
-            q0 = Q_FREE[mv, f]
+            q0 = q_free[mv, f]
             settle = SETTLE_TIMEOUT_S if f <= LOW_F_MAX else SETTLE_GUESS_S
             for p in blk["pressures_mbar"]:
                 q = q0 * max(0.0, 1.0 - p / shutoff) if shutoff else q0
@@ -242,11 +249,16 @@ def estimate(cfg, shutoff):
 smoke = config("PQ smoke test", "One PQ curve at 400 Hz, 10/25/50 mbar, 15 s each: checks syringe, pressure sensor, "
                                 "flow and the clearing prompt before the full run.",
                [pq([400], [10, 25, 50], 15.0)])
-full = build_pq()
-ff = build_freeflow()
 tag = "_lean" if args.lean else ""
+full = build_pq(levels(), f"PQ curves {args.pump_id}" + (" (lean)" if args.lean else ""),
+                "config_pq_261030-1_freeflow.json")
+ff = build_freeflow(LEVELS, f"PQ free-flow anchors {args.pump_id}")     # every frequency: anchors for full and lean
+short = build_pq(SHORT_LEVELS, f"PQ curves {args.pump_id} (short: 600 Hz at 2.5 / 1.0 / 0.8 V)",
+                 "config_pq_261030-1_short_freeflow.json", drift_index=None)
+short_ff = build_freeflow(SHORT_LEVELS, f"PQ free-flow anchors {args.pump_id} (short)", check_index=None)
 for fname, cfg in (("config_pq_smoke.json", smoke), (f"config_pq_261030-1{tag}.json", full),
-                   ("config_pq_261030-1_freeflow.json", ff)):
+                   ("config_pq_261030-1_freeflow.json", ff), ("config_pq_261030-1_short.json", short),
+                   ("config_pq_261030-1_short_freeflow.json", short_ff)):
     with open(fname, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     n = sum(len(t["pressures_mbar"]) * (len(t["frequency_hz"]) if isinstance(t["frequency_hz"], list) else 1)
@@ -255,11 +267,12 @@ for fname, cfg in (("config_pq_smoke.json", smoke), (f"config_pq_261030-1{tag}.j
         sum(t.get("settle_s", 0) for t in cfg["tests"] if t["type"] == "voltage")
     print(f"{fname}: {n} PQ points" + (f", {nom / 60:.1f} min" if not n else ""))
 
-print(f"\nEstimate for config_pq_261030-1{tag}.json (syringe 1 mL, clear when >20 % used at a block start or a point "
-      f"would not fit; {CLEAR_S:g} s per clear; settle {SETTLE_TIMEOUT_S:g} s at <= {LOW_F_MAX} Hz, "
-      f"{SETTLE_GUESS_S:g} s above):")
-for label, shut in (("no shut-off below 250 mbar (upper bound)", None),
-                    (f"linear PQ to a {SHUTOFF_GUESS_MBAR:g} mbar shut-off", SHUTOFF_GUESS_MBAR)):
-    mins, clears, per_block, points = estimate(full, shut)
-    blocks = "; ".join(f"{mv / 1000:g} V {'/'.join(map(str, fs))} Hz: {c}" for mv, fs, c in per_block)
-    print(f"  {label}: {points} points, {clears} clears, {mins:.0f} min incl. clears  [clears per block: {blocks}]")
+for fname, cfg, qf in ((f"config_pq_261030-1{tag}.json", full, Q_FREE),
+                       ("config_pq_261030-1_short.json", short, Q_FREE_SHORT)):
+    print(f"\nEstimate for {fname} (syringe 1 mL, clear when >20 % used at a block start or a point would not fit; "
+          f"{CLEAR_S:g} s per clear; settle {SETTLE_TIMEOUT_S:g} s at <= {LOW_F_MAX} Hz, {SETTLE_GUESS_S:g} s above):")
+    for label, shut in (("no shut-off below 250 mbar (upper bound)", None),
+                        (f"linear PQ to a {SHUTOFF_GUESS_MBAR:g} mbar shut-off", SHUTOFF_GUESS_MBAR)):
+        mins, clears, per_block, points = estimate(cfg, shut, qf)
+        blocks = "; ".join(f"{mv / 1000:g} V {'/'.join(map(str, fs))} Hz: {c}" for mv, fs, c in per_block)
+        print(f"  {label}: {points} points, {clears} clears, {mins:.0f} min incl. clears  [clears per block: {blocks}]")
