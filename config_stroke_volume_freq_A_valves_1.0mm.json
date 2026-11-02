@@ -1,0 +1,5687 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "meta": {
+    "name": "Stroke volume vs frequency A (valves, 1.0 mm tube, supply)",
+    "description": "Net per stroke vs frequency and voltage, WITH valves, 1.0 mm ID observation tube. 1, 2, 5, 10, 20, 100 Hz; levels 2.5, 1.5, 1, 0.8, 0.6, 0.5, 0.4 V set by the RSD3305P programmable supply (no operator steps; yellow banners only to re-centre the stage). Bursts sized for ~2.5 mm meniscus travel at V0 tanh(1/(4 f tau)) from the 1-2 Nov run (0.8 V values below 0.8 V); 2 bursts per cell, 10 s rests; passes down/up. POWER ON (PPK2 in line; below 0.8 V the PPK2 is unverified, cross-check with supply/supply.csv). Prime BEFORE aligning the tube: no priming in this run. Tick Record video; type the Pump ID.",
+    "operator": "",
+    "pump_id": "",
+    "tube_id_mm": 1.0,
+    "tube_od_mm": null,
+    "line_mm": null,
+    "valves": true,
+    "reps": 2,
+    "travel_mm_target": 2.5,
+    "view_mm": 6.0,
+    "nl_per_mm": 785.4,
+    "px_per_mm": 221.7,
+    "ppk2_min_mv": 800,
+    "q_fit_nl_tau_s": {
+      "2500": [
+        268.0,
+        0.03
+      ],
+      "2000": [
+        260.0,
+        0.031
+      ],
+      "1500": [
+        266.0,
+        0.036
+      ],
+      "1000": [
+        237.0,
+        0.038
+      ],
+      "800": [
+        211.0,
+        0.041
+      ]
+    },
+    "q_extrap_1hz_nl": {
+      "600": 160.0,
+      "500": 130.0,
+      "400": 105.0
+    },
+    "supply_readback_cal": "supply mA = 0.980 x I_PPK2 - 3.2 mA (1-2 Nov), whole mA, reads 0 at 0.3 V",
+    "pooled_drive_s": {
+      "2500": 58.3,
+      "1500": 60.0,
+      "1000": 70.0,
+      "800": 80.1,
+      "600": 80.1,
+      "500": 80.1,
+      "400": 80.1
+    },
+    "cells": [
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 100,
+        "strokes": 88
+      },
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 2,
+        "strokes": 7
+      },
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 20,
+        "strokes": 19
+      },
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 1,
+        "strokes": 7
+      },
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 10,
+        "strokes": 11
+      },
+      {
+        "pass": 1,
+        "level_mv": 2500,
+        "hz": 5,
+        "strokes": 8
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 100,
+        "strokes": 106
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 2,
+        "strokes": 7
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 20,
+        "strokes": 22
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 1,
+        "strokes": 7
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 10,
+        "strokes": 12
+      },
+      {
+        "pass": 1,
+        "level_mv": 1500,
+        "hz": 5,
+        "strokes": 8
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 100,
+        "strokes": 126
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 2,
+        "strokes": 8
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 20,
+        "strokes": 26
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 1,
+        "strokes": 8
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 10,
+        "strokes": 14
+      },
+      {
+        "pass": 1,
+        "level_mv": 1000,
+        "hz": 5,
+        "strokes": 10
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 1,
+        "level_mv": 800,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 1,
+        "level_mv": 600,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 1,
+        "level_mv": 500,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 1,
+        "level_mv": 400,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 400,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 500,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 600,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 5,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 10,
+        "strokes": 17
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 1,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 20,
+        "strokes": 31
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 2,
+        "strokes": 9
+      },
+      {
+        "pass": 2,
+        "level_mv": 800,
+        "hz": 100,
+        "strokes": 153
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 5,
+        "strokes": 10
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 10,
+        "strokes": 14
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 1,
+        "strokes": 8
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 20,
+        "strokes": 26
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 2,
+        "strokes": 8
+      },
+      {
+        "pass": 2,
+        "level_mv": 1000,
+        "hz": 100,
+        "strokes": 126
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 5,
+        "strokes": 8
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 10,
+        "strokes": 12
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 1,
+        "strokes": 7
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 20,
+        "strokes": 22
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 2,
+        "strokes": 7
+      },
+      {
+        "pass": 2,
+        "level_mv": 1500,
+        "hz": 100,
+        "strokes": 106
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 5,
+        "strokes": 8
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 10,
+        "strokes": 11
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 1,
+        "strokes": 7
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 20,
+        "strokes": 19
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 2,
+        "strokes": 7
+      },
+      {
+        "pass": 2,
+        "level_mv": 2500,
+        "hz": 100,
+        "strokes": 88
+      }
+    ]
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": false,
+    "chunk_s": 60.0,
+    "crop": null
+  },
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "pause": true,
+      "note": "Pause 1 (pass 1, 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.8775,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 88,
+      "edges_commanded": 176,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 1,
+      "q_high_nl": 22.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.8775,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 88,
+      "edges_commanded": 176,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 2,
+      "q_high_nl": 22.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 2 (pass 1, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 3,
+      "q_high_nl": 267.9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 4,
+      "q_high_nl": 267.9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 3 (pass 1, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 0.9375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 19,
+      "edges_commanded": 38,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 5,
+      "q_high_nl": 105.6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 0.9375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 19,
+      "edges_commanded": 38,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 6,
+      "q_high_nl": 105.6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 4 (pass 1, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 7,
+      "q_high_nl": 268.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 8,
+      "q_high_nl": 268.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 5 (pass 1, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.075,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 9,
+      "q_high_nl": 182.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.075,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 10,
+      "q_high_nl": 182.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 6 (pass 1, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 11,
+      "q_high_nl": 249.5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 12,
+      "q_high_nl": 249.5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "pause": true,
+      "note": "Pause 7 (pass 1, 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.0575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 106,
+      "edges_commanded": 212,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 13,
+      "q_high_nl": 18.4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.0575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 106,
+      "edges_commanded": 212,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 14,
+      "q_high_nl": 18.4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 8 (pass 1, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 15,
+      "q_high_nl": 265.5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 16,
+      "q_high_nl": 265.5,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 9 (pass 1, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 22,
+      "edges_commanded": 44,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 17,
+      "q_high_nl": 88.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 22,
+      "edges_commanded": 44,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 18,
+      "q_high_nl": 88.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 10 (pass 1, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 19,
+      "q_high_nl": 266.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 20,
+      "q_high_nl": 266.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 11 (pass 1, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.175,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 12,
+      "edges_commanded": 24,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 21,
+      "q_high_nl": 159.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.175,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 12,
+      "edges_commanded": 24,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 22,
+      "q_high_nl": 159.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 12 (pass 1, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 23,
+      "q_high_nl": 234.9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 24,
+      "q_high_nl": 234.9,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "pause": true,
+      "note": "Pause 13 (pass 1, 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.2575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 126,
+      "edges_commanded": 252,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 25,
+      "q_high_nl": 15.6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.2575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 126,
+      "edges_commanded": 252,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 26,
+      "q_high_nl": 15.6,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 14 (pass 1, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 27,
+      "q_high_nl": 236.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 28,
+      "q_high_nl": 236.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 15 (pass 1, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.2875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 26,
+      "edges_commanded": 52,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 29,
+      "q_high_nl": 75.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.2875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 26,
+      "edges_commanded": 52,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 30,
+      "q_high_nl": 75.3,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 16 (pass 1, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 31,
+      "q_high_nl": 237.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 32,
+      "q_high_nl": 237.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 17 (pass 1, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 14,
+      "edges_commanded": 28,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 33,
+      "q_high_nl": 136.7,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 14,
+      "edges_commanded": 28,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 34,
+      "q_high_nl": 136.7,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 18 (pass 1, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.95,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 35,
+      "q_high_nl": 205.2,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.95,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 36,
+      "q_high_nl": 205.2,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "pause": true,
+      "note": "Pause 19 (pass 1, 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 37,
+      "q_high_nl": 12.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 38,
+      "q_high_nl": 12.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 20 (pass 1, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 39,
+      "q_high_nl": 210.1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 40,
+      "q_high_nl": 210.1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 21 (pass 1, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 41,
+      "q_high_nl": 62.4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 42,
+      "q_high_nl": 62.4,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 22 (pass 1, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 43,
+      "q_high_nl": 211.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 44,
+      "q_high_nl": 211.0,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 23 (pass 1, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 45,
+      "q_high_nl": 114.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 46,
+      "q_high_nl": 114.8,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 24 (pass 1, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 47,
+      "q_high_nl": 177.1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 48,
+      "q_high_nl": 177.1,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 25 (pass 1, 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 49,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 50,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 26 (pass 1, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 51,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 52,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 27 (pass 1, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 53,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 54,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 28 (pass 1, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 55,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 56,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 29 (pass 1, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 57,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 58,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 30 (pass 1, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 59,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 60,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 31 (pass 1, 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 61,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 62,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 32 (pass 1, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 63,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 64,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 33 (pass 1, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 65,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 66,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 34 (pass 1, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 67,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 68,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 35 (pass 1, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 69,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 70,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 36 (pass 1, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 71,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 72,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 1 down",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 37 (pass 1, 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 73,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 74,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 38 (pass 1, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 75,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 76,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 39 (pass 1, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 77,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 78,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 40 (pass 1, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 79,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 80,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 41 (pass 1, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 81,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 82,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 42 (pass 1, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 83,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 84,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 43 (pass 2, 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 85,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 86,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 44 (pass 2, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 87,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 88,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 45 (pass 2, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 89,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 90,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 46 (pass 2, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 91,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 92,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 47 (pass 2, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 93,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 94,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 48 (pass 2, SAME 0.40 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 1,
+      "reading": 95,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 400,
+      "rep": 2,
+      "reading": 96,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 49 (pass 2, 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 97,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 98,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 50 (pass 2, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 99,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 100,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 51 (pass 2, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 101,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 102,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 52 (pass 2, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 103,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 104,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 53 (pass 2, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 105,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 106,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 54 (pass 2, SAME 0.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 1,
+      "reading": 107,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 500,
+      "rep": 2,
+      "reading": 108,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "ppk2_below_range": true,
+      "pause": true,
+      "note": "Pause 55 (pass 2, 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 109,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 110,
+      "q_high_nl": 177.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 56 (pass 2, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 111,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 112,
+      "q_high_nl": 114.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 57 (pass 2, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 113,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 114,
+      "q_high_nl": 211.0,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 58 (pass 2, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 115,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 116,
+      "q_high_nl": 62.4,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 59 (pass 2, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 117,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 118,
+      "q_high_nl": 210.1,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "ppk2_below_range": true,
+      "note": "Pause 60 (pass 2, SAME 0.60 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 1,
+      "reading": 119,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 600,
+      "rep": 2,
+      "reading": 120,
+      "q_high_nl": 12.8,
+      "ppk2_below_range": true,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "pause": true,
+      "note": "Pause 61 (pass 2, 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 121,
+      "q_high_nl": 177.1,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 2.15,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 122,
+      "q_high_nl": 177.1,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 62 (pass 2, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 123,
+      "q_high_nl": 114.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.675,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 17,
+      "edges_commanded": 34,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 124,
+      "q_high_nl": 114.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 63 (pass 2, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 125,
+      "q_high_nl": 211.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 8.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 126,
+      "q_high_nl": 211.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 64 (pass 2, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 127,
+      "q_high_nl": 62.4,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.5375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 31,
+      "edges_commanded": 62,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 128,
+      "q_high_nl": 62.4,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 65 (pass 2, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 129,
+      "q_high_nl": 210.1,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 4.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 9,
+      "edges_commanded": 18,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 130,
+      "q_high_nl": 210.1,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 66 (pass 2, SAME 0.80 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 1,
+      "reading": 131,
+      "q_high_nl": 12.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.5275,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 153,
+      "edges_commanded": 306,
+      "config": "A_valves",
+      "level_mv": 800,
+      "rep": 2,
+      "reading": 132,
+      "q_high_nl": 12.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "pause": true,
+      "note": "Pause 67 (pass 2, 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.95,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 133,
+      "q_high_nl": 205.2,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.95,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 10,
+      "edges_commanded": 20,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 134,
+      "q_high_nl": 205.2,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 68 (pass 2, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 14,
+      "edges_commanded": 28,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 135,
+      "q_high_nl": 136.7,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 14,
+      "edges_commanded": 28,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 136,
+      "q_high_nl": 136.7,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 69 (pass 2, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 137,
+      "q_high_nl": 237.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 7.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 138,
+      "q_high_nl": 237.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 70 (pass 2, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.2875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 26,
+      "edges_commanded": 52,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 139,
+      "q_high_nl": 75.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.2875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 26,
+      "edges_commanded": 52,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 140,
+      "q_high_nl": 75.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 71 (pass 2, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 141,
+      "q_high_nl": 236.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 142,
+      "q_high_nl": 236.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 72 (pass 2, SAME 1.00 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.2575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 126,
+      "edges_commanded": 252,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 1,
+      "reading": 143,
+      "q_high_nl": 15.6,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.2575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 126,
+      "edges_commanded": 252,
+      "config": "A_valves",
+      "level_mv": 1000,
+      "rep": 2,
+      "reading": 144,
+      "q_high_nl": 15.6,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "pause": true,
+      "note": "Pause 73 (pass 2, 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 145,
+      "q_high_nl": 234.9,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 146,
+      "q_high_nl": 234.9,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 74 (pass 2, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.175,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 12,
+      "edges_commanded": 24,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 147,
+      "q_high_nl": 159.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.175,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 12,
+      "edges_commanded": 24,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 148,
+      "q_high_nl": 159.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 75 (pass 2, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 149,
+      "q_high_nl": 266.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 150,
+      "q_high_nl": 266.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 76 (pass 2, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 22,
+      "edges_commanded": 44,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 151,
+      "q_high_nl": 88.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 1.0875,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 22,
+      "edges_commanded": 44,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 152,
+      "q_high_nl": 88.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 77 (pass 2, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 153,
+      "q_high_nl": 265.5,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 154,
+      "q_high_nl": 265.5,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 78 (pass 2, SAME 1.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.0575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 106,
+      "edges_commanded": 212,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 1,
+      "reading": 155,
+      "q_high_nl": 18.4,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 1.0575,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 106,
+      "edges_commanded": 212,
+      "config": "A_valves",
+      "level_mv": 1500,
+      "rep": 2,
+      "reading": 156,
+      "q_high_nl": 18.4,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 2.0,
+      "level": "pass 2 up",
+      "pause": true,
+      "note": "Pause 79 (pass 2, 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 157,
+      "q_high_nl": 249.5,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 1.55,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 8,
+      "edges_commanded": 16,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 158,
+      "q_high_nl": 249.5,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 80 (pass 2, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.075,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 159,
+      "q_high_nl": 182.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 1.075,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 11,
+      "edges_commanded": 22,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 160,
+      "q_high_nl": 182.8,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 81 (pass 2, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 161,
+      "q_high_nl": 268.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 6.75,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 162,
+      "q_high_nl": 268.0,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 82 (pass 2, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 0.9375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 19,
+      "edges_commanded": 38,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 163,
+      "q_high_nl": 105.6,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 0.9375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 19,
+      "edges_commanded": 38,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 164,
+      "q_high_nl": 105.6,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 83 (pass 2, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 165,
+      "q_high_nl": 267.9,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 3.375,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 7,
+      "edges_commanded": 14,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 166,
+      "q_high_nl": 267.9,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 0,
+      "pause": true,
+      "note": "Pause 84 (pass 2, SAME 2.50 V): move the stage so the meniscus has ~6 mm of tube in view AHEAD of it (it moves in the pumping direction), then press Done - continue. Do not touch the stage until the next banner."
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.8775,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 88,
+      "edges_commanded": 176,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 1,
+      "reading": 167,
+      "q_high_nl": 22.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 0.8775,
+      "repeat": 1,
+      "settle_ms": 0,
+      "strokes": 88,
+      "edges_commanded": 176,
+      "config": "A_valves",
+      "level_mv": 2500,
+      "rep": 2,
+      "reading": 168,
+      "q_high_nl": 22.3,
+      "pass": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ]
+}
