@@ -1,0 +1,380 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.50 V by the supply"
+    },
+    {
+      "type": "pressure",
+      "target_mbar": 5.0,
+      "wait_settled": false
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 90.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "fill",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": 50.0,
+      "wait_settled": true,
+      "timeout_s": 60.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "section": "leak_hold",
+      "p_start_mbar": 50.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": 100.0,
+      "wait_settled": true,
+      "timeout_s": 60.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "section": "leak_hold",
+      "p_start_mbar": 100.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": 5.0,
+      "wait_settled": false
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.50 V by the supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 500,
+      "reference": false,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.60 V by the supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 600,
+      "reference": false,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 700,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.70 V by the supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 700,
+      "reference": false,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.80 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 800,
+      "reference": false
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 900,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.90 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 900,
+      "reference": false
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "1.00 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 1000,
+      "reference": false
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.50 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "onset",
+      "level_mv": 2500,
+      "reference": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "idle"
+    }
+  ],
+  "meta": {
+    "name": "Valve leak and onset voltage",
+    "description": "Valve back-leak and onset voltage. Syringe through the stopcock (closed to waste), syringe EMPTY at the start, Control pressure ticked. Fill: the syringe holds 5 mbar while 600 Hz at 2.5 V runs 90 s. Part A (pump OFF): push to 50, 100 mbar, hold the position with the motor energised for 30 s (back-leak decay through the valves), gentle release. Part B: 600 Hz at 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2.5 V, 20 s each with 15 s zeros, syringe holding ~5 mbar (near free flow); 0.5 V may draw no current (expected); below 0.8 V cross-check the PPK2 with supply/supply.csv. Type the Pump ID. Open the stopcock to waste before ANY manual syringe push.",
+    "operator": "",
+    "pump_id": "",
+    "syringe_ml": 1.0,
+    "syringe_on": "outlet",
+    "pressure_channel": 1,
+    "drive_f_hz": 600,
+    "leak_targets_mbar": [
+      50.0,
+      100.0
+    ],
+    "onset_mv": [
+      500,
+      600,
+      700,
+      800,
+      900,
+      1000,
+      2500
+    ]
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "baud": 115200,
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -60.0,
+    "rate_mbar_s": 40.0,
+    "tolerance_mbar": 2.0,
+    "settle_s": 3.0,
+    "microsteps": 16,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}

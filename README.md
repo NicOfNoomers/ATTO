@@ -143,6 +143,10 @@ Pumps differ: 261030-2 falls off above 600 Hz, while 261030-1 pumped best at 130
 2. Pick f near the peak, then `python make_config_prime_at.py --f <Hz> [--pump <id>] [--v <mV>]` -> `config_prime_at_<f>Hz.json`: 3 x [f 30 s, 0.8 f 10 s, 1.2 f 10 s] with zeros, then checks at f and 600 Hz (the common reference), ~5 min. Example in the repo: `config_prime_at_450Hz.json`.
 3. Run the scan again. If the peak moved up after priming, it was gas.
 
+### Valve leak, onset voltage and dead-head for any pump
+- `python make_config_leak_onset.py [--f 600] [--pump <id>]` -> `config_leak_onset.json` (~9 min). The syringe is connected through the stopcock and starts empty. A 90 s fill at 600 Hz, 2.5 V (syringe holding 5 mbar) puts liquid in the syringe. Then, with the pump off, it pushes to 50 and then 100 mbar and holds the position with the motor energised for 30 s each. The decay is the back-leak through the valves. Then the onset: 600 Hz at 0.5-1.0 V and 2.5 V, 20 s each, near free flow (syringe at ~5 mbar). Blocks below 0.8 V are flagged `ppk2_below_range`.
+- `python make_config_deadhead.py [--f-list 600,800,1000,1300,1600,2000] [--repeat-f <Hz>] [--low-f-list 600] [--pump <id>]` -> `config_deadhead.json`: the dead-head steps of `config_pq_261030-1_deadhead.json` at each pump's own frequencies (e.g. its scan peak plus 600 Hz). With the 261030-1 settings it reproduces that config block for block.
+
 ### Files (in each run folder)
 - `pq_points.csv`: one row per point: target, mean/SD pressure and flow, syringe steps/s (and µL/min from `ul_per_step`), mean supply current (PPK2), settled flag, settling time, syringe clears, note. `pq_curve.png` at the end; the *PQ curve* tab can reopen any `pq_points.csv`
 - `pressure/pressure.csv` (25 Hz: pressure, target, syringe position, mode, learned gains and drift), `pressure/events.json` (targets, clears, faults, learned values), `pressure/calibration_used.json`
