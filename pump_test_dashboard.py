@@ -1825,6 +1825,9 @@ class PumpTestRunner(LiveSessionBase):
         settle_to = safe_float(test.get("settle_timeout_s", 120), 120.0)
         measure_s = max(1.0, safe_float(test.get("measure_s", 30), 30.0))
         on_timeout = str(test.get("on_timeout", "measure")).lower()
+        # above_shutoff = pressure below the target, rising < 2 mbar in this window. At 1-5 Hz the pump gives
+        # only ~10-17 uL/min, so on a soft line 5 s can mistake a slow rise for the shut-off plateau
+        plateau_s = max(1.0, safe_float(test.get("shutoff_plateau_s", 5.0), 5.0))
         nominal = PRESSURE_SETTLE_GUESS_S + measure_s
         # Start with an (almost) empty syringe: the pump flow fills a 1 mL syringe in a few minutes
         # (lab 29 Oct: ~4 min at 400 Hz), so a part-full start runs out in the middle of a point
@@ -1844,7 +1847,7 @@ class PumpTestRunner(LiveSessionBase):
                 self._emit("status", f"{label}PQ {hz} Hz: point {k + 1}/{len(pressures)} at {p_t:g} mbar")
                 t_start = CLOCK()
                 self._nominal_begin(t_start, nominal)
-                row = self._pq_point(hz, p_t, settle_to, measure_s, on_timeout, log_event, label)
+                row = self._pq_point(hz, p_t, settle_to, measure_s, on_timeout, log_event, label, plateau_s)
                 if self.stop_flag.is_set():
                     break
                 self._nominal_end(nominal)
@@ -1865,7 +1868,7 @@ class PumpTestRunner(LiveSessionBase):
                     time.sleep(0.1)
 
     def _pq_point(self, hz: int, p_t: float, settle_to: float, measure_s: float, on_timeout: str,
-                  log_event, label: str) -> Optional[Dict[str, Any]]:
+                  log_event, label: str, plateau_s: float = 5.0) -> Optional[Dict[str, Any]]:
         ctl = self.ctl
         reserve = int(ctl.cfg["clear_reserve_steps"])
         for attempt in range(1, 4):
@@ -1892,11 +1895,11 @@ class PumpTestRunner(LiveSessionBase):
                     full = "settling"
                     break
                 # Below the target with the push blocked at the empty end: wait while the pump
-                # still raises the pressure; a plateau (< 2 mbar in 5 s) means above shut-off
+                # still raises the pressure; a plateau (< 2 mbar in plateau_s) means above shut-off
                 if ctl.blocked in ("empty", "pump_below") and ctl.p_1s < p_t - 2 * float(ctl.cfg["tolerance_mbar"]):
                     if blocked_since is None or ctl.p_1s - p_ref >= 2.0:
                         blocked_since, p_ref = CLOCK(), ctl.p_1s
-                    elif CLOCK() - blocked_since > 5.0:
+                    elif CLOCK() - blocked_since > plateau_s:
                         break
                 else:
                     blocked_since = None
