@@ -44,8 +44,9 @@ second and two readings in current limiting stop the run; PPK2 software trip at 
 ~29 mA at 2.5 V, no surge). Power on, 10 ms bins, raw snapshots every 10 min.
 
 Supply address: the COM port of the supply on the PC that runs the dashboard (USB 0416:5011, "USB Serial Device"),
-or <pc>:5025 when the supply hangs on another PC running supply_bridge.py. Without --address the config carries
-none and the dashboard uses the Power panel's Address field (it refuses to start while that is empty).
+or <pc>:5025 when the supply hangs on another PC running supply_bridge.py. Default COM7 (the lab PC, Nic 2 Nov);
+--address "" leaves it out and the dashboard uses the Power panel's Address field (it refuses to start while that
+is empty).
 
 usage: python make_config_lowf_voltage.py [pump_id] [--address COMx | host:5025] [--channel 1]
                                           [--out-on CMD --out-off CMD]    (what supply_rsd.py --probe-output found)
@@ -58,7 +59,9 @@ import json
 
 ap = argparse.ArgumentParser(description="Low frequency vs voltage config (pump 261030-1)")
 ap.add_argument("pump_id", nargs="?", default="261030-1")
-ap.add_argument("--address", default=None, help="supply address: COMx, or host:5025 (supply_bridge.py)")
+ap.add_argument("--address", default="COM7",
+                help="supply address: COMx (default COM7, the supply on the lab PC), host:5025 (supply_bridge.py), "
+                     "or '' to leave it to the Power panel")
 ap.add_argument("--channel", type=int, default=1, help="supply channel (1 = CH1)")
 ap.add_argument("--out-on", default=None, help="output-on command if not OUT1 (supply_rsd.py --probe-output)")
 ap.add_argument("--out-off", default=None, help="output-off command if not OUT0")

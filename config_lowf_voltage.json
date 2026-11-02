@@ -1752,7 +1752,8 @@
     "tolerance_mv": 50,
     "step_timeout_s": 10,
     "off_on_exit": true,
-    "eol": "LF"
+    "eol": "LF",
+    "address": "COM7"
   },
   "power": {
     "enabled": true,
