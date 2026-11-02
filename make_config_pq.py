@@ -34,12 +34,29 @@ the low-f regime, at the usual operating frequencies, and at low voltage (best e
   0.8 V (0.8 V: the most efficient setting, 3.8 J/mL free-flow), same pressures, 20 s per point, plus its own
   free-flow anchors (priming, then 600 Hz 20 s at each voltage).
 
+- DEAD-HEAD maximum pressure (Nic, 2 Nov; the PQ of 20261102_044118 / 051025 gave shut-off plateaus that still
+  rise with frequency at 2.5 V: 70 mbar at 100 Hz, 137-159 at 600, 181 at 1300; 77 at 600 Hz, 1.0 V): the
+  syringe controller holds the plunger still with the motor energised ("hold_position"), so the pump
+  pressurises a fixed volume. Each step: 60 s drive (ended early at 270 mbar, below the 280 mbar limit, and
+  logged as stop_above in pressure/events.json), 5 s at 0 Hz (leak-back at the maximum), release to ~0 mbar
+  with the syringe, 15 s at 0 Hz. 2.5 V: 600, 800, 1000, 1300, 1600, 2000 Hz, then 1300 again (drift); 1.0 V:
+  600 and 1300 Hz. Before each hold the run asks for a syringe clear if less than 30 % is left to pull back.
+  The releases are gentle (15 mbar/s, stop at 3 mbar, never pull below it): after the PQ the -62 mbar
+  undershoots had pulled gas out (free flow -25 % at 600 Hz, -40 % at 1300 Hz, 2 Nov).
+- STRONG PRIMING (outlet vented to waste, no syringe pressure): 3 x [1300 Hz 10 s, 2000 Hz 10 s, 600 Hz 60 s]
+  with 10 s zeros (high-frequency steps primed the other pumps in the purge runs; 600 Hz flushes), then a
+  600 Hz 20 s check: about 200 uL/min or more at 2.5 V passes; lower, run it again. The three standard
+  600 Hz 60 s primes did not recover the 2 Nov state shift. Order: strong priming (vented) -> connect the
+  syringe through the stopcock -> blocked-outlet config.
+
 Writes:
   config_pq_smoke.json                     one frequency, 3 pressures: checks the chain
   config_pq_261030-1.json                  the curves for 261030-1 (config_pq_261030-1_lean.json with --lean)
   config_pq_261030-1_freeflow.json         the 0 mbar anchors
   config_pq_261030-1_short.json            600 Hz at 2.5 / 1.0 / 0.8 V
   config_pq_261030-1_short_freeflow.json   its 0 mbar anchors
+  config_pq_261030-1_deadhead.json         blocked-outlet maximum pressure vs frequency
+  config_prime_strong_261030-1.json        strong priming + 600 Hz check (vented, no syringe)
 The estimate printed at the end simulates the syringe (1 mL, 2470 full steps) with the free-outlet flows
 below, for two cases: no shut-off below 250 mbar (every point measured: the upper bound) and a linear PQ
 line to SHUTOFF_GUESS_MBAR (like 260930-2: ~54 mbar at 400 Hz on 29 Oct).
@@ -94,6 +111,14 @@ Q_FREE = {(2500, 1): 17, (2500, 5): 66, (2500, 20): 143, (2500, 100): 126, (2500
           (1000, 1): 10, (1000, 20): 100, (1000, 600): 140}
 SHORT_LEVELS = [(2500, [600]), (1000, [600]), (800, [600])]
 Q_FREE_SHORT = {(2500, 600): 210, (1000, 600): 135, (800, 600): 93}     # uL/min free outlet (2 Nov estimate)
+DEADHEAD_LEVELS = [(2500, [600, 800, 1000, 1300, 1600, 2000, 1300]), (1000, [600, 1300])]
+DH_DRIVE_S, DH_STOP_MBAR, DH_OFF_S, DH_REST_S = 60.0, 270.0, 5.0, 15.0
+DH_RELEASE_TIMEOUT_S, DH_MIN_PULL_ROOM = 45.0, 0.3
+DH_RELEASE_RATE, DH_RELEASE_FLOOR = 15.0, 3.0     # gentle: 15 mbar/s ramp, stop at 3 mbar (no undershoot)
+DH_RELEASE_GUESS_S = 15.0      # ~70-270 -> 3 mbar at 15 mbar/s, for the run-length estimate
+PRIME_STRONG = [(1300, 10.0), (2000, 10.0), (600, 60.0)]
+PRIME_STRONG_REPS, PRIME_ZERO_S, PRIME_CHECK = 3, 10.0, (600, 20.0)
+PRIME_PASS_UL_MIN = 200
 LIMIT_MA, TRIP_MA, HOLD_MS = 60, 57, 300
 STEP_SETTLE_S = 5
 FF_DRIVE_S, FF_DRIVE_LOW_S, FF_ZERO_S = 20.0, 30.0, 20.0
@@ -209,6 +234,57 @@ def build_freeflow(lv, name, check_index=2):
     return config(name, desc, tests, args.pump_id, False, supply_section(), power_section())
 
 
+def gentle_release():
+    return {"type": "pressure", "target_mbar": "release", "timeout_s": DH_RELEASE_TIMEOUT_S,
+            "release_rate_mbar_s": DH_RELEASE_RATE, "release_floor_mbar": DH_RELEASE_FLOOR}
+
+
+def build_deadhead():
+    tests = [voltage(DEADHEAD_LEVELS[0][0], f"{DEADHEAD_LEVELS[0][0] / 1000:.1f} V by the supply"), gentle_release()]
+    k = 0
+    for i, (mv, fs) in enumerate(DEADHEAD_LEVELS):
+        if i:
+            tests.append(voltage(mv, f"{mv / 1000:.1f} V by the supply"))
+        for j, f in enumerate(fs):
+            k += 1
+            check = j > 0 and f in fs[:j]                   # a repeated frequency = drift check
+            tests += [{"type": "pressure", "target_mbar": "hold_position", "min_pull_room": DH_MIN_PULL_ROOM},
+                      drive(f, DH_DRIVE_S, section="deadhead", level_mv=mv, step=k, check=check,
+                            stop_above_mbar=DH_STOP_MBAR),
+                      zero(DH_OFF_S),
+                      gentle_release(),
+                      zero(DH_REST_S)]
+    steps = "; ".join(f"{mv / 1000:g} V: {', '.join(map(str, fs))} Hz" for mv, fs in DEADHEAD_LEVELS)
+    desc = (f"Blocked-outlet (dead-head) maximum pressure vs frequency, pump {args.pump_id}. The syringe controller "
+            f"holds the plunger still (motor energised, no regulation) and the pump pressurises the fixed volume: "
+            f"{DH_DRIVE_S:g} s per step (ended early at {DH_STOP_MBAR:g} mbar, logged as stop_above = maximum >= "
+            f"{DH_STOP_MBAR:g}), {DH_OFF_S:g} s at 0 Hz, gentle release to ~{DH_RELEASE_FLOOR:g} mbar "
+            f"({DH_RELEASE_RATE:g} mbar/s, never below), {DH_REST_S:g} s at 0 Hz. {steps}. Voltages by the RSD3305P, "
+            f"PPK2 on. ORDER: 1) config_prime_strong_261030-1.json with the outlet vented (check block >= "
+            f"~{PRIME_PASS_UL_MIN} uL/min at 600 Hz, else run it again); 2) connect the syringe through the stopcock, "
+            f"syringe EMPTY (room to pull back for the releases), stopcock closed to waste; 3) this config. Open the "
+            f"stopcock to waste before ANY manual syringe push: hand pushes against the closed line read 530-550 mbar "
+            f"on 2 Nov, beyond the sensor range.")
+    return config(f"Dead-head maximum pressure {args.pump_id}", desc, tests, args.pump_id, True, supply_section(),
+                  power_section())
+
+
+def build_prime_strong():
+    mv = 2500
+    tests = [zero(PRIME_ZERO_S), voltage(mv, f"{mv / 1000:.1f} V by the supply"), zero(PRIME_ZERO_S)]
+    for r in range(PRIME_STRONG_REPS):
+        for f, dur in PRIME_STRONG:
+            tests += [drive(f, dur, section="prime_strong", level_mv=mv, rep=r + 1), zero(PRIME_ZERO_S)]
+    tests += [drive(PRIME_CHECK[0], PRIME_CHECK[1], section="prime_check", level_mv=mv), zero(PRIME_ZERO_S)]
+    seq = ", ".join(f"{f} Hz {d:g} s" for f, d in PRIME_STRONG)
+    desc = (f"STRONG PRIMING for pump {args.pump_id}: outlet VENTED to waste, no syringe pressure (pressure control "
+            f"off). {PRIME_STRONG_REPS} x [{seq}] with {PRIME_ZERO_S:g} s zeros at 2.5 V, then a {PRIME_CHECK[0]} Hz "
+            f"{PRIME_CHECK[1]:g} s CHECK. Pass: about {PRIME_PASS_UL_MIN} uL/min or more in the check block; if lower, "
+            f"run this config again before the blocked-outlet test. Voltages by the RSD3305P, PPK2 on. Then connect "
+            f"the syringe through the stopcock and run config_pq_261030-1_deadhead.json.")
+    return config(f"Strong priming {args.pump_id}", desc, tests, args.pump_id, False, supply_section(), power_section())
+
+
 def estimate(cfg, shutoff, q_free):
     """Simulated run: (minutes incl. clears, clears per PQ block, measured points)."""
     usable_ul = (PRESSURE["pos_max"] - PRESSURE["pos_min"] - 2 * PRESSURE["pos_margin"]) * PRESSURE["ul_per_step"]
@@ -256,9 +332,13 @@ ff = build_freeflow(LEVELS, f"PQ free-flow anchors {args.pump_id}")     # every 
 short = build_pq(SHORT_LEVELS, f"PQ curves {args.pump_id} (short: 600 Hz at 2.5 / 1.0 / 0.8 V)",
                  "config_pq_261030-1_short_freeflow.json", drift_index=None)
 short_ff = build_freeflow(SHORT_LEVELS, f"PQ free-flow anchors {args.pump_id} (short)", check_index=None)
+deadhead = build_deadhead()
+prime_strong = build_prime_strong()
 for fname, cfg in (("config_pq_smoke.json", smoke), (f"config_pq_261030-1{tag}.json", full),
                    ("config_pq_261030-1_freeflow.json", ff), ("config_pq_261030-1_short.json", short),
-                   ("config_pq_261030-1_short_freeflow.json", short_ff)):
+                   ("config_pq_261030-1_short_freeflow.json", short_ff),
+                   ("config_pq_261030-1_deadhead.json", deadhead),
+                   ("config_prime_strong_261030-1.json", prime_strong)):
     with open(fname, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     n = sum(len(t["pressures_mbar"]) * (len(t["frequency_hz"]) if isinstance(t["frequency_hz"], list) else 1)
@@ -276,3 +356,10 @@ for fname, cfg, qf in ((f"config_pq_261030-1{tag}.json", full, Q_FREE),
         mins, clears, per_block, points = estimate(cfg, shut, qf)
         blocks = "; ".join(f"{mv / 1000:g} V {'/'.join(map(str, fs))} Hz: {c}" for mv, fs, c in per_block)
         print(f"  {label}: {points} points, {clears} clears, {mins:.0f} min incl. clears  [clears per block: {blocks}]")
+
+n_dh = sum(len(fs) for _, fs in DEADHEAD_LEVELS)
+t_dh = (n_dh * (DH_DRIVE_S + DH_OFF_S + DH_RELEASE_GUESS_S + DH_REST_S) + len(DEADHEAD_LEVELS) * (1.0 + STEP_SETTLE_S)
+        + DH_RELEASE_GUESS_S + 10.0)
+print(f"\nconfig_pq_261030-1_deadhead.json: {n_dh} steps, ~{t_dh / 60:.1f} min ({DH_DRIVE_S:g} s drive + {DH_OFF_S:g} s off + "
+      f"~{DH_RELEASE_GUESS_S:g} s release + {DH_REST_S:g} s rest per step; shorter when a step stops at "
+      f"{DH_STOP_MBAR:g} mbar); a syringe clear only if less than {DH_MIN_PULL_ROOM:.0%} is left to pull back")
