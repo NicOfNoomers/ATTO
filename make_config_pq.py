@@ -48,6 +48,12 @@ the low-f regime, at the usual operating frequencies, and at low voltage (best e
   600 Hz 20 s check: about 200 uL/min or more at 2.5 V passes; lower, run it again. The three standard
   600 Hz 60 s primes did not recover the 2 Nov state shift. Order: strong priming (vented) -> connect the
   syringe through the stopcock -> blocked-outlet config.
+- PRIME PLUS (Nic, 2 Nov: the strong prime 20261102_063050 raised 1300 Hz 147 -> 182 uL/min but 600 Hz drifted
+  193 -> 179 and 2000 Hz barely pumps now, 41 -> 12; fresh state this morning 600 Hz 218-228, 1300 Hz 281):
+  pump tilted OUTLET-UP, vented. 3 x [2 Hz 30 s (full-travel ~200-280 nL strokes, large displacement and peak
+  velocity to move gas), 0 Hz 5 s, 1000 / 1300 / 1600 Hz 10 s each, 0 Hz 5 s, 600 Hz 45 s flush, 0 Hz 10 s],
+  then checks 600 Hz 20 s and 1300 Hz 20 s with 15 s zeros. Pass: ~200 uL/min or more at 600 Hz and ~250 or
+  more at 1300 Hz; else run it again. Keep the tilt for the following test.
 
 Writes:
   config_pq_smoke.json                     one frequency, 3 pressures: checks the chain
@@ -57,6 +63,7 @@ Writes:
   config_pq_261030-1_short_freeflow.json   its 0 mbar anchors
   config_pq_261030-1_deadhead.json         blocked-outlet maximum pressure vs frequency
   config_prime_strong_261030-1.json        strong priming + 600 Hz check (vented, no syringe)
+  config_prime_plus_261030-1.json          2 Hz strokes + 1000-1600 Hz + flush, 600 / 1300 Hz checks (tilted)
 The estimate printed at the end simulates the syringe (1 mL, 2470 full steps) with the free-outlet flows
 below, for two cases: no shut-off below 250 mbar (every point measured: the upper bound) and a linear PQ
 line to SHUTOFF_GUESS_MBAR (like 260930-2: ~54 mbar at 400 Hz on 29 Oct).
@@ -119,6 +126,10 @@ DH_RELEASE_GUESS_S = 15.0      # ~70-270 -> 3 mbar at 15 mbar/s, for the run-len
 PRIME_STRONG = [(1300, 10.0), (2000, 10.0), (600, 60.0)]
 PRIME_STRONG_REPS, PRIME_ZERO_S, PRIME_CHECK = 3, 10.0, (600, 20.0)
 PRIME_PASS_UL_MIN = 200
+PRIME_PLUS_ROUND = [(2, 30.0), (0, 5.0), (1000, 10.0), (1300, 10.0), (1600, 10.0), (0, 5.0), (600, 45.0), (0, 10.0)]
+PRIME_PLUS_REPS = 3
+PRIME_PLUS_CHECKS = [(600, 20.0), (0, 15.0), (1300, 20.0), (0, 15.0)]
+PRIME_PLUS_PASS = {600: 200, 1300: 250}
 LIMIT_MA, TRIP_MA, HOLD_MS = 60, 57, 300
 STEP_SETTLE_S = 5
 FF_DRIVE_S, FF_DRIVE_LOW_S, FF_ZERO_S = 20.0, 30.0, 20.0
@@ -285,6 +296,24 @@ def build_prime_strong():
     return config(f"Strong priming {args.pump_id}", desc, tests, args.pump_id, False, supply_section(), power_section())
 
 
+def build_prime_plus():
+    mv = 2500
+    tests = [zero(PRIME_ZERO_S), voltage(mv, f"{mv / 1000:.1f} V by the supply"), zero(PRIME_ZERO_S)]
+    for r in range(PRIME_PLUS_REPS):
+        for f, dur in PRIME_PLUS_ROUND:
+            tests.append(zero(dur) if f == 0 else drive(f, dur, section="prime_plus", level_mv=mv, rep=r + 1))
+    for f, dur in PRIME_PLUS_CHECKS:
+        tests.append(zero(dur) if f == 0 else drive(f, dur, section="prime_check", level_mv=mv))
+    rnd = ", ".join(f"{f} Hz {d:g} s" for f, d in PRIME_PLUS_ROUND)
+    desc = (f"PRIME PLUS for pump {args.pump_id}: pump TILTED OUTLET-UP, outlet vented to waste, no syringe pressure "
+            f"(pressure control off); keep the tilt for the following test. {PRIME_PLUS_REPS} x [{rnd}] at 2.5 V: the "
+            f"2 Hz strokes are full travel (~200-280 nL) to move gas, 1000-1600 Hz prime, 600 Hz flushes (2000 Hz is "
+            f"left out: it barely pumps in the current state). Then CHECKS: 600 Hz 20 s and 1300 Hz 20 s. Pass: about "
+            f"{PRIME_PLUS_PASS[600]} uL/min or more at 600 Hz and about {PRIME_PLUS_PASS[1300]} or more at 1300 Hz; "
+            f"else run it again. Voltages by the RSD3305P, PPK2 on.")
+    return config(f"Prime plus {args.pump_id}", desc, tests, args.pump_id, False, supply_section(), power_section())
+
+
 def estimate(cfg, shutoff, q_free):
     """Simulated run: (minutes incl. clears, clears per PQ block, measured points)."""
     usable_ul = (PRESSURE["pos_max"] - PRESSURE["pos_min"] - 2 * PRESSURE["pos_margin"]) * PRESSURE["ul_per_step"]
@@ -334,11 +363,13 @@ short = build_pq(SHORT_LEVELS, f"PQ curves {args.pump_id} (short: 600 Hz at 2.5 
 short_ff = build_freeflow(SHORT_LEVELS, f"PQ free-flow anchors {args.pump_id} (short)", check_index=None)
 deadhead = build_deadhead()
 prime_strong = build_prime_strong()
+prime_plus = build_prime_plus()
 for fname, cfg in (("config_pq_smoke.json", smoke), (f"config_pq_261030-1{tag}.json", full),
                    ("config_pq_261030-1_freeflow.json", ff), ("config_pq_261030-1_short.json", short),
                    ("config_pq_261030-1_short_freeflow.json", short_ff),
                    ("config_pq_261030-1_deadhead.json", deadhead),
-                   ("config_prime_strong_261030-1.json", prime_strong)):
+                   ("config_prime_strong_261030-1.json", prime_strong),
+                   ("config_prime_plus_261030-1.json", prime_plus)):
     with open(fname, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     n = sum(len(t["pressures_mbar"]) * (len(t["frequency_hz"]) if isinstance(t["frequency_hz"], list) else 1)
