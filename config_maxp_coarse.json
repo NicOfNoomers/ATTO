@@ -1,0 +1,961 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.50 V by the supply"
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 1,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 2,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 3,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 4,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 5,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 6,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 900,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 7,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 8,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1100,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 9,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1200,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 10,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 11,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1400,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 12,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1500,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 13,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 14,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1700,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 15,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1800,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 16,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1900,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 17,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 18,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 12.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "maxp_scan",
+      "level_mv": 2500,
+      "step": 19,
+      "check": true,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 30.0,
+      "release_rate_mbar_s": 30.0,
+      "release_floor_mbar": 5.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 3.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Max-pressure scan coarse",
+    "description": "Maximum-pressure frequency scan (blocked outlet): coarse scan 300-2000 Hz in 100 Hz steps, 300 Hz repeated at the end, at 2.50 V. Per frequency: gentle release (pull only, 30 mbar/s, stop at 5 mbar), the syringe holds the plunger still with the motor energised, 12 s drive (ended early at 270 mbar = maximum >= 270), 3 s at 0 Hz (leak decay), release, 3 s at 0 Hz. Voltage by the RSD3305P, PPK2 on. ORDER: 1) prime with the outlet vented, at the pump's own peak if known (config_scan_quick.json, make_config_prime_at.py); 2) connect the syringe through the stopcock, syringe EMPTY, stopcock closed to waste; 3) this config. A syringe clear is asked for when less than 30 % is left to pull back. Type the Pump ID. Open the stopcock to waste before ANY manual syringe push.",
+    "operator": "",
+    "pump_id": "",
+    "syringe_ml": 1.0,
+    "syringe_on": "outlet",
+    "pressure_channel": 1,
+    "freqs_hz": [
+      300,
+      400,
+      500,
+      600,
+      700,
+      800,
+      900,
+      1000,
+      1100,
+      1200,
+      1300,
+      1400,
+      1500,
+      1600,
+      1700,
+      1800,
+      1900,
+      2000,
+      300
+    ],
+    "repeats_hz": [
+      300
+    ]
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "baud": 115200,
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -60.0,
+    "rate_mbar_s": 40.0,
+    "tolerance_mbar": 2.0,
+    "settle_s": 3.0,
+    "microsteps": 16,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}
