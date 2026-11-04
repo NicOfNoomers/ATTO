@@ -54,14 +54,18 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
 - Use `py -3.10` only.
 - Don't switch the supply output, the pump or the syringe by hand. Don't delete or move run data. Don't push to git from the lab PC.
 - Don't touch the dashboard window or its process unless Nic says so. The headless runner and a connected dashboard session fight over the same ports, PPK2, Fluigent and camera. If the window has a session connected, stop and ask Nic.
-- On anything unexpected (a trip, an error dialog, a prompt nobody can answer, odd numbers): stop the run (Ctrl+C in `run_headless.py` = Stop, pump 0 Hz) and report it word for word.
+- On anything unexpected (a trip, an error dialog, a prompt nobody can answer, odd numbers): stop the run and report it word for word.
+  - To stop, create the file `STOP` in the run folder, or `C:\Users\Edwin\Downloads\atto\ATTO\HEADLESS_STOP`. That is the same as the Stop button: pump 0 Hz, supply output off, files closed.
+  - **Never kill the run_headless.py process**: the pump would keep its last frequency and the supply its output.
+  - Delete `HEADLESS_STOP` afterwards; the next start refuses while it exists.
 
 **Workflow**
 
 1. **Check the code.** `git -C C:\Users\Edwin\Downloads\atto\ATTO status` and `git log -1`. Pull only if the job says so, no run is active and the tree is clean.
 2. **Dry run.** `py -3.10 scripts\run_headless.py <config> --name <name> --pump-id <id> --dry-run`. It prints the plan: duration, voltage steps, supply, trip. Send that back first if the job says "confirm before running".
 3. **Run.** The same command without `--dry-run`.
-   - Long runs: start it in the background, and report when it starts (run folder) and when it ends.
+   - Long runs: start it in the background with its output going to a log, e.g. `> pump_runs\headless_<name>.log 2>&1`. Report when it starts (the run folder from the `STARTED:` line) and when it ends.
+   - Watch the log for `STOPPING`, `DIALOG error` and `ENDED` / `FINISHED`.
    - It prints progress every minute.
    - A prompt that needs a person (manual voltage step, syringe clearing, pause) stops the run, unless the job says someone is at the rig and gives `--on-prompt wait`.
 4. **Report** with `SendMessage` to the job message's `from` address:

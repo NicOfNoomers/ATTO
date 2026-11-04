@@ -18,6 +18,10 @@ What it does
 - During the run: progress every --report-s seconds; a prompt that appears anyway (operator, voltage, clear
   syringe) stops the run (pump 0 Hz) unless --on-prompt wait; Ctrl+C stops it the same way as Stop.
 - Every dialog the dashboard raises is printed (errors, warnings) and questions are answered NO.
+- Stopping from outside (a run in the background): create the file STOP in the run folder, or
+  <ATTO>\\HEADLESS_STOP; the run stops like Stop (pump 0 Hz, supply off, files closed). Never kill the
+  process: the pump would keep its last frequency and the supply its output. A leftover HEADLESS_STOP
+  refuses the next start until it is deleted.
 - At the end: run folder, final status.json, voltage steps, errors; headless_summary.json in the run folder.
   Exit 0 = finished, 3 = stopped / failed / prompt, 2 = refused before start.
 Close the dashboard window (or at least have no session connected in it) before a headless run: the two would
@@ -41,6 +45,22 @@ MAX_MV = 2500
 
 def out(msg=""):
     print(f"[{datetime.now():%H:%M:%S}] {msg}" if msg else "", flush=True)
+
+
+def close_app(app):
+    """Cancel the hidden window's pending timers first (else Tcl prints 'invalid command name' on exit)."""
+    try:
+        for aid in app.root.tk.call("after", "info"):
+            try:
+                app.root.after_cancel(aid)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        app.root.destroy()
+    except Exception:
+        pass
 
 
 def main(argv=None):
@@ -146,11 +166,11 @@ def main(argv=None):
     if problems:
         for p in problems:
             out(f"REFUSED: {p}")
-        app.root.destroy()
+        close_app(app)
         return 2
     if a.dry_run:
         out("dry run: checks passed, nothing opened")
-        app.root.destroy()
+        close_app(app)
         return 0
 
     stop_reason = []
@@ -164,19 +184,29 @@ def main(argv=None):
     except Exception:
         pass
 
+    stale = os.path.join(os.path.dirname(HERE), "HEADLESS_STOP")
+    if os.path.exists(stale):
+        out(f"REFUSED: {stale} exists (left from an earlier stop); delete it first")
+        close_app(app)
+        return 2
     n0 = len(dialogs)
     app.start_scheduled_run()
     runner, run_dir = app.active_stream, app.run_dir
     if not isinstance(runner, d.PumpTestRunner):
         out("FAILED to start: " + "; ".join(f"{x['title']}: {x['msg'][:200]}" for x in dialogs[n0:]))
-        app.root.destroy()
+        close_app(app)
         return 3
     out(f"STARTED: {run_dir}")
+    stop_files = [os.path.join(run_dir, "STOP"), os.path.join(os.path.dirname(HERE), "HEADLESS_STOP")]
+    out(f"to stop it cleanly from outside: create {stop_files[0]} (or {stop_files[1]}); never kill the process")
     t0 = time.monotonic()
     last = t0
     stopped = False
     while app.active_stream is not None:
         pump(0.2)
+        hit = next((f for f in stop_files if os.path.exists(f)), None)
+        if hit and not stopped:
+            stop_reason.append(f"stop file {hit}")
         p = runner.get_progress()
         prompt = p.get("voltage_request") or p.get("operator_request")
         if prompt and not stopped:
@@ -228,7 +258,7 @@ def main(argv=None):
         + ", ".join(f"{s.get('requested_mv')}->{s.get('confirmed_mv')}" for s in steps))
     for e in errors:
         out(f"error: {e['title']}: {e['msg'][:300]}")
-    app.root.destroy()
+    close_app(app)
     return 0 if finished else 3
 
 
