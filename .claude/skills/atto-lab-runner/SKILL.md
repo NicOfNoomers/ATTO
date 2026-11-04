@@ -21,7 +21,8 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
 | Syringe pump Arduino (pressure / PQ) | COM6, USB 2341:0243 |
 | RSD3305P programmable supply | COM7, USB 0416:5011. Output commands `OUT1:1` / `OUT1:0` (the defaults); CH1 only, nothing on CH2/CH3 |
 | Flow sensor | Fluigent, channel 0 |
-| Run folders | `C:\Users\Edwin\Downloads\atto\ATTO\pump_runs\<YYYYMMDD_HHMMSS_micro>_<name>`, the dashboard's default *Output folder*; headless runs land there too. It is local and not synced: the lab PC has no O: drive and no sync client covers it. Runs appear on Nic's laptop under `O:\All\nicmi\atto_lab_pc\` only once copied there (ask Nic how; until then, ask the runner for the numbers you need). |
+| Run folders | `C:\Users\Edwin\Downloads\atto\ATTO\pump_runs\<YYYYMMDD_HHMMSS_micro>_<name>`, the dashboard's default *Output folder*; headless runs land there too (don't pass `--out`). |
+| Copy to the share | `C:\Scripts\FolderSync.ps1` copies `pump_runs` one way to `\\ait-pqumulo.win.dtu.dk\sund$\SUND\All\nicmi\atto_lab_pc`. That is `O:\All\nicmi\atto_lab_pc` on Nic's laptop; the lab PC has no O: letter. It syncs 2 s after files stop changing, rescans every 15 min, and never deletes on the share. If a run is missing on O:, ask the runner to check that FolderSync is running; don't copy by hand. |
 
 ## For sessions on Nic's laptop: sending a job
 
@@ -39,8 +40,8 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
    - `Report: <what to send back>`: run folder, status, errors, numbers you need
    - `Don't: <limits>`, e.g. "don't switch the supply by hand", "stop if the trip fires"
 6. **Data.** The run folder name comes in the report.
-   - Analyse it on the laptop under `O:\All\nicmi\atto_lab_pc\<run>` once it has been copied there.
-   - Before that, ask the runner to compute and send what you need: means and SDs per block, file sizes, `headless_summary.json`.
+   - Analyse it on the laptop under `O:\All\nicmi\atto_lab_pc\<run>`. FolderSync copies it within seconds to minutes of the files changing.
+   - If it isn't there, ask the runner to check FolderSync, or to compute and send what you need: means and SDs per block, `headless_summary.json`.
 
 ## For the runner on the lab PC: taking a job
 
