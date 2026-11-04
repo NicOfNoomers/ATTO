@@ -65,6 +65,27 @@ For help with command-line options:
 python pump_test_dashboard.py --help
 ```
 
+### Headless runs (no one at the PC)
+
+`scripts\run_headless.py` runs a config through the real dashboard with its window hidden. It loads the config as the Load button does, starts the run, prints progress, and stops safely. At the end it writes `headless_summary.json` into the run folder.
+
+```cmd
+py -3.10 scripts\run_headless.py config_lowf_voltage.json --name lowf_0p4 --pump-id 261030-1 --dry-run
+py -3.10 scripts\run_headless.py config_lowf_voltage.json --name lowf_0p4 --pump-id 261030-1
+```
+
+It refuses to start (exit 2) in these cases:
+- there is no software trip: no PPK2 watch, and the supply is not the programmable one;
+- `supply.max_mv` or a voltage step is above 2.5 V;
+- a step needs a person: manual-supply voltage steps, `"pause": true` blocks, pressure / PQ blocks. Pass `--on-prompt wait` only when someone is at the rig.
+
+Behaviour once running:
+- A prompt that appears anyway, or Ctrl+C, stops the run with the pump at 0 Hz.
+- Dialog questions are answered "no".
+- Exit codes: 0 = finished, 3 = stopped or failed.
+
+Close the dashboard window, or at least disconnect its session, first: both would use the same ports. The lab PC's Claude session runs jobs this way (skill `.claude/skills/atto-lab-runner`).
+
 ### Fluigent SDK
 
 The Fluigent SDK (version 23.0.0) is included in the repository under `fluigent_sdk-23.0.0/`. It will be automatically installed by the install script if the directory exists.

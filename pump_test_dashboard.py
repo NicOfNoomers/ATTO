@@ -1044,6 +1044,7 @@ class LiveSessionBase:
     plant = None                              # simulated line (pressure backend "dummy")
     supply = None                             # supply_rsd.RSDSupply when supply.mode is "rsd3305p"
     supply_mon = None                         # supply_rsd.SupplyMonitor (V/I log, CC trip)
+    supply_final = None                       # what closing the supply did (output read back), for status.json
 
     def get_plot_data(self) -> Tuple[List[float], List[float], List[float]]:
         return [], [], []
@@ -1163,11 +1164,24 @@ class LiveSessionBase:
                 log_exception(f"{who}: failed to stop the supply monitor")
         if drv is None:
             return
-        try:
-            if self._supply_settings().get("off_on_exit", True):
+        final: Dict[str, Any] = {"state": "closed"}
+        if not self._supply_settings().get("off_on_exit", True):
+            final["output"] = "left on (supply.off_on_exit false)"
+        else:
+            try:
                 drv.output(False)
-        except Exception:
-            log_exception(f"{who}: failed to switch the programmable supply off")
+            except Exception as e:
+                final["output"] = f"unknown: the output-off command failed ({e})"
+                log_exception(f"{who}: failed to switch the programmable supply off")
+            else:
+                try:
+                    m = drv.measure()          # read back: did the output really switch off?
+                    final.update(output="off" if not m.get("output") else "ON (the output-off command did not take)",
+                                 v_out_v=m.get("v"), i_out_ma=None if m.get("i") is None else round(m["i"] * 1000, 1))
+                except Exception as e:
+                    final["output"] = f"off sent, not read back ({e})"
+        self.supply_final = final
+        LOG.info(f"{who}: programmable supply closed, output {final.get('output')}")
         try:
             drv.close()
         except Exception:
@@ -4164,6 +4178,9 @@ class DashboardApp:
                     "finished": True, "elapsed_s": round(p["elapsed_s"], 1), "remaining_s": 0.0,
                     "waiting_for_voltage": None, "next_voltage_changes": [],
                     "power": stream.get_power_live()})
+        if getattr(stream, "supply_final", None) is not None or doc.get("supply") is not None:
+            # the heartbeat's last supply line said "output on"; replace it with what the close did
+            doc["supply"] = getattr(stream, "supply_final", None) or {"state": "closed", "output": "unknown"}
         if not write_json_atomic(path, doc):
             log_exception_limited("status_json", f"Could not write the final {path}")
 
