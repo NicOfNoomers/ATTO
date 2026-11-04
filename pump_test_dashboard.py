@@ -1175,8 +1175,15 @@ class LiveSessionBase:
                 log_exception(f"{who}: failed to switch the programmable supply off")
             else:
                 try:
-                    m = drv.measure()          # read back: did the output really switch off?
-                    final.update(output="off" if not m.get("output") else "ON (the output-off command did not take)",
+                    # read back: did the output really switch off? The RSD3305P takes up to ~1 s to update its
+                    # status (an immediate read said "ON" on 4 Nov while the output was off), so poll up to 3 s
+                    t_end = time.monotonic() + 3.0
+                    while True:
+                        m = drv.measure()
+                        if not m.get("output") or time.monotonic() >= t_end:
+                            break
+                        time.sleep(0.25)
+                    final.update(output="off" if not m.get("output") else "ON (still on 3 s after the output-off command)",
                                  v_out_v=m.get("v"), i_out_ma=None if m.get("i") is None else round(m["i"] * 1000, 1))
                 except Exception as e:
                     final["output"] = f"off sent, not read back ({e})"
