@@ -68,6 +68,12 @@ ap.add_argument("--out-off", default=None, help="output-off command if not OUT0"
 ap.add_argument("--manual", action="store_true", help="manual bench supply variant (operator voltage steps)")
 ap.add_argument("--levels", default="2.5,2.0,1.5,1.0,0.8,0.6,0.5,0.4,2.5",
                 help="supply levels in V, in run order (max 2.5 V)")
+ap.add_argument("--cond-v", type=float, default=None,
+                help="condition the pump at this voltage first (3 x 600 Hz 60 s + a 600 Hz ref), without a "
+                     "low-f set there; default: condition at the first level")
+ap.add_argument("--lean", action="store_true",
+                help="per level only the 600 Hz ref and the 1-100 Hz set (no 1300 Hz, no closing 600 Hz ref)")
+ap.add_argument("--out", default=None, help="output file (default config_lowf_voltage[_manual].json)")
 args = ap.parse_args()
 
 PUMP_ID = args.pump_id
@@ -107,18 +113,27 @@ def voltage_step(lvl, mv):
     return {"type": "voltage", "voltage_mv": mv, "while_waiting": "zero", "settle_s": STEP_SETTLE_S, "note": note}
 
 
+COND_MV = None if args.cond_v is None else int(round(args.cond_v * 1000))
+assert COND_MV is None or 0 < COND_MV <= 2500, "--cond-v must be within 0..2.5 V"
 tests = [zero(60.0)]
+if COND_MV is not None:
+    tests += [{"type": "voltage", "voltage_mv": COND_MV, "while_waiting": "zero", "settle_s": STEP_SETTLE_S,
+               "note": f"Conditioning at {COND_MV / 1000:.2f} V"}, zero(ZERO_S)]
+    for r in range(COND[2]):
+        tests += [drive(COND[0], COND[1], section="conditioning", level_mv=COND_MV, rep=r + 1), zero(ZERO_S)]
+    tests += [drive(REF_HZ, REF_S, section="ref_start", level_mv=COND_MV), zero(ZERO_S)]
 for lvl, mv in enumerate(LEVELS_MV):
     blk = [voltage_step(lvl, mv), zero(ZERO_S)]
-    if lvl == 0:
+    if lvl == 0 and COND_MV is None:
         for r in range(COND[2]):
             blk += [drive(COND[0], COND[1], section="conditioning", level_mv=mv, rep=r + 1), zero(ZERO_S)]
     blk += [drive(REF_HZ, REF_S, section="ref_start", level_mv=mv), zero(ZERO_S)]
     order = LOW_F if lvl % 2 == 0 else LOW_F[::-1]
     for f in order:
         blk += [drive(f, LONG_S if f <= LONG_BELOW_HZ else SHORT_S, section="low_f", level_mv=mv), zero(ZERO_S)]
-    blk += [drive(REF2_HZ, REF_S, section="ref_1300", level_mv=mv), zero(ZERO_S)]
-    blk += [drive(REF_HZ, REF_S, section="ref_end", level_mv=mv), zero(ZERO_S)]
+    if not args.lean:
+        blk += [drive(REF2_HZ, REF_S, section="ref_1300", level_mv=mv), zero(ZERO_S)]
+        blk += [drive(REF_HZ, REF_S, section="ref_end", level_mv=mv), zero(ZERO_S)]
     if mv < PPK2_MIN_MV:
         for b in blk:
             b["ppk2_below_range"] = True
@@ -126,14 +141,16 @@ for lvl, mv in enumerate(LEVELS_MV):
 tests.append(zero(60.0))
 LEVELS_TXT = ", ".join(f"{mv / 1000:g}" for mv in LEVELS_MV)
 
+FIRST_MV = COND_MV if COND_MV is not None else LEVELS_MV[0]
+MAX_LEVEL_MV = max(LEVELS_MV + ([COND_MV] if COND_MV is not None else []))
 if args.manual:
-    supply = {"mode": "manual", "current_limit_ma": LIMIT_MA, "max_mv": max(LEVELS_MV),
-              "initial_mv": LEVELS_MV[0], "lead_min": 2}
+    supply = {"mode": "manual", "current_limit_ma": LIMIT_MA, "max_mv": MAX_LEVEL_MV,
+              "initial_mv": FIRST_MV, "lead_min": 2}
     steps_txt = "Type the MEASURED VM at every voltage step."
-    out_name = "config_lowf_voltage_manual.json"
+    out_name = args.out or "config_lowf_voltage_manual.json"
 else:
     supply = {"mode": "rsd3305p", "channel": args.channel, "current_limit_ma": LIMIT_MA,
-              "max_mv": max(LEVELS_MV), "initial_mv": LEVELS_MV[0],
+              "max_mv": MAX_LEVEL_MV, "initial_mv": FIRST_MV,
               "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF"}
     if args.address:
         supply["address"] = args.address
@@ -143,7 +160,7 @@ else:
         supply["output_off"] = args.out_off
     steps_txt = ("Voltage steps by the RSD3305P programmable supply (no operator); measured voltage = the "
                  "supply's reading (supply/supply.csv, voltage_changes.csv).")
-    out_name = "config_lowf_voltage.json"
+    out_name = args.out or "config_lowf_voltage.json"
 
 cfg = {
     "port": PORT, "baud": 115200, "read_timeout_s": 0.2,
@@ -154,13 +171,16 @@ cfg = {
     "meta": {
         "name": "Low frequency vs voltage" + (" (manual supply)" if args.manual else ""),
         "description": ("MEASURE POWER ON. Flow and supply current at 1, 2, 5 Hz (60 s) and 10, 20, 50, 100 Hz "
-                        f"(20 s) at {LEVELS_TXT} V, 600 and 1300 Hz references per level, 3 x 600 Hz 60 s "
-                        "conditioning at the start. " + steps_txt +
+                        f"(20 s) at {LEVELS_TXT} V, "
+                        + ("a 600 Hz reference per level" if args.lean else "600 and 1300 Hz references per level")
+                        + ", 3 x 600 Hz 60 s conditioning at the start"
+                        + (f" at {COND_MV / 1000:g} V" if COND_MV is not None else "") + ". " + steps_txt +
                         (" Below 0.8 V the PPK2 is outside its verified range (blocks flagged ppk2_below_range); "
                          "the supply's current readback is the cross-check." if min(LEVELS_MV) < PPK2_MIN_MV else "")
                         + f" Supply limit {LIMIT_MA} mA."),
         "operator": "", "pump_id": PUMP_ID,
         "levels_mv": LEVELS_MV, "low_f_hz": LOW_F, "ppk2_min_mv": PPK2_MIN_MV,
+        "conditioning_mv": FIRST_MV, "lean": bool(args.lean),
         "analysis": ("Paper/analysis_2026-11-02_lowf_voltage_261030-1 (blocks, V0/tau fit, supply current "
                      "calibration); Paper/analysis_2026-11-01_pump_261030-1"),
     },
@@ -184,10 +204,11 @@ for x in tests:
         q = Q_HZ.get(f, NL_PER_CYCLE.get(f, 282.0) * f * 60 / 1000)      # uL/min
         vol += q * x["duration_s"] / 60
 n_drive = sum(1 for x in tests if x["type"] == "constant" and x["frequency_hz"] > 0)
+n_steps = sum(1 for x in tests if x["type"] == "voltage")
 if args.manual:
-    extra = f" + {len(LEVELS_MV)} voltage confirmations"
+    extra = f" + {n_steps} voltage confirmations"
 else:
-    extra = (f" + {TAIL_S:g} s tail + {len(LEVELS_MV)} automatic steps (~1-2 s each); supply address "
+    extra = (f" + {TAIL_S:g} s tail + {n_steps} automatic steps (~1-2 s each); supply address "
              + (args.address if args.address else "NOT SET (Power panel Address field)"))
 print(f"{out_name}: pump {PUMP_ID}, {len(tests)} blocks ({n_drive} drives), "
       f"{dur / 60:.1f} min{extra}; liquid <= {vol / 1000:.1f} mL (2.5 V flows)")

@@ -1,0 +1,793 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Conditioning at 2.50 V"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 2
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "conditioning",
+      "level_mv": 2500,
+      "rep": 3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 1/4: 0.80 V, set by the programmable supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 600,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 2/4: 0.60 V, set by the programmable supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 600,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 3/4: 0.50 V, set by the programmable supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 500,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 400,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "Level 4/4: 0.40 V, set by the programmable supply",
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "ref_start",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 50,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 10,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 5,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "low_f",
+      "level_mv": 400,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "ppk2_below_range": true
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Low frequency vs voltage",
+    "description": "MEASURE POWER ON. Flow and supply current at 1, 2, 5 Hz (60 s) and 10, 20, 50, 100 Hz (20 s) at 0.8, 0.6, 0.5, 0.4 V, a 600 Hz reference per level, 3 x 600 Hz 60 s conditioning at the start at 2.5 V. Voltage steps by the RSD3305P programmable supply (no operator); measured voltage = the supply's reading (supply/supply.csv, voltage_changes.csv). Below 0.8 V the PPK2 is outside its verified range (blocks flagged ppk2_below_range); the supply's current readback is the cross-check. Supply limit 60 mA.",
+    "operator": "",
+    "pump_id": "261030-1",
+    "levels_mv": [
+      800,
+      600,
+      500,
+      400
+    ],
+    "low_f_hz": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      50,
+      100
+    ],
+    "ppk2_min_mv": 800,
+    "conditioning_mv": 2500,
+    "lean": true,
+    "analysis": "Paper/analysis_2026-11-02_lowf_voltage_261030-1 (blocks, V0/tau fit, supply current calibration); Paper/analysis_2026-11-01_pump_261030-1"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": true,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}

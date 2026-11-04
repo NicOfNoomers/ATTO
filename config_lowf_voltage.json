@@ -1732,6 +1732,8 @@
       100
     ],
     "ppk2_min_mv": 800,
+    "conditioning_mv": 2500,
+    "lean": false,
     "analysis": "Paper/analysis_2026-11-02_lowf_voltage_261030-1 (blocks, V0/tau fit, supply current calibration); Paper/analysis_2026-11-01_pump_261030-1"
   },
   "serial": {
