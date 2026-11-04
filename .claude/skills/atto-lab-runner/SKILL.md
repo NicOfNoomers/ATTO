@@ -91,6 +91,8 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
 | Plan a config | `py -3.10 scripts\run_headless.py <config> --pump-id <id> --dry-run` | no |
 | Run a config | `py -3.10 scripts\run_headless.py <config> --name <name> --pump-id <id>` | yes: pump, supply, PPK2, flow (and video if the config asks) |
 | Regenerate a config | e.g. `py -3.10 make_config_lowf_voltage.py --address COM7` | no (but configs belong to the laptop: commit there) |
+| Flow per drive block of a run (scan peak, 600 Hz) | `py -3.10 scripts\flow_per_block.py pump_runs\<run> [--pick]` (`--pick` prints `PICK <Hz>`, the peak) | no |
+| Bubble flush: prime around a frequency | `py -3.10 make_config_prime_at.py --f <Hz> --pump <id>` then run `config_prime_at_<Hz>Hz.json`; check with `config_scan_quick.json` (outlet vented) | yes |
 
 Configs that can run headless:
 - **Can:** programmable-supply voltage steps, constant / sweep / group blocks.
