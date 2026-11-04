@@ -189,6 +189,11 @@ def main(argv=None):
         out(f"REFUSED: {stale} exists (left from an earlier stop); delete it first")
         close_app(app)
         return 2
+    if a.on_prompt == "wait":
+        # someone at the rig answers the prompts (syringe clear, pauses): show the real window for that
+        app.root.deiconify()
+        app.root.lift()
+        out("window shown: answer prompts (syringe clear, Done - continue) in the dashboard window")
     n0 = len(dialogs)
     app.start_scheduled_run()
     runner, run_dir = app.active_stream, app.run_dir
