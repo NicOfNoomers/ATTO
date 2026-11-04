@@ -39,9 +39,17 @@ def blocks(rd):
     return [(tests[k], te[starts[k]], te[starts[k + 1]] if starts[k + 1] < len(te) else te[-1]) for k in range(nb)]
 
 
+def bins_files(rd):
+    """The PPK2 bins files of a run, each hour once: on the share FolderSync leaves the .csv it copied while the
+    run was writing it next to the final .csv.gz (it never deletes), so prefer the .gz when both exist."""
+    files = sorted(glob.glob(os.path.join(rd, "power", "bins_*.csv*")))
+    gz = {f[:-3] for f in files if f.endswith(".csv.gz")}
+    return [f for f in files if not (f.endswith(".csv") and f in gz)]
+
+
 def power(rd):
     t, i = [], []
-    for f in sorted(glob.glob(os.path.join(rd, "power", "bins_*.csv*"))):
+    for f in bins_files(rd):
         d = read_csv_cols(f, ["t_s", "i_mean_ma"], gzip.open if f.endswith(".gz") else open)
         t.append(d["t_s"]); i.append(d["i_mean_ma"])
     return (np.concatenate(t), np.concatenate(i)) if t else (None, None)
