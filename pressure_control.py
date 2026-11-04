@@ -798,14 +798,28 @@ class PressureController:
         except Exception:
             pass
 
-    def release(self):
+    def release(self, rate_mbar_s: Optional[float] = None, floor_mbar: Optional[float] = None):
+        """Let the pressure down to ~0 with the syringe. rate_mbar_s: a gentler setpoint ramp for this release;
+        floor_mbar: aim at this pressure and stop as soon as it is reached (never pull below it, never push):
+        an undershoot to -62 mbar after a release (PQ, 2 Nov) pulled gas out of the pump."""
         with self.lock:
             if self.mode == "fault":
                 return
-            self.target = 0.0
+            self._rel_rate = float(rate_mbar_s) if rate_mbar_s else None
+            self._rel_floor = float(floor_mbar) if floor_mbar is not None else None
+            self.target = self._rel_floor if self._rel_floor is not None else 0.0
             self.mode = "release"
             self.settled_since = None
-        self._event("release", "")
+        self._event("release", "" if self._rel_floor is None and self._rel_rate is None else
+                    f"floor {self._rel_floor} mbar, rate {self._rel_rate} mbar/s")
+
+    def _release_rate(self, mode: str) -> float:
+        r = getattr(self, "_rel_rate", None)
+        return r if (mode == "release" and r) else float(self.cfg["rate_mbar_s"])
+
+    def _release_floor_hit(self, mode: str, p: float) -> bool:
+        floor = getattr(self, "_rel_floor", None)
+        return mode == "release" and floor is not None and p <= floor
 
     def idle(self):
         with self.lock:
@@ -815,6 +829,17 @@ class PressureController:
             self.syr.stop()
         except Exception:
             pass
+
+    def hold_position(self):
+        """Stop regulating but keep the motor energised (v2: HOLD 1), so the plunger is held by the motor,
+        not only by leadscrew friction: with the pump running the line is then a fixed volume (dead-head
+        maximum pressure). The over-limit fault still applies."""
+        self.idle()
+        try:
+            self.syr.set_hold(True)
+        except Exception:
+            pass
+        self._event("hold_position", f"pos {self.syr.position()}")
 
     def manual_velocity(self, sps: float):
         """Hold-to-move (v2 firmware): run at sps counts/s (+ = push in), 0 = stop. The firmware
@@ -1157,7 +1182,7 @@ class PressureController:
             now = clock()
             # Ramp the setpoint at rate_mbar_s (real elapsed time, capped)
             with self.lock:
-                rate = float(self.cfg["rate_mbar_s"])
+                rate = self._release_rate(mode)
                 step = rate * min(0.5, now - t_ramp)
                 t_ramp = now
                 if abs(self.target - self.p_cmd) <= step:
@@ -1165,6 +1190,10 @@ class PressureController:
                 else:
                     self.p_cmd += math.copysign(step, self.target - self.p_cmd)
                 p_cmd, tol = self.p_cmd, float(self.cfg["tolerance_mbar"])
+            if self._release_floor_hit(mode, p):
+                self._event("released", f"{p:.2f} mbar (floor {self._rel_floor:g})")
+                self.idle()
+                continue
             if mode == "release" and abs(p) <= tol and p_cmd == 0.0:
                 self._event("released", f"{p:.2f} mbar")
                 self.idle()
@@ -1200,6 +1229,9 @@ class PressureController:
             delta = kp_eff * err + float(self.cfg["ki"]) * self._integral - q * T   # wanted from this move
             d = 1 if delta > 0 else -1
             g = self.est.gain(d)
+            if d > 0 and mode == "release" and getattr(self, "_rel_floor", None) is not None:
+                time.sleep(0.05)                     # gentle release: pull only, never push
+                continue
             if d > 0 and mode == "hold" and self._pumping():
                 # Pump running: it raises the pressure, the syringe only pulls (a reversal costs
                 # ~350 counts of slack at x16); below the target just wait for the pump
@@ -1275,10 +1307,16 @@ class PressureController:
             now = clock()
             dt = (now - last_t) if last_t else 0.04
             with self.lock:
-                step = float(self.cfg["rate_mbar_s"]) * dt
+                step = self._release_rate(mode) * dt
                 self.p_cmd = self.target if abs(self.target - self.p_cmd) <= step else \
                     self.p_cmd + math.copysign(step, self.target - self.p_cmd)
                 p_cmd, tol = self.p_cmd, float(self.cfg["tolerance_mbar"])
+            if self._release_floor_hit(mode, p):
+                self.syr.set_velocity(0)
+                last_v = 0.0
+                self._event("released", f"{p:.2f} mbar (floor {self._rel_floor:g})")
+                self.idle()
+                continue
             if mode == "release" and abs(p) <= tol and p_cmd == 0.0:
                 self.syr.set_velocity(0)
                 last_v = 0.0
@@ -1303,6 +1341,8 @@ class PressureController:
                 self._integral = 0.0                     # crossed over: drop what was wound up
             v = (float(self.cfg["kp"]) * 2.0 * err + ki * self._integral - self.est.q) / g
             v = max(-vmax, min(vmax, v))
+            if v > 0 and mode == "release" and getattr(self, "_rel_floor", None) is not None:
+                v = 0.0                                  # gentle release: pull only, never push
             if v > 0 and mode == "hold" and self._pumping():
                 v = 0.0                                  # pump running: pull only
                 self._integral = min(self._integral, 0.0)

@@ -1,0 +1,153 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.5 V by the supply"
+    },
+    {
+      "type": "pq",
+      "frequency_hz": 600,
+      "pressures_mbar": [
+        10,
+        25,
+        50,
+        75,
+        100,
+        150,
+        200,
+        250
+      ],
+      "settle_timeout_s": 30.0,
+      "measure_s": 20.0,
+      "on_timeout": "measure",
+      "release_after": true,
+      "level_mv": 2500
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "1.0 V by the supply"
+    },
+    {
+      "type": "pq",
+      "frequency_hz": 600,
+      "pressures_mbar": [
+        10,
+        25,
+        50,
+        75,
+        100,
+        150,
+        200,
+        250
+      ],
+      "settle_timeout_s": 30.0,
+      "measure_s": 20.0,
+      "on_timeout": "measure",
+      "release_after": true,
+      "level_mv": 1000
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 800,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "0.8 V by the supply"
+    },
+    {
+      "type": "pq",
+      "frequency_hz": 600,
+      "pressures_mbar": [
+        10,
+        25,
+        50,
+        75,
+        100,
+        150,
+        200,
+        250
+      ],
+      "settle_timeout_s": 30.0,
+      "measure_s": 20.0,
+      "on_timeout": "measure",
+      "release_after": true,
+      "level_mv": 800
+    }
+  ],
+  "meta": {
+    "name": "PQ curves 261030-1 (short: 600 Hz at 2.5 / 1.0 / 0.8 V)",
+    "description": "PQ curves for pump 261030-1 with the syringe on the outlet: 2.5 V: 600 Hz, 1 V: 600 Hz, 0.8 V: 600 Hz; 10, 25, 50, 75, 100, 150, 200, 250 mbar (limit 280), 30 s per point at <= 5 Hz, 20 s above, settle timeout 30 s, above_shutoff skips the rest of a curve. Voltages by the RSD3305P, PPK2 on. NO priming: run config_pq_261030-1_short_freeflow.json (outlet vented, no syringe) before connecting the syringe and after removing it. Start with an empty syringe; clear it when the banner asks (line open to waste, Push syringe empty, close the line, Done).",
+    "operator": "",
+    "pump_id": "261030-1",
+    "syringe_ml": 1.0,
+    "syringe_on": "outlet",
+    "pressure_channel": 1
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "baud": 115200,
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -60.0,
+    "rate_mbar_s": 40.0,
+    "tolerance_mbar": 2.0,
+    "settle_s": 3.0,
+    "microsteps": 16,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049
+  },
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}

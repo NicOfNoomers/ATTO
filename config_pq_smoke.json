@@ -46,7 +46,7 @@
       "channel": 1
     },
     "limit_mbar": 280.0,
-    "min_mbar": -30.0,
+    "min_mbar": -60.0,
     "rate_mbar_s": 40.0,
     "tolerance_mbar": 2.0,
     "settle_s": 3.0,

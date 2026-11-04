@@ -1765,15 +1765,30 @@ class PumpTestRunner(LiveSessionBase):
         return True
 
     def _exec_pressure(self, test, log_event):
-        """{'type': 'pressure', 'target_mbar': 50 | 'release' | 'idle', 'wait_settled': true,
-        'timeout_s': 120}: hold a pressure (and wait until settled), release it or stop holding."""
+        """{'type': 'pressure', 'target_mbar': 50 | 'release' | 'idle' | 'hold_position', 'wait_settled': true,
+        'timeout_s': 120}: hold a pressure (and wait until settled), release it or stop holding.
+        'hold_position': no regulation, the motor stays energised at its position (dead-head steps);
+        'min_pull_room': 0.3 asks for a syringe clear first when less than that fraction is left to pull."""
         ctl = self._need_ctl()
         tgt = test.get("target_mbar", "release")
         if isinstance(tgt, str) or tgt is None:
             if str(tgt).lower() == "idle":
                 ctl.idle()
                 return
-            ctl.release()
+            if str(tgt).lower() == "hold_position":
+                room = safe_float(test.get("min_pull_room", 0), 0.0)
+                usable = ctl.syr.pos_max - ctl.syr.pos_min - 2 * int(ctl.cfg["pos_margin"])
+                if room > 0 and ctl.remaining_steps(-1) < room * usable and not self.stop_flag.is_set():
+                    hz = self.freq_set
+                    if not self._clear_syringe(f"Less than {room:.0%} of the syringe is left to pull back for the "
+                                               f"release.", log_event):
+                        return
+                    self._set_freq(hz)
+                    log_event()
+                ctl.hold_position()
+                return
+            # optional gentle release: slower ramp, stop at a small positive floor (no undershoot)
+            ctl.release(rate_mbar_s=test.get("release_rate_mbar_s"), floor_mbar=test.get("release_floor_mbar"))
             t_end = CLOCK() + safe_float(test.get("timeout_s", 30), 30.0)
             while ctl.mode == "release" and CLOCK() < t_end and not self.stop_flag.is_set():
                 time.sleep(0.1)
@@ -1839,6 +1854,9 @@ class PumpTestRunner(LiveSessionBase):
         settle_to = safe_float(test.get("settle_timeout_s", 120), 120.0)
         measure_s = max(1.0, safe_float(test.get("measure_s", 30), 30.0))
         on_timeout = str(test.get("on_timeout", "measure")).lower()
+        # above_shutoff = pressure below the target, rising < 2 mbar in this window. At 1-5 Hz the pump gives
+        # only ~10-17 uL/min, so on a soft line 5 s can mistake a slow rise for the shut-off plateau
+        plateau_s = max(1.0, safe_float(test.get("shutoff_plateau_s", 5.0), 5.0))
         nominal = PRESSURE_SETTLE_GUESS_S + measure_s
         # Start with an (almost) empty syringe: the pump flow fills a 1 mL syringe in a few minutes
         # (lab 29 Oct: ~4 min at 400 Hz), so a part-full start runs out in the middle of a point
@@ -1858,7 +1876,7 @@ class PumpTestRunner(LiveSessionBase):
                 self._emit("status", f"{label}PQ {hz} Hz: point {k + 1}/{len(pressures)} at {p_t:g} mbar")
                 t_start = CLOCK()
                 self._nominal_begin(t_start, nominal)
-                row = self._pq_point(hz, p_t, settle_to, measure_s, on_timeout, log_event, label)
+                row = self._pq_point(hz, p_t, settle_to, measure_s, on_timeout, log_event, label, plateau_s)
                 if self.stop_flag.is_set():
                     break
                 self._nominal_end(nominal)
@@ -1879,7 +1897,7 @@ class PumpTestRunner(LiveSessionBase):
                     time.sleep(0.1)
 
     def _pq_point(self, hz: int, p_t: float, settle_to: float, measure_s: float, on_timeout: str,
-                  log_event, label: str) -> Optional[Dict[str, Any]]:
+                  log_event, label: str, plateau_s: float = 5.0) -> Optional[Dict[str, Any]]:
         ctl = self.ctl
         reserve = int(ctl.cfg["clear_reserve_steps"])
         for attempt in range(1, 4):
@@ -1906,11 +1924,11 @@ class PumpTestRunner(LiveSessionBase):
                     full = "settling"
                     break
                 # Below the target with the push blocked at the empty end: wait while the pump
-                # still raises the pressure; a plateau (< 2 mbar in 5 s) means above shut-off
+                # still raises the pressure; a plateau (< 2 mbar in plateau_s) means above shut-off
                 if ctl.blocked in ("empty", "pump_below") and ctl.p_1s < p_t - 2 * float(ctl.cfg["tolerance_mbar"]):
                     if blocked_since is None or ctl.p_1s - p_ref >= 2.0:
                         blocked_since, p_ref = CLOCK(), ctl.p_1s
-                    elif CLOCK() - blocked_since > 5.0:
+                    elif CLOCK() - blocked_since > plateau_s:
                         break
                 else:
                     blocked_since = None
@@ -2286,7 +2304,21 @@ class PumpTestRunner(LiveSessionBase):
                 self._wait_until(t_start + settle_s)
                 log_event()
                 self._step_deadline = t_start + settle_s + dur
-                self._wait_until(self._step_deadline)
+                stop_above = test.get("stop_above_mbar")
+                if stop_above is not None and self.ctl is not None:
+                    # Dead-head steps: end the drive when the outlet pressure reaches stop_above_mbar
+                    # (below the controller's limit, which would fault and stop the run)
+                    p_stop = float(stop_above)
+                    hit = self._wait_until_pressure(self._step_deadline, p_stop)
+                    if hit is not None:
+                        self._set_freq(0)
+                        log_event()
+                        self.ctl.note("stop_above", f"{hit:.1f} mbar >= {p_stop:g} mbar at {hz} Hz, "
+                                                    f"{CLOCK() - t_start:.1f} s into the step")
+                        self._emit("status", f"{status_prefix}{hz} Hz: {hit:.0f} mbar reached the {p_stop:g} mbar "
+                                             f"stop; step ended early (maximum >= {p_stop:g} mbar).")
+                else:
+                    self._wait_until(self._step_deadline)
                 if not self.stop_flag.is_set():
                     self._nominal_end(settle_s + dur)
 
@@ -2313,6 +2345,19 @@ class PumpTestRunner(LiveSessionBase):
                         self._nominal_end(settle_s + step_dur)
             else:
                 raise ValueError(f"Unknown block type: {ttype}")
+
+    def _wait_until_pressure(self, t_end: float, p_stop: float) -> Optional[float]:
+        """Wait until t_end, Stop, or the outlet pressure reaching p_stop (returns that pressure)."""
+        while not self.stop_flag.is_set():
+            ctl = self.ctl
+            p = ctl.p if ctl is not None else float("nan")
+            if p == p and p >= p_stop:
+                return p
+            remaining = t_end - CLOCK()
+            if remaining <= 0:
+                return None
+            time.sleep(min(0.02, remaining))
+        return None
 
     def _step_start(self) -> float:
         """Start time for the next step. Back-to-back steps start at the previous
@@ -4684,13 +4729,13 @@ class DashboardApp:
                         text="Programmable supply: still wait for 'Done' after setting it (e.g. re-centre the stage)")\
             .pack(side=tk.TOP, anchor="w", pady=2)
 
-        # Pressure editor (hold / release / idle)
+        # Pressure editor (hold / release / idle / hold_position)
         self.var_edit_ptarget = tk.StringVar(value="50")
         self.var_edit_pwait = tk.BooleanVar(value=True)
         self.var_edit_ptimeout = tk.StringVar(value="120")
         self.edit_pressure = ttk.Frame(editf)
-        ttk.Label(self.edit_pressure, text="Target (mbar, or release / idle):").pack(side=tk.LEFT)
-        ttk.Entry(self.edit_pressure, textvariable=self.var_edit_ptarget, width=8).pack(side=tk.LEFT, padx=4)
+        ttk.Label(self.edit_pressure, text="Target (mbar, or release / idle / hold_position):").pack(side=tk.LEFT)
+        ttk.Entry(self.edit_pressure, textvariable=self.var_edit_ptarget, width=13).pack(side=tk.LEFT, padx=4)
         ttk.Checkbutton(self.edit_pressure, text="wait settled, max (s):",
                         variable=self.var_edit_pwait).pack(side=tk.LEFT, padx=(8, 2))
         ttk.Entry(self.edit_pressure, textvariable=self.var_edit_ptimeout, width=6).pack(side=tk.LEFT)
@@ -5432,13 +5477,20 @@ class DashboardApp:
                 block["note"] = old["note"]
         elif ttype == "pressure":
             raw = self.var_edit_ptarget.get().strip().lower().replace(",", ".")
-            if raw in ("release", "idle"):
+            if raw in ("release", "idle", "hold_position"):
                 block = {"type": "pressure", "target_mbar": raw}
+                old = self._block_at(path)
+                # keep the settings the editor doesn't show, but only when the target kind is unchanged
+                if isinstance(old, dict) and str(old.get("target_mbar")).lower() == raw:
+                    for k in ("timeout_s", "min_pull_room", "release_rate_mbar_s", "release_floor_mbar"):
+                        if k in old:
+                            block[k] = old[k]
             else:
                 try:
                     tgt = float(raw)
                 except ValueError:
-                    messagebox.showerror("Pressure block", "Target: a pressure in mbar, 'release' or 'idle'.")
+                    messagebox.showerror("Pressure block", "Target: a pressure in mbar, 'release', 'idle' or "
+                                                           "'hold_position'.")
                     return
                 block = {"type": "pressure", "target_mbar": tgt, "wait_settled": bool(self.var_edit_pwait.get()),
                          "timeout_s": max(1.0, safe_float(self.var_edit_ptimeout.get(), 120.0))}

@@ -1,0 +1,438 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.5 V by the supply"
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 1,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 2,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 3,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 4,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 5,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 2000,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 6,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 2500,
+      "step": 7,
+      "check": true,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 1000,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "1.0 V by the supply"
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 1000,
+      "step": 8,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "hold_position",
+      "min_pull_room": 0.3
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "deadhead",
+      "level_mv": 1000,
+      "step": 9,
+      "check": false,
+      "stop_above_mbar": 270.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "pressure",
+      "target_mbar": "release",
+      "timeout_s": 45.0,
+      "release_rate_mbar_s": 15.0,
+      "release_floor_mbar": 3.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 15.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Dead-head maximum pressure 261030-1",
+    "description": "Blocked-outlet (dead-head) maximum pressure vs frequency, pump 261030-1. The syringe controller holds the plunger still (motor energised, no regulation) and the pump pressurises the fixed volume: 60 s per step (ended early at 270 mbar, logged as stop_above = maximum >= 270), 5 s at 0 Hz, gentle release to ~3 mbar (15 mbar/s, never below), 15 s at 0 Hz. 2.5 V: 600, 800, 1000, 1300, 1600, 2000, 1300 Hz; 1 V: 600, 1300 Hz. Voltages by the RSD3305P, PPK2 on. ORDER: 1) config_prime_strong_261030-1.json with the outlet vented (check block >= ~200 uL/min at 600 Hz, else run it again); 2) connect the syringe through the stopcock, syringe EMPTY (room to pull back for the releases), stopcock closed to waste; 3) this config. Open the stopcock to waste before ANY manual syringe push: hand pushes against the closed line read 530-550 mbar on 2 Nov, beyond the sensor range.",
+    "operator": "",
+    "pump_id": "261030-1",
+    "syringe_ml": 1.0,
+    "syringe_on": "outlet",
+    "pressure_channel": 1
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "baud": 115200,
+    "firmware": "auto",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 280.0,
+    "min_mbar": -60.0,
+    "rate_mbar_s": 40.0,
+    "tolerance_mbar": 2.0,
+    "settle_s": 3.0,
+    "microsteps": 16,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049
+  },
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}
