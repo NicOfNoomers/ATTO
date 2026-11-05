@@ -1616,8 +1616,8 @@
       1600
     ],
     "rest_min": 10.0,
-    "gate": "1300 Hz >= ~250 uL/min in a check panel (260930-2; best 351-425 on 30 Oct)",
-    "description": "PRIMING DOSE-RESPONSE at 1300 Hz: outlet VENTED to waste, pump TILTED OUTLET-UP, no syringe pressure, 2.50 V (RSD3305P), PPK2 on. Check panel (400, 700, 1000, 1300, 1600 Hz, 10 s each, 5 s zeros) before priming and after each dose (1.17, 2.33, 3.50, 8.17 min of [1300 Hz 30 s, 1040 Hz 10 s, 1560 Hz 10 s] rounds; cumulative 1.17, 3.50, 7.00, 15.17 min), then 10 min rest at 0 Hz and the panel again, then a 100-1600 Hz scan. Recovered for 260930-2: 1300 Hz >= ~250 uL/min. No 2 Hz strokes (they hurt the high frequencies)."
+    "gate": "1300 Hz >= ~250 uL/min in a check panel (best 351-425 on 30 Oct, metal adapter)",
+    "description": "PRIMING DOSE-RESPONSE at 1300 Hz: outlet VENTED to waste, pump TILTED OUTLET-UP, no syringe pressure, 2.50 V (RSD3305P), PPK2 on. Check panel (400, 700, 1000, 1300, 1600 Hz, 10 s each, 5 s zeros) before priming and after each dose (1.17, 2.33, 3.50, 8.17 min of [1300 Hz 30 s, 1040 Hz 10 s, 1560 Hz 10 s] rounds; cumulative 1.17, 3.50, 7.00, 15.17 min), then 10 min rest at 0 Hz and the panel again, then a 100-1600 Hz scan. Recovered for 260930-2: 1300 Hz >= ~250 uL/min in a check panel (best 351-425 on 30 Oct, metal adapter). No 2 Hz strokes (they hurt the high frequencies)."
   },
   "serial": {
     "protocol": "freq_only"

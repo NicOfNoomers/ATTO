@@ -40,9 +40,15 @@ ap.add_argument("--doses", default="1,2,4,8", help="priming doses in minutes, in
 ap.add_argument("--checks", default="400,700,1000,1300,1600", help="check panel frequencies (Hz)")
 ap.add_argument("--rest-min", type=float, default=10.0, help="rest at 0 Hz before the last panel (0 = none)")
 ap.add_argument("--v", type=int, default=2500, help="supply voltage in mV (0 < v <= 2500)")
-ap.add_argument("--pump", default="260930-2", help="pump ID written into the config (the runner passes --pump-id too)")
+ap.add_argument("--pump", required=True,
+                help="pump ID on the rig (ask Nic; never from a config name). The runner passes --pump-id too")
+ap.add_argument("--gate", default=None, help="recovery mark for this pump (default: from GATES, else none)")
 ap.add_argument("--address", default="COM7", help="RSD3305P address (default COM7, the lab PC); '' = Power panel")
 args = ap.parse_args()
+# each pump's own recovery mark (its peak band and history), for reading the result; not an automatic stop
+GATES = {"260930-2": "1300 Hz >= ~250 uL/min in a check panel (best 351-425 on 30 Oct, metal adapter)",
+         "261030-1": "600 Hz >= ~200 uL/min in a check panel (218-228 fresh on 2 Nov 04:25; 1300 Hz 281 fresh)"}
+GATE = args.gate if args.gate is not None else GATES.get(args.pump, "")
 
 F_MAX = 3000
 if not 0 < args.v <= 2500:
@@ -116,8 +122,7 @@ cfg = {
     "meta": {"name": f"Priming doses at {args.f} Hz", "operator": "", "pump_id": args.pump, "prime_f_hz": args.f,
              "doses_min": [round(a, 2) for _, _, a, _ in dose_table],
              "cumulative_prime_min": [round(c, 2) for _, _, _, c in dose_table],
-             "check_hz": CHECKS, "rest_min": args.rest_min, "gate": "1300 Hz >= ~250 uL/min in a check panel "
-                                                                     "(260930-2; best 351-425 on 30 Oct)",
+             "check_hz": CHECKS, "rest_min": args.rest_min, "gate": GATE,
              "description": (f"PRIMING DOSE-RESPONSE at {args.f} Hz: outlet VENTED to waste, pump TILTED OUTLET-UP, "
                              f"no syringe pressure, {args.v / 1000:.2f} V (RSD3305P), PPK2 on. Check panel "
                              f"({', '.join(map(str, CHECKS))} Hz, 10 s each, 5 s zeros) before priming and after each "
@@ -125,8 +130,9 @@ cfg = {
                              f"{f_lo} Hz 10 s, {f_hi} Hz 10 s] rounds; cumulative "
                              f"{', '.join(f'{c:.2f}' for _, _, _, c in dose_table)} min)"
                              + (f", then {args.rest_min:g} min rest at 0 Hz and the panel again" if args.rest_min > 0 else "")
-                             + ", then a 100-1600 Hz scan. Recovered for 260930-2: 1300 Hz >= ~250 uL/min. "
-                               "No 2 Hz strokes (they hurt the high frequencies).")},
+                             + ", then a 100-1600 Hz scan. "
+                             + (f"Recovered for {args.pump}: {GATE}. " if GATE else "")
+                             + "No 2 Hz strokes (they hurt the high frequencies).")},
     "serial": {"protocol": "freq_only"},
     "protocol": "freq_only",
     "flow_sensor": {"backend": "fluigent", "channel": 0, "sample_rate_hz": 25.0},

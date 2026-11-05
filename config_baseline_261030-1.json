@@ -1,0 +1,348 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.50 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 150,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 20,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "reference",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "reference",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "reference",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 20.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "reference",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Baseline 261030-1",
+    "operator": "",
+    "pump_id": "261030-1",
+    "freqs_hz": [
+      100,
+      150,
+      200,
+      300,
+      400,
+      500,
+      600,
+      700,
+      800,
+      1000,
+      1300,
+      1600
+    ],
+    "reference_blocks": [
+      "20 Hz 20 s",
+      "100 Hz 20 s",
+      "600 Hz 60 s",
+      "1300 Hz 20 s"
+    ],
+    "history": "261030-1 at 2.5 V, free flow: 600 Hz 218-228 uL/min fresh (2 Nov 04:25), 177-197 after strong priming, 182-185 at its last run (2 Nov 07:12 prime_plus); 1300 Hz 281 fresh, 77-79 last; 1000 Hz 48 last; 20 Hz 112-143; 100 Hz 112-126; current 27-29 mA.",
+    "description": "BASELINE for pump 261030-1: outlet VENTED, no syringe, no priming. Quick scan 100-1600 Hz (10 s each, 5 s zeros), then 20 Hz 20 s, 100 Hz 20 s, 600 Hz 60 s, 1300 Hz 20 s with 5 s zeros, at 2.50 V (RSD3305P), PPK2 on. No 2 Hz / low-f full strokes. Compare with its history: 261030-1 at 2.5 V, free flow: 600 Hz 218-228 uL/min fresh (2 Nov 04:25), 177-197 after strong priming, 182-185 at its last run (2 Nov 07:12 prime_plus); 1300 Hz 281 fresh, 77-79 last; 1000 Hz 48 last; 20 Hz 112-143; 100 Hz 112-126; current 27-29 mA."
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}
