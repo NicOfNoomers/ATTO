@@ -279,6 +279,14 @@ MEM_CRITICAL_MB = 400.0    # flush data + shed load (stop video) below this
 
 
 # ---------------- util ----------------
+def block_tag(t: Dict[str, Any]) -> str:
+    """Short label from a block's own fields (generated configs carry section / panel / level_mv)."""
+    parts = [str(t[k]) for k in ("section", "panel") if t.get(k) not in (None, "")]
+    if t.get("level_mv") not in (None, ""):
+        parts.append(f"{safe_float(t['level_mv'], 0.0) / 1000:g} V")
+    return ", ".join(dict.fromkeys(parts))
+
+
 def write_json_atomic(path: str, doc: Dict[str, Any]) -> bool:
     """Write path via path.tmp + rename; on failure the .tmp is removed (a 0-byte status.json.tmp
     was left in a run folder on the share, 30 Oct)."""
@@ -286,8 +294,15 @@ def write_json_atomic(path: str, doc: Dict[str, Any]) -> bool:
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(doc, f, indent=2, default=str)
-        os.replace(tmp, path)
-        return True
+        for attempt in range(5):
+            try:
+                os.replace(tmp, path)
+                return True
+            except PermissionError:
+                # another process (FolderSync copying it to the share) has the file open: try again shortly
+                if attempt == 4:
+                    raise
+                time.sleep(0.1)
     except Exception:
         try:
             os.remove(tmp)
@@ -1605,6 +1620,9 @@ class PumpTestRunner(LiveSessionBase):
         self._force_zero = False            # after a power trip every frequency command becomes 0 Hz
         self._teardown_lock = threading.Lock()
         self._torn_down = False
+        # where the sequence is: {"path": [i] or [i, j], "index", "count", "child", "children", "cycle", "cycles",
+        # "desc", "tag", "t_s"}; read by the UI (block list highlight) and status.json
+        self.block_pos: Optional[Dict[str, Any]] = None
         self._last_cmd: Optional[Tuple[float, float]] = None   # (t_cmd_s, t_cmd_done_s) of the last frequency command
         # Operator pauses other than voltage steps (clearing the syringe by hand), PQ points
         self.operator_request: Optional[Dict[str, Any]] = None
@@ -1678,6 +1696,7 @@ class PumpTestRunner(LiveSessionBase):
                 "operator_request": dict(self.operator_request) if self.operator_request else None,
                 "v_set_mv": self.v_set_mv,
                 "finished": self.t_end is not None,
+                "block": dict(self.block_pos) if getattr(self, "block_pos", None) else None,
             }
 
     def confirm_voltage(self, mv: float) -> bool:
@@ -2257,7 +2276,7 @@ class PumpTestRunner(LiveSessionBase):
             self._emit("error", "Sampling stopped due to an error (possibly low memory). "
                                 "Data collected so far has been saved to disk.")
 
-    def _exec_block(self, test, log_event, status_prefix: str = ""):
+    def _exec_block(self, test, log_event, status_prefix: str = "", path: tuple = ()):
         """Execute one test block. Supports 'constant', 'sweep', 'voltage' (manual
         supply change, see _exec_voltage) and 'group' (a list of child blocks
         repeated 'repeat' times; repeat <= 0 loops forever until Stop)."""
@@ -2282,6 +2301,8 @@ class PumpTestRunner(LiveSessionBase):
             infinite = repeat <= 0
             cycle = 0
             last_status_t = 0.0
+            # described once: ms-scale cycles must not pay for string formatting
+            child_info = [(DashboardApp._describe_block(b), block_tag(b)) for b in sub_blocks]
             while not self.stop_flag.is_set() and (infinite or cycle < repeat):
                 cycle += 1
                 # Throttle status updates: short cycles (ms-scale) would flood the UI
@@ -2290,10 +2311,17 @@ class PumpTestRunner(LiveSessionBase):
                     total = "inf" if infinite else str(repeat)
                     self._emit("status", f"{status_prefix}group cycle {cycle}/{total}")
                     last_status_t = now
-                for b in sub_blocks:
+                for j, b in enumerate(sub_blocks):
                     if self.stop_flag.is_set():
                         break
-                    self._exec_block(b, log_event, status_prefix)
+                    child_path = (path[0], j) if len(path) == 1 else path    # the list shows one group level
+                    if len(path) == 1:
+                        with self.lock:
+                            pos = dict(self.block_pos or {})
+                            pos.update(path=[path[0], j], child=j + 1, children=len(sub_blocks), cycle=cycle,
+                                       cycles=None if infinite else repeat, desc=child_info[j][0], tag=child_info[j][1])
+                            self.block_pos = pos
+                    self._exec_block(b, log_event, status_prefix, path=child_path)
             return
 
         settle_s = settle_ms / 1000.0
@@ -2402,11 +2430,13 @@ class PumpTestRunner(LiveSessionBase):
                 if self.stop_flag.is_set():
                     break
 
-                ttype = (test.get("type") or "constant").lower()
-                repeat = int(test.get("repeat", 1))
-                self._emit("status", f"Running block {i}/{len(tests)}: {ttype} x{repeat if repeat > 0 else 'inf'}")
+                desc, tag = DashboardApp._describe_block(test), block_tag(test)
+                with self.lock:
+                    self.block_pos = {"path": [i - 1], "index": i, "count": len(tests), "desc": desc, "tag": tag,
+                                      "t_s": round(CLOCK() - self.t0, 3) if self.t0 is not None else None}
+                self._emit("status", f"Running block {i}/{len(tests)}: {desc}" + (f" [{tag}]" if tag else ""))
 
-                self._exec_block(test, log_event, status_prefix=f"Block {i}/{len(tests)}: ")
+                self._exec_block(test, log_event, status_prefix=f"Block {i}/{len(tests)}: ", path=(i - 1,))
 
                 if self.stop_flag.is_set():
                     break
@@ -4019,6 +4049,7 @@ class DashboardApp:
         if runner is None:
             self._show_voltage_banner(None)
             self._show_operator_banner(None)
+            self._show_running_block(None)
             tests = self.cfg.get("tests", [])
             if not tests:
                 self.var_progress.set("")
@@ -4040,6 +4071,7 @@ class DashboardApp:
             return
 
         p = runner.get_progress()
+        self._show_running_block(None if p["finished"] else p.get("block"))
         total, nominal, elapsed = p["total_s"], p["nominal_done_s"], p["elapsed_s"]
         proj, shift = project_changes(runner.plan_changes, now, nominal, p["changes_done"])
         req = p["voltage_request"]
@@ -4207,6 +4239,7 @@ class DashboardApp:
             "waiting_for_voltage": None if not req else {"index": req["index"], "mv": req["mv"], "asked_at": req["asked_at"]},
             "next_voltage_changes": [{"index": c["index"], "mv": c["mv"], "due": due.isoformat(timespec="seconds")}
                                      for c, due, _ in proj[:10]],
+            "block": p.get("block"),
             "power": self.active_stream.get_power_live() if self.active_stream is not None else None,
             "supply": self.active_stream.get_supply_live() if self.active_stream is not None else None,
         }
@@ -4621,6 +4654,11 @@ class DashboardApp:
 
         # exportselection=False: otherwise selecting text in an editor Entry
         # silently clears the list selection and "Apply changes" has no target.
+        self.var_running_block = tk.StringVar(value="")
+        ttk.Label(listf, textvariable=self.var_running_block, foreground="#9a4a00",
+                  wraplength=520, justify=tk.LEFT).pack(side=tk.TOP, fill=tk.X, padx=6, pady=(4, 0))
+        self._running_row: Optional[int] = None
+        self._row_bg: List[str] = []
         self.lst_blocks = tk.Listbox(listf, width=62, height=16, selectmode=tk.EXTENDED, exportselection=False)
         self.lst_blocks.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=6, pady=6)
         self.lst_blocks.bind("<<ListboxSelect>>", self._on_block_select)
@@ -5359,6 +5397,36 @@ class DashboardApp:
                     self.lst_blocks.itemconfig(tk.END, background=volt_bg if block_type(child) == "voltage"
                                                else "#f3f6fc")
                     self._row_paths.append((i, j))
+        self._row_bg = [str(self.lst_blocks.itemcget(r, "background")) for r in range(self.lst_blocks.size())]
+        self._running_row = None
+
+    RUNNING_ROW_BG = "#ffb347"
+
+    def _show_running_block(self, pos: Optional[Dict[str, Any]]):
+        """Highlight the running block's row (orange), keep it in view, and say what it is. pos None clears it.
+        The selection is left alone, so editing the list during a run still works."""
+        if not hasattr(self, "lst_blocks"):
+            return
+        row = None
+        if pos and pos.get("path") is not None and tuple(pos["path"]) in self._row_paths:
+            row = self._row_paths.index(tuple(pos["path"]))
+        prev = self._running_row
+        if prev is not None and prev != row and prev < self.lst_blocks.size():
+            self.lst_blocks.itemconfig(prev, background=self._row_bg[prev] if prev < len(self._row_bg) else "")
+        if row is not None and row != prev:
+            self.lst_blocks.itemconfig(row, background=self.RUNNING_ROW_BG)
+            self.lst_blocks.see(row)
+        self._running_row = row
+        if not pos:
+            self.var_running_block.set("")
+            return
+        where = f"block {pos.get('index')}/{pos.get('count')}"
+        if pos.get("child"):
+            where += f" > {pos['child']}/{pos.get('children')}"
+            if pos.get("cycle"):
+                where += f", cycle {pos['cycle']}/{pos.get('cycles') or 'inf'}"
+        tag = f" [{pos['tag']}]" if pos.get("tag") else ""
+        self.var_running_block.set(f"Now running {where}: {pos.get('desc', '')}{tag}")
 
     def _selected_paths(self) -> List[tuple]:
         rows = self.lst_blocks.curselection()
