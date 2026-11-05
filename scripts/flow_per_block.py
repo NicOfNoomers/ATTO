@@ -74,7 +74,8 @@ def analyse(rd):
              if 0 <= j < len(bl) and bl[j][0]["type"] == "constant" and not bl[j][0].get("frequency_hz")]
         base = float(np.nanmean(z)) if z else 0.0
         rows.append({"k": k, "t_min": t0 / 60, "f": int(t["frequency_hz"]), "dur": t["duration_s"],
-                     "q": win_mean(t0, t1, mg["t_s"], mg["flow"]) - base, "i_ma": win_mean(t0, t1, tp, ip)})
+                     "q": win_mean(t0, t1, mg["t_s"], mg["flow"]) - base, "i_ma": win_mean(t0, t1, tp, ip),
+                     "tag": str(t.get("panel") or t.get("section") or "")})
     return rows
 
 
@@ -83,9 +84,9 @@ def main(argv):
     for rd in [a for a in argv if not a.startswith("--")]:
         rows = analyse(rd)
         print(f"\n{os.path.basename(os.path.normpath(rd))}")
-        print(f"{'k':>4} {'t_min':>6} {'f_Hz':>6} {'dur_s':>6} {'flow_uL_min':>12} {'I_mA':>6}")
+        print(f"{'k':>4} {'t_min':>6} {'f_Hz':>6} {'dur_s':>6} {'flow_uL_min':>12} {'I_mA':>6}  tag")
         for r in rows:
-            print(f"{r['k']:>4} {r['t_min']:>6.2f} {r['f']:>6} {r['dur']:>6.0f} {r['q']:>12.1f} {r['i_ma']:>6.1f}")
+            print(f"{r['k']:>4} {r['t_min']:>6.2f} {r['f']:>6} {r['dur']:>6.0f} {r['q']:>12.1f} {r['i_ma']:>6.1f}  {r['tag']}")
         if rows:
             best = max(rows, key=lambda r: -1e9 if np.isnan(r["q"]) else r["q"])
             q600 = [r["q"] for r in rows if r["f"] == 600]

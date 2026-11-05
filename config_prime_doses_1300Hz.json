@@ -1,0 +1,1661 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "voltage",
+      "voltage_mv": 2500,
+      "while_waiting": "zero",
+      "settle_s": 5,
+      "note": "2.50 V by the supply"
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 0.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 0.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 0.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 0.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 0.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 1,
+      "dose_min": 1.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 1,
+      "dose_min": 1.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 1,
+      "dose_min": 1.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "dose_min": 1.17,
+      "cumulative_prime_min": 1.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "dose_min": 1.17,
+      "cumulative_prime_min": 1.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "dose_min": 1.17,
+      "cumulative_prime_min": 1.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "dose_min": 1.17,
+      "cumulative_prime_min": 1.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "dose_min": 1.17,
+      "cumulative_prime_min": 1.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 2,
+      "dose_min": 2.33,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C2",
+      "dose_min": 2.33,
+      "cumulative_prime_min": 3.5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C2",
+      "dose_min": 2.33,
+      "cumulative_prime_min": 3.5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C2",
+      "dose_min": 2.33,
+      "cumulative_prime_min": 3.5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C2",
+      "dose_min": 2.33,
+      "cumulative_prime_min": 3.5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C2",
+      "dose_min": 2.33,
+      "cumulative_prime_min": 3.5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 3,
+      "dose_min": 3.5,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C3",
+      "dose_min": 3.5,
+      "cumulative_prime_min": 7.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C3",
+      "dose_min": 3.5,
+      "cumulative_prime_min": 7.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C3",
+      "dose_min": 3.5,
+      "cumulative_prime_min": 7.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C3",
+      "dose_min": 3.5,
+      "cumulative_prime_min": 7.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C3",
+      "dose_min": 3.5,
+      "cumulative_prime_min": 7.0,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 1,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 2,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 3,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 4,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 4,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 4,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 5,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 6,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 6,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 6,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 7,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1040,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 7,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1560,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "prime",
+      "dose": 4,
+      "dose_min": 8.17,
+      "round": 7,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C4",
+      "dose_min": 8.17,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C4",
+      "dose_min": 8.17,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C4",
+      "dose_min": 8.17,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C4",
+      "dose_min": 8.17,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C4",
+      "dose_min": 8.17,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 600.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "rest",
+      "rest_min": 10.0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C_rest",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C_rest",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C_rest",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C_rest",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C_rest",
+      "dose_min": 0.0,
+      "cumulative_prime_min": 15.17,
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 150,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "scan",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Priming doses at 1300 Hz",
+    "operator": "",
+    "pump_id": "260930-2",
+    "prime_f_hz": 1300,
+    "doses_min": [
+      1.17,
+      2.33,
+      3.5,
+      8.17
+    ],
+    "cumulative_prime_min": [
+      1.17,
+      3.5,
+      7.0,
+      15.17
+    ],
+    "check_hz": [
+      400,
+      700,
+      1000,
+      1300,
+      1600
+    ],
+    "rest_min": 10.0,
+    "gate": "1300 Hz >= ~250 uL/min in a check panel (260930-2; best 351-425 on 30 Oct)",
+    "description": "PRIMING DOSE-RESPONSE at 1300 Hz: outlet VENTED to waste, pump TILTED OUTLET-UP, no syringe pressure, 2.50 V (RSD3305P), PPK2 on. Check panel (400, 700, 1000, 1300, 1600 Hz, 10 s each, 5 s zeros) before priming and after each dose (1.17, 2.33, 3.50, 8.17 min of [1300 Hz 30 s, 1040 Hz 10 s, 1560 Hz 10 s] rounds; cumulative 1.17, 3.50, 7.00, 15.17 min), then 10 min rest at 0 Hz and the panel again, then a 100-1600 Hz scan. Recovered for 260930-2: 1300 Hz >= ~250 uL/min. No 2 Hz strokes (they hurt the high frequencies)."
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "rsd3305p",
+    "channel": 1,
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "tolerance_mv": 50,
+    "step_timeout_s": 10,
+    "off_on_exit": true,
+    "eol": "LF",
+    "address": "COM7"
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  },
+  "video": {
+    "codec": "mjpg",
+    "quality": 95,
+    "overlay": true,
+    "chunk_s": 60.0,
+    "crop": null
+  }
+}
