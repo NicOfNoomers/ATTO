@@ -1623,6 +1623,14 @@ class PumpTestRunner(LiveSessionBase):
         # where the sequence is: {"path": [i] or [i, j], "index", "count", "child", "children", "cycle", "cycles",
         # "desc", "tag", "t_s"}; read by the UI (block list highlight) and status.json
         self.block_pos: Optional[Dict[str, Any]] = None
+        # auto_prime (config section): watch one check frequency; on a big drop run the priming blocks, then go on
+        self.auto_prime = dict(self.cfg.get("auto_prime") or {}) or None
+        self._ap_ref: Optional[float] = None
+        self._ap_count = 0
+        self._ap_active = False
+        self._ap_last: Optional[Dict[str, Any]] = None
+        self._ap_file = None
+        self._last_zero_flow: Optional[float] = None
         self._last_cmd: Optional[Tuple[float, float]] = None   # (t_cmd_s, t_cmd_done_s) of the last frequency command
         # Operator pauses other than voltage steps (clearing the syringe by hand), PQ points
         self.operator_request: Optional[Dict[str, Any]] = None
@@ -1697,6 +1705,7 @@ class PumpTestRunner(LiveSessionBase):
                 "v_set_mv": self.v_set_mv,
                 "finished": self.t_end is not None,
                 "block": dict(self.block_pos) if getattr(self, "block_pos", None) else None,
+                "auto_prime": dict(self._ap_last) if getattr(self, "_ap_last", None) else None,
             }
 
     def confirm_voltage(self, mv: float) -> bool:
@@ -2209,6 +2218,11 @@ class PumpTestRunner(LiveSessionBase):
                 self._pq_file.close()
             except Exception:
                 log_exception("PumpTestRunner teardown: failed to close pq_points.csv")
+        if getattr(self, "_ap_file", None) is not None:
+            try:
+                self._ap_file.close()
+            except Exception:
+                log_exception("PumpTestRunner teardown: failed to close auto_prime.csv")
         self._close_meter("PumpTestRunner teardown")
         self._close_supply("PumpTestRunner teardown")
         try:
@@ -2275,6 +2289,101 @@ class PumpTestRunner(LiveSessionBase):
             self.stop_flag.set()
             self._emit("error", "Sampling stopped due to an error (possibly low memory). "
                                 "Data collected so far has been saved to disk.")
+
+    def _window_mean_flow(self, t0_abs: float, t1_abs: float) -> Optional[float]:
+        """Mean flow over the last 60 % of [t0, t1] (CLOCK times) from the sample buffer; None if no samples."""
+        a = (t0_abs - self.t0) + 0.4 * (t1_abs - t0_abs)
+        b = t1_abs - self.t0
+        with self.lock:
+            vals = [q for t, q in zip(self.buf_t, self.buf_flow) if a <= t <= b]
+        return sum(vals) / len(vals) if vals else None
+
+    def _ap_log(self, row: Dict[str, Any]):
+        try:
+            if self._ap_file is None:
+                self._ap_file = open(os.path.join(self.run_dir, "auto_prime.csv"), "a", newline="", encoding="utf-8")
+                self._ap_writer = csv.DictWriter(self._ap_file, fieldnames=[
+                    "t_s", "event", "monitor_hz", "flow_ul_min", "zero_ul_min", "reference_ul_min", "ratio",
+                    "threshold", "primes_done", "note"])
+                if self._ap_file.tell() == 0:
+                    self._ap_writer.writeheader()
+            self._ap_writer.writerow({k: row.get(k, "") for k in self._ap_writer.fieldnames})
+            self._ap_file.flush()
+        except Exception:
+            log_exception_limited("auto_prime_log", "auto_prime: could not write auto_prime.csv")
+
+    def _after_constant(self, test, hz: int, t0_abs: float, t1_abs: float, log_event, status_prefix: str):
+        """auto_prime: 0 Hz blocks give the offset; the watched check block is compared with the reference."""
+        ap = self.auto_prime
+        if self._ap_active or ap is None:
+            return
+        if hz == 0:
+            if t1_abs - t0_abs >= 3.0:
+                q0 = self._window_mean_flow(t0_abs, t1_abs)
+                if q0 is not None:
+                    self._last_zero_flow = q0
+            return
+        if hz != int(ap.get("monitor_hz", -1)):
+            return
+        sec = ap.get("monitor_section", "check")
+        if sec and test.get("section") != sec:
+            return
+        q = self._window_mean_flow(t0_abs, t1_abs)
+        if q is None:
+            return
+        z = self._last_zero_flow or 0.0
+        q -= z
+        t_s = round(CLOCK() - self.t0, 3)
+        ref_cfg = ap.get("reference", "first")
+        if self._ap_ref is None:
+            self._ap_ref = q if str(ref_cfg).lower() == "first" else safe_float(ref_cfg, q)
+            self._ap_log({"t_s": t_s, "event": "reference", "monitor_hz": hz, "flow_ul_min": f"{q:.2f}",
+                          "zero_ul_min": f"{z:.2f}", "reference_ul_min": f"{self._ap_ref:.2f}",
+                          "note": "first check" if str(ref_cfg).lower() == "first" else "from the config"})
+            if str(ref_cfg).lower() == "first":
+                self._ap_last = {"t_s": t_s, "flow": round(q, 2), "ref": round(self._ap_ref, 2), "ratio": 1.0,
+                                 "primes": self._ap_count}
+                return
+        ref = self._ap_ref
+        drop = safe_float(ap.get("drop_pct", 20.0), 20.0)
+        thr = (1.0 - drop / 100.0) * ref
+        ratio = q / ref if ref else float("nan")
+        self._ap_last = {"t_s": t_s, "flow": round(q, 2), "ref": round(ref, 2), "ratio": round(ratio, 3),
+                         "primes": self._ap_count}
+        row = {"t_s": t_s, "monitor_hz": hz, "flow_ul_min": f"{q:.2f}", "zero_ul_min": f"{z:.2f}",
+               "reference_ul_min": f"{ref:.2f}", "ratio": f"{ratio:.3f}", "threshold": f"{thr:.2f}",
+               "primes_done": self._ap_count}
+        if q >= thr:
+            self._ap_log({**row, "event": "ok"})
+            return
+        max_p = safe_int(ap.get("max_primes", 3), 3)
+        if self._ap_count >= max_p:
+            self._ap_log({**row, "event": "limit", "note": f"below {drop:g} % drop but {max_p} primings done"})
+            self._emit("status", f"{status_prefix}auto_prime: {hz} Hz at {q:.0f} uL/min ({ratio:.0%} of {ref:.0f}); "
+                                 f"limit of {max_p} primings reached, carrying on")
+            return
+        blocks = ap.get("prime") or []
+        self._ap_count += 1
+        self._ap_log({**row, "event": "prime", "primes_done": self._ap_count,
+                      "note": f"flow fell below {100 - drop:g} % of the reference: priming ({len(blocks)} blocks)"})
+        self._emit("status", f"{status_prefix}auto_prime #{self._ap_count}: {hz} Hz at {q:.0f} uL/min "
+                             f"({ratio:.0%} of {ref:.0f}) -> priming, then the run continues")
+        with self.lock:
+            saved_pos = dict(self.block_pos) if self.block_pos else None
+            self.block_pos = {**(saved_pos or {}), "desc": f"AUTO PRIME #{self._ap_count} ({len(blocks)} blocks)",
+                              "tag": "auto_prime"}
+        self._ap_active = True
+        try:
+            for b in blocks:
+                if self.stop_flag.is_set():
+                    break
+                self._exec_block(b, log_event, status_prefix + "auto_prime: ")
+        finally:
+            self._ap_active = False
+            with self.lock:
+                self.block_pos = saved_pos
+        self._ap_log({"t_s": round(CLOCK() - self.t0, 3), "event": "primed", "monitor_hz": hz,
+                      "primes_done": self._ap_count, "note": "priming done, sequence continues"})
 
     def _exec_block(self, test, log_event, status_prefix: str = "", path: tuple = ()):
         """Execute one test block. Supports 'constant', 'sweep', 'voltage' (manual
@@ -2356,6 +2465,9 @@ class PumpTestRunner(LiveSessionBase):
                     self._wait_until(self._step_deadline)
                 if not self.stop_flag.is_set():
                     self._nominal_end(settle_s + dur)
+                    if self.auto_prime is not None:
+                        self._after_constant(test, hz, t_start + settle_s, self._step_deadline, log_event,
+                                             status_prefix)
 
             elif ttype == "sweep":
                 a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
@@ -4240,6 +4352,7 @@ class DashboardApp:
             "next_voltage_changes": [{"index": c["index"], "mv": c["mv"], "due": due.isoformat(timespec="seconds")}
                                      for c, due, _ in proj[:10]],
             "block": p.get("block"),
+            "auto_prime": p.get("auto_prime"),
             "power": self.active_stream.get_power_live() if self.active_stream is not None else None,
             "supply": self.active_stream.get_supply_live() if self.active_stream is not None else None,
         }

@@ -86,6 +86,35 @@ Behaviour once running:
 
 Close the dashboard window, or at least disconnect its session, first: both would use the same ports. The lab PC's Claude session runs jobs this way (skill `.claude/skills/atto-lab-runner`).
 
+More options:
+- `--video --camera 1 --show` records the outlet camera and keeps the window visible.
+- A background run stops cleanly when a file `STOP` appears in its run folder. Never kill the process: the pump would keep running.
+- `--max-h` is a safety limit on the run length (default 12 h). Raise it for multi-day runs.
+
+### Long runs that recover by themselves (`auto_prime`)
+
+A config can watch one check frequency during a run. When the check falls too far below its reference, the run inserts priming blocks and then continues the sequence:
+
+```json
+"auto_prime": {"monitor_hz": 100, "monitor_section": "check", "drop_pct": 15, "reference": "first",
+               "max_primes": 3, "prime": [ ...blocks... ]}
+```
+
+How it works:
+- **Which blocks are checked:** blocks at `monitor_hz` whose `section` is `monitor_section`.
+- **Measurement:** the mean flow over the last 60 % of the block, minus the preceding 0 Hz block as offset.
+- **Reference:** the first check, or a fixed µL/min value.
+- **Trigger:** a drop of more than `drop_pct` below the reference runs the `prime` blocks, at most `max_primes` times.
+
+Every check and every priming is written to `auto_prime.csv` (reference / ok / prime / primed / limit). It is also shown in the status line and in `status.json`. A first run that degrades can therefore recover, and the rest of it can still be used.
+
+`make_config_burst_week.py --auto-prime` builds multi-day dosing runs this way. For example, 100 Hz pulses of 0.22 s every 3 min (0.5 µL per pulse, 10 µL/h, like 1 U/h of U-100 insulin) for 5 days, with a check panel every 6 h and priming at 1300 Hz when the 100 Hz check drops by more than 15 %:
+
+```cmd
+python make_config_burst_week.py --pump 261030-1 --f 100 --on-s 0.22 --period-s 180 --checks 400,1300 --q-est 136 --auto-prime --drop-pct 15 --prime-f 1300
+py -3.10 scripts\run_headless.py config_burst_week_100Hz_0.22s_per_180s.json --name burst_week --pump-id 261030-1 --max-h 130 --show
+```
+
 ### Fluigent SDK
 
 The Fluigent SDK (version 23.0.0) is included in the repository under `fluigent_sdk-23.0.0/`. It will be automatically installed by the install script if the directory exists.
