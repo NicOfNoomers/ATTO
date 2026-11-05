@@ -21,6 +21,8 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
 | Syringe pump Arduino (pressure / PQ) | COM6, USB 2341:0243 |
 | RSD3305P programmable supply | COM7, USB 0416:5011. Output commands `OUT1:1` / `OUT1:0` (the defaults); CH1 only, nothing on CH2/CH3 |
 | Flow sensor | Fluigent, channel 0 |
+| Cameras | two; the outlet camera is **index 1** (Nic, 5 Nov). The dashboard opens index 0 at start, so video runs need `--video --camera 1` |
+| Pump on the rig | ask Nic or read the newest run's meta.json; never take it from a config's name (4-5 Nov runs were labelled 261030-1 while 260930-2 was on the rig: `O:\All\nicmi\atto_lab_pc\pump_id_corrections.csv`) |
 | Run folders | `C:\Users\Edwin\Downloads\atto\ATTO\pump_runs\<YYYYMMDD_HHMMSS_micro>_<name>`, the dashboard's default *Output folder*; headless runs land there too (don't pass `--out`). |
 | Copy to the share | `C:\Scripts\FolderSync.ps1` copies `pump_runs` one way to `\\ait-pqumulo.win.dtu.dk\sund$\SUND\All\nicmi\atto_lab_pc`. That is `O:\All\nicmi\atto_lab_pc` on Nic's laptop; the lab PC has no O: letter. It syncs 2 s after files stop changing, rescans every 15 min, and never deletes on the share. If a run is missing on O:, ask the runner to check that FolderSync is running; don't copy by hand. |
 
@@ -89,7 +91,8 @@ description: How ATTO rig tests run remotely. The Claude session "full_perm_atto
 | Supply self-test, no load | `py -3.10 supply_rsd.py COM7 --selftest --no-load --yes` | switches CH1 on at <= 2.5 V / 60 mA: only with nothing connected, Nic's OK |
 | Supply current-limit test | `py -3.10 supply_rsd.py COM7 --load-test` | needs a 47-100 ohm resistor on CH1 and someone at the rig |
 | Plan a config | `py -3.10 scripts\run_headless.py <config> --pump-id <id> --dry-run` | no |
-| Run a config | `py -3.10 scripts\run_headless.py <config> --name <name> --pump-id <id>` | yes: pump, supply, PPK2, flow (and video if the config asks) |
+| Run a config | `py -3.10 scripts\run_headless.py <config> --name <name> --pump-id <id>` | yes: pump, supply, PPK2, flow |
+| Run with the dashboard visible and video of the outlet (Nic's default from 5 Nov) | `... run_headless.py <config> --name <name> --pump-id <id> --video --camera 1 --show` (refuses if camera 1 doesn't open; video_part*.avi + frames.csv in the run folder) | yes, plus the camera |
 | Regenerate a config | e.g. `py -3.10 make_config_lowf_voltage.py --address COM7` | no (but configs belong to the laptop: commit there) |
 | Flow per drive block of a run (scan peak, 600 Hz) | `py -3.10 scripts\flow_per_block.py pump_runs\<run> [--pick]` (`--pick` prints `PICK <Hz>`, the peak) | no |
 | Bubble flush: prime around a frequency | `py -3.10 make_config_prime_at.py --f <Hz> --pump <id>` then run `config_prime_at_<Hz>Hz.json`; check with `config_scan_quick.json` (outlet vented) | yes |

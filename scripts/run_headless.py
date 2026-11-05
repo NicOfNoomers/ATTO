@@ -71,6 +71,11 @@ def main(argv=None):
     ap.add_argument("--operator", default=None)
     ap.add_argument("--out", default=None, help="output folder (default: the dashboard's Output folder)")
     ap.add_argument("--no-video", action="store_true", help="don't record video even if the config asks")
+    ap.add_argument("--video", action="store_true",
+                    help="record video of the run (the dashboard's camera; refuses to start if it isn't connected)")
+    ap.add_argument("--camera", default=None, help="camera index for --video (default: the one the dashboard opened, 0)")
+    ap.add_argument("--show", action="store_true",
+                    help="show the dashboard window (live plots and camera preview) instead of running hidden")
     ap.add_argument("--dry-run", action="store_true", help="checks and plan only; nothing is opened")
     ap.add_argument("--on-prompt", choices=("stop", "wait"), default="stop",
                     help="an operator prompt during the run: stop it (default) or wait for someone at the rig")
@@ -117,6 +122,23 @@ def main(argv=None):
         app.var_out_dir.set(a.out)
     if a.no_video:
         app.var_video_enabled.set(False)
+    video_problem = None
+    if a.video and not a.no_video:
+        if a.camera is not None and str(app.var_video_camera_index.get()) != str(a.camera):
+            app.var_video_camera_index.set(str(a.camera))
+            if app.video_recorder is not None and app.video_recorder.is_opened():
+                app._disconnect_camera()
+            app._connect_camera()
+            pump(2.0)
+        vr = app.video_recorder
+        if vr is None or not vr.is_opened():
+            video_problem = (f"--video: camera {app.var_video_camera_index.get()} is not connected "
+                             f"({app.var_video_status.get()})")
+        else:
+            app.var_video_enabled.set(True)
+    if a.show or a.on_prompt == "wait":
+        app.root.deiconify()
+        app.root.lift()
 
     cfg = app.build_config_from_ui()
     tests = cfg.get("tests") or []
@@ -153,6 +175,8 @@ def main(argv=None):
                         + " (use --on-prompt wait only if someone is there)")
     if cfg.get("require_pump_id") and not (cfg.get("meta") or {}).get("pump_id"):
         problems.append("the config requires a pump ID: --pump-id")
+    if video_problem:
+        problems.append(video_problem)
 
     out(f"config {cfg_path}")
     out(f"run name {app.var_test_name.get()!r}, pump {(cfg.get('meta') or {}).get('pump_id')!r}, "
@@ -202,7 +226,12 @@ def main(argv=None):
         close_app(app)
         return 3
     out(f"STARTED: {run_dir}")
-    stop_files = [os.path.join(run_dir, "STOP"), os.path.join(os.path.dirname(HERE), "HEADLESS_STOP")]
+    if a.video and not a.no_video:
+        rec = app.video_recorder is not None and app.video_recorder.is_recording()
+        out(f"video: {'recording' if rec else 'NOT recording'} (camera {app.var_video_camera_index.get()})")
+        if not rec:
+            stop_reason.append("--video asked but the recording did not start")
+    stop_files =[os.path.join(run_dir, "STOP"), os.path.join(os.path.dirname(HERE), "HEADLESS_STOP")]
     out(f"to stop it cleanly from outside: create {stop_files[0]} (or {stop_files[1]}); never kill the process")
     t0 = time.monotonic()
     last = t0
@@ -252,7 +281,11 @@ def main(argv=None):
     summary = {"run_dir": run_dir, "config": cfg_path, "finished": finished, "status": status.get("status"),
                "elapsed_s": status.get("elapsed_s"), "stop_reason": stop_reason, "errors": errors,
                "voltage_steps": [{k: s.get(k) for k in ("requested_mv", "confirmed_mv", "set_by", "wait_s")} for s in steps],
-               "power": status.get("power"), "supply": status.get("supply")}
+               "power": status.get("power"), "supply": status.get("supply"),
+               "video": {"frames_csv": os.path.exists(os.path.join(run_dir, "frames.csv")),
+                         "video_summary": os.path.exists(os.path.join(run_dir, "video_summary.json")),
+                         "files": sorted(f for f in os.listdir(run_dir)
+                                         if f.lower().endswith((".avi", ".mp4", ".mkv")))[:50]}}
     try:
         with open(os.path.join(run_dir, "headless_summary.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, default=str)
