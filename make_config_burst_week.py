@@ -8,6 +8,14 @@ RSD3305P COM7 at --v (2.5 V), PPK2 on (trip 57 mA / 300 ms) with --bin-ms bins (
 
 The burst pattern is Nic's call: --on-s and --period-s have no defaults. The script prints the reservoir volume.
 
+--supply manual (6 Nov: part 1 stopped when the RSD3305P on COM7 dropped off USB): the non-programmable bench supply,
+set by hand to --v (2.50 V) / 60 mA before the start. No voltage block, so nothing prompts in a headless run; the
+only software trip is the PPK2 watch (57 mA / 300 ms: run stopped, pump 0 Hz, the PPK2 output switched off). At 0 Hz
+the driver bridge sleeps (part 1: ~0.000 mA between bursts), but nothing switches the bench supply off at the end:
+switch it off by hand. --days defaults to 4.2 for this variant (the rest of the 5 days); the file name carries the
+days: config_burst_week_<f>Hz_<on>s_per_<period>s_manual_<days>d.json. --pump "" leaves the Pump ID to the runner
+job (--pump-id), --note goes into meta.part, --ap-reference <uL/min> keeps an earlier part's auto_prime reference.
+
 usage: python make_config_burst_week.py --pump 261030-1 --on-s 10 --period-s 600 [--f 600] [--v 2500] [--days 5]
                                         [--check-every-h 6] [--q-est 200] [--bin-ms 100] [--address COM7]
     -> config_burst_week_<f>Hz_<on>s_per_<period>s.json
@@ -24,7 +32,12 @@ ap.add_argument("--on-s", type=float, required=True, help="burst length (s)")
 ap.add_argument("--period-s", type=float, required=True, help="burst period, start to start (s)")
 ap.add_argument("--f", type=int, default=600, help="burst frequency (Hz)")
 ap.add_argument("--v", type=int, default=2500, help="supply voltage in mV (0 < v <= 2500)")
-ap.add_argument("--days", type=float, default=5.0)
+ap.add_argument("--days", type=float, default=None, help="run length in days (default 5; 4.2 with --supply manual)")
+ap.add_argument("--supply", choices=("rsd3305p", "manual"), default="rsd3305p",
+                help="rsd3305p (default) or manual: bench supply set by hand, no voltage block, PPK2 watch = only trip")
+ap.add_argument("--note", default=None, help="text for meta.part (e.g. which run this continues)")
+ap.add_argument("--ap-reference", default="first",
+                help="auto_prime reference: 'first' (the first check of this run) or a flow in uL/min")
 ap.add_argument("--check-every-h", type=float, default=6.0, help="check panel interval in hours (0 = only start/end)")
 ap.add_argument("--checks", default="400,600,1300", help="check panel frequencies (Hz)")
 ap.add_argument("--q-est", type=float, default=200.0, help="flow at --f for the volume estimate (uL/min)")
@@ -38,6 +51,16 @@ ap.add_argument("--prime-f", type=int, default=1300, help="priming frequency (th
 ap.add_argument("--prime-rounds", type=int, default=3, help="prime_at rounds per priming (70 s each)")
 ap.add_argument("--max-primes", type=int, default=3)
 args = ap.parse_args()
+MANUAL = args.supply == "manual"
+if args.days is None:
+    args.days = 4.2 if MANUAL else 5.0
+if args.days <= 0:
+    raise SystemExit("--days must be > 0")
+if str(args.ap_reference).lower() != "first":
+    try:
+        args.ap_reference = float(args.ap_reference)
+    except ValueError:
+        raise SystemExit("--ap-reference must be 'first' or a flow in uL/min")
 
 if not 0 < args.v <= 2500:
     raise SystemExit("--v must be between 1 and 2500 mV (the pump's limit)")
@@ -80,19 +103,27 @@ if args.check_every_h > 0:
 else:
     chunks = [total_bursts]
 
-supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": 60, "max_mv": 2500, "initial_mv": args.v,
-          "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF"}
-if args.address:
-    supply["address"] = args.address
-tests = [zero(60.0), {"type": "voltage", "voltage_mv": args.v, "while_waiting": "zero", "settle_s": 5,
-                      "note": f"{args.v / 1000:.2f} V by the supply"}]
+if MANUAL:
+    # bench supply set by hand; initial_mv is the voltage the PPK2 uses for power (no voltage block: no prompt)
+    supply = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "initial_mv": args.v, "lead_min": 2}
+    tests = [zero(60.0)]
+else:
+    supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": 60, "max_mv": 2500, "initial_mv": args.v,
+              "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF"}
+    if args.address:
+        supply["address"] = args.address
+    tests = [zero(60.0), {"type": "voltage", "voltage_mv": args.v, "while_waiting": "zero", "settle_s": 5,
+                          "note": f"{args.v / 1000:.2f} V by the supply"}]
 tests += panel("C0")
 for k, n in enumerate(chunks, start=1):
     tests.append(bursts(n, k))
     tests += panel(f"C{k}")
 tests.append(zero(60.0))
 
-name = f"config_burst_week_{args.f}Hz_{args.on_s:g}s_per_{args.period_s:g}s.json"
+name = (f"config_burst_week_{args.f}Hz_{args.on_s:g}s_per_{args.period_s:g}s"
+        + (f"_manual_{args.days:g}d" if MANUAL else "") + ".json")
+supply_txt = (f"MANUAL bench supply set by hand to {args.v / 1000:.2f} V / 60 mA (no RSD3305P; switch it off by hand "
+              f"after the run), PPK2 watch 57 mA / 300 ms is the only trip" if MANUAL else "RSD3305P")
 cfg = {
     "port": "COM3", "baud": 115200, "read_timeout_s": 0.2,
     "start_time": None, "end_time": None,
@@ -103,7 +134,7 @@ cfg = {
              "pump_id": args.pump, "burst_hz": args.f, "on_s": args.on_s, "period_s": args.period_s,
              "days": args.days, "check_every_h": args.check_every_h, "check_hz": CHECKS,
              "description": (f"BURST WEEK: {args.f} Hz for {args.on_s:g} s every {args.period_s:g} s for "
-                             f"{args.days:g} days at {args.v / 1000:.2f} V (RSD3305P), PPK2 on ({args.bin_ms:g} ms bins), "
+                             f"{args.days:g} days at {args.v / 1000:.2f} V ({supply_txt}), PPK2 on ({args.bin_ms:g} ms bins), "
                              f"check panel {', '.join(map(str, CHECKS))} Hz at the start, every {args.check_every_h:g} h "
                              f"and at the end. Outlet vented; refill / check the reservoir; no video.")},
     "serial": {"protocol": "freq_only"},
@@ -113,15 +144,18 @@ cfg = {
     "power": {"enabled": True, "backend": "ppk2", "port": "auto", "bin_ms": args.bin_ms, "watch_ma": 57,
               "watch_hold_ms": 300, "raw_every_min": 60, "raw_length_s": 2.0, "post_run_tail_s": 10.0},
 }
+if args.note:
+    cfg["meta"]["part"] = args.note
 if args.auto_prime:
     pf = args.prime_f
     rnd = [drive(pf, 30.0, section="auto_prime"), zero(5.0), drive(round(0.8 * pf), 10.0, section="auto_prime"),
            zero(5.0), drive(round(1.2 * pf), 10.0, section="auto_prime"), zero(10.0)]
     cfg["auto_prime"] = {"monitor_hz": MONITOR, "monitor_section": "check", "drop_pct": args.drop_pct,
-                         "reference": "first", "max_primes": args.max_primes,
+                         "reference": args.ap_reference, "max_primes": args.max_primes,
                          "prime": [b for _ in range(args.prime_rounds) for b in rnd] + [zero(20.0)]}
-    cfg["meta"]["auto_prime"] = (f"if the {MONITOR} Hz check falls more than {args.drop_pct:g} % below the first "
-                                 f"check: {args.prime_rounds} x prime_at {pf} Hz rounds, then the run continues "
+    ref_txt = "the first check" if args.ap_reference == "first" else f"{args.ap_reference:g} uL/min"
+    cfg["meta"]["auto_prime"] = (f"if the {MONITOR} Hz check falls more than {args.drop_pct:g} % below {ref_txt}: "
+                                 f"{args.prime_rounds} x prime_at {pf} Hz rounds, then the run continues "
                                  f"(at most {args.max_primes} times); see auto_prime.csv")
 with open(name, "w", encoding="utf-8") as fh:
     json.dump(cfg, fh, indent=2)
