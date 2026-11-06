@@ -1,0 +1,210 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C0",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "group",
+      "repeat": 10,
+      "section": "bursts",
+      "interval": 1,
+      "blocks": [
+        {
+          "type": "constant",
+          "frequency_hz": 100,
+          "duration_s": 0.22,
+          "repeat": 1,
+          "settle_ms": 0,
+          "section": "burst",
+          "level_mv": 2500
+        },
+        {
+          "type": "constant",
+          "frequency_hz": 0,
+          "duration_s": 59.78,
+          "repeat": 1,
+          "settle_ms": 0
+        }
+      ]
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "section": "check",
+      "panel": "C1",
+      "level_mv": 2500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 60.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ],
+  "meta": {
+    "name": "Burst check 100 Hz 0.22 s / 60 s (post-burst backflow dip)",
+    "operator": "",
+    "pump_id": "261030-1",
+    "burst_hz": 100,
+    "on_s": 0.22,
+    "period_s": 60.0,
+    "days": 0.006944444444444444,
+    "check_every_h": 0.0,
+    "check_hz": [
+      100,
+      400,
+      1300
+    ],
+    "description": "BURST WEEK: 100 Hz for 0.22 s every 60 s for 0.00694444 days at 2.50 V (MANUAL bench supply set by hand to 2.50 V / 60 mA (no RSD3305P; switch it off by hand after the run), PPK2 watch 57 mA / 300 ms is the only trip), PPK2 on (100 ms bins), check panel 100, 400, 1300 Hz at the start, every 0 h and at the end. Outlet vented; refill / check the reservoir; no video.",
+    "part": "dip check: since 6 Nov 10:05 each 0.22 s 100 Hz burst is followed by about -4 uL/min for ~20 s (~-0.55 uL); run after config_prime_at_1300Hz_manual.json to see whether priming removes it"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 100.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 60,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  }
+}

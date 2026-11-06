@@ -36,6 +36,9 @@ ap.add_argument("--days", type=float, default=None, help="run length in days (de
 ap.add_argument("--supply", choices=("rsd3305p", "manual"), default="rsd3305p",
                 help="rsd3305p (default) or manual: bench supply set by hand, no voltage block, PPK2 watch = only trip")
 ap.add_argument("--note", default=None, help="text for meta.part (e.g. which run this continues)")
+ap.add_argument("--bursts", type=int, default=None, help="number of bursts (overrides --days; short burst checks)")
+ap.add_argument("--out", default=None, help="output file name (default: config_burst_week_..._<days>d.json)")
+ap.add_argument("--title", default=None, help="meta.name (default: Burst week ...)")
 ap.add_argument("--ap-reference", default="first",
                 help="auto_prime reference: 'first' (the first check of this run) or a flow in uL/min")
 ap.add_argument("--check-every-h", type=float, default=6.0, help="check panel interval in hours (0 = only start/end)")
@@ -52,6 +55,10 @@ ap.add_argument("--prime-rounds", type=int, default=3, help="prime_at rounds per
 ap.add_argument("--max-primes", type=int, default=3)
 args = ap.parse_args()
 MANUAL = args.supply == "manual"
+if args.bursts is not None:
+    if args.bursts < 1:
+        raise SystemExit("--bursts must be >= 1")
+    args.days = args.bursts * args.period_s / 86400.0
 if args.days is None:
     args.days = 4.2 if MANUAL else 5.0
 if args.days <= 0:
@@ -96,7 +103,7 @@ def bursts(n, k):
                        zero(round(args.period_s - args.on_s, 3))]}
 
 
-total_bursts = int(round(args.days * 86400 / args.period_s))
+total_bursts = args.bursts if args.bursts is not None else int(round(args.days * 86400 / args.period_s))
 if args.check_every_h > 0:
     per = max(1, int(round(args.check_every_h * 3600 / args.period_s)))
     chunks = [per] * (total_bursts // per) + ([total_bursts % per] if total_bursts % per else [])
@@ -120,8 +127,8 @@ for k, n in enumerate(chunks, start=1):
     tests += panel(f"C{k}")
 tests.append(zero(60.0))
 
-name = (f"config_burst_week_{args.f}Hz_{args.on_s:g}s_per_{args.period_s:g}s"
-        + (f"_manual_{args.days:g}d" if MANUAL else "") + ".json")
+name = args.out or (f"config_burst_week_{args.f}Hz_{args.on_s:g}s_per_{args.period_s:g}s"
+                    + (f"_manual_{args.days:g}d" if MANUAL else "") + ".json")
 supply_txt = (f"MANUAL bench supply set by hand to {args.v / 1000:.2f} V / 60 mA (no RSD3305P; switch it off by hand "
               f"after the run), PPK2 watch 57 mA / 300 ms is the only trip" if MANUAL else "RSD3305P")
 cfg = {
@@ -130,7 +137,7 @@ cfg = {
     "break_seconds_between_tests": 0.0, "send_zero_on_exit": True,
     "require_pump_id": True,
     "tests": tests,
-    "meta": {"name": f"Burst week {args.f} Hz {args.on_s:g} s / {args.period_s:g} s", "operator": "",
+    "meta": {"name": args.title or f"Burst week {args.f} Hz {args.on_s:g} s / {args.period_s:g} s", "operator": "",
              "pump_id": args.pump, "burst_hz": args.f, "on_s": args.on_s, "period_s": args.period_s,
              "days": args.days, "check_every_h": args.check_every_h, "check_hz": CHECKS,
              "description": (f"BURST WEEK: {args.f} Hz for {args.on_s:g} s every {args.period_s:g} s for "
