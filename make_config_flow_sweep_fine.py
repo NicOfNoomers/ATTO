@@ -34,6 +34,7 @@ ap.add_argument("--ref-low", type=int, default=520, help="second check frequency
 ap.add_argument("--supply", choices=("manual", "rsd3305p"), default="manual")
 ap.add_argument("--address", default="COM7")
 ap.add_argument("--v", type=int, default=2500)
+ap.add_argument("--descending", action="store_true", help="sweep fmax -> fmin (with --ref 0: one continuous sweep)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
 
@@ -56,18 +57,23 @@ for f in (a.ref, a.ref_low):
                       "section": "flow_check", "level_mv": a.v})
 tests.append({"type": "constant", "frequency_hz": 0, "duration_s": 20.0, "repeat": 1, "settle_ms": 0})
 n_steps = 0
+chunks = []
 lo = a.fmin
 while lo <= a.fmax:
     hi = min(a.fmax, lo + a.chunk - a.step)
     n = (hi - lo) // a.step + 1
     hi = lo + (n - 1) * a.step
-    tests.append({"type": "sweep", "start_hz": lo, "end_hz": hi, "steps": n, "step_duration_s": a.dwell,
+    chunks.append((lo, hi, n))
+    lo = hi + a.step
+if a.descending:                      # 18 Nov: check the band above 1450 Hz without the ascending sweep's history
+    chunks = [(hi, lo, n) for lo, hi, n in reversed(chunks)]
+for c0, c1, n in chunks:
+    tests.append({"type": "sweep", "start_hz": c0, "end_hz": c1, "steps": n, "step_duration_s": a.dwell,
                   "repeat": 1, "settle_ms": 0, "section": "sweep", "level_mv": a.v})
     n_steps += n
     if a.ref > 0:
         tests.append({"type": "constant", "frequency_hz": a.ref, "duration_s": a.ref_s, "repeat": 1,
                       "settle_ms": 0, "section": "ref", "level_mv": a.v})
-    lo = hi + a.step
 tests.append({"type": "constant", "frequency_hz": 0, "duration_s": 20.0, "repeat": 1, "settle_ms": 0})
 
 if a.supply == "manual":
@@ -78,7 +84,7 @@ else:
               "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF", "address": a.address}
     stxt = f"{a.v / 1000:.2f} V by the RSD3305P ({a.address})"
 dur = sum((t.get("duration_s") or 0) + (t.get("steps", 0) * t.get("step_duration_s", 0)) for t in tests)
-desc = (f"Fine free-flow sweep {a.fmin}-{a.fmax} Hz in {a.step} Hz steps ({n_steps} steps x {a.dwell:g} s, no gaps), "
+desc = (f"Fine free-flow sweep {a.fmax if a.descending else a.fmin}-{a.fmin if a.descending else a.fmax} Hz ({'descending' if a.descending else 'ascending'}) in {a.step} Hz steps ({n_steps} steps x {a.dwell:g} s, no gaps), "
         f"{a.ref} Hz reference {a.ref_s:g} s after every {a.chunk} Hz, flow check first; {stxt}; PPK2 on. "
         f"Outlet VENTED, no syringe. Analysis: last 60 % of each step. Run before and after priming.")
 cfg = {
