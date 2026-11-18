@@ -439,8 +439,8 @@ def block_duration_s(t: Dict[str, Any]) -> float:
         n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
         return n * (PRESSURE_SETTLE_GUESS_S + max(0.0, safe_float(t.get("measure_s", 30), 30.0)))
     if ttype == "maxp_track":         # upper bound: the tracking time cap plus the hold and the leak record
-        return (safe_float(t.get("max_s", 600), 600.0) + safe_float(t.get("hold_s", 20), 20.0)
-                + safe_float(t.get("leak_s", 10), 10.0))
+        return (safe_float(t.get("max_s", 1200), 1200.0) + safe_float(t.get("hold_s", 60), 60.0)
+                + safe_float(t.get("leak_s", 30), 30.0))
     repeat = max(1, repeat)
     if ttype == "constant":
         return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
@@ -2507,8 +2507,8 @@ class PumpTestRunner(LiveSessionBase):
 
     def _exec_maxp_track(self, test, log_event, status_prefix: str = ""):
         """{'type': 'maxp_track', 'start_hz': 650, 'f_min': 200, 'f_max': 2000, 'step0_hz': 50, 'step_min_hz': 5,
-        'probe_s': 4, 'settle_s': 1, 'plateau_slope': 0.5, 'gain_slope': 1.0, 'build_max_s': 40, 'max_s': 600,
-        'stop_above_mbar': 320, 'hold_s': 20, 'leak_s': 10}: maximum-pressure point tracking on the drive
+        'probe_s': 15, 'settle_s': 3, 'plateau_slope': 0.2, 'gain_mbar': 5, 'build_max_s': 90, 'max_s': 1200,
+        'stop_above_mbar': 320, 'hold_s': 60, 'leak_s': 30}: maximum-pressure point tracking on the drive
         frequency with the outlet closed (put a pressure 'hold_position' block before it; see maxp_tracker.py).
         stop_above_mbar is capped 5 mbar below the controller's limit. One row per window in maxp_track.csv,
         one result per block in maxp_track_results.json (run folder)."""
@@ -5558,7 +5558,7 @@ class DashboardApp:
             return (f"MAX-PRESSURE TRACKING from {t.get('start_hz', 650)} Hz "
                     f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"
                     f"{t.get('step_min_hz', 5)} Hz, stop {t.get('stop_above_mbar', 320)} mbar, max "
-                    f"{t.get('max_s', 600)} s)")
+                    f"{t.get('max_s', 1200)} s)")
         if ttype == "pq":
             ps = t.get("pressures_mbar") or []
             fr = ", ".join(str(f) for f in pq_frequencies(t))

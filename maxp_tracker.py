@@ -4,12 +4,19 @@ Why: fixed frequency grids miss narrow pressure peaks, and the best frequency mo
 On 18 Nov NM reached 378 mbar by hand at 650 Hz, 2.5 V, between the 600 / 800 Hz points of the max-pressure
 scans. So instead of assuming frequencies, the tracker climbs to the frequency that holds the highest pressure.
 
+Timing (NM 18 Nov: a pressure change needs more time to show than 20 s). The 2 Nov blocked-outlet steps on
+261030-1 (60 s each) reach 90 % in 3-5 s, but they creep for 30-50 s afterwards: 98 % at 13-51 s, and still
+0.04-0.39 mbar/s at 25-35 s. 800 Hz even fell within its step. So the defaults are long windows
+(settle 3 s + probe 15 s), a plateau below 0.2 mbar/s over 15 s (build up to 90 s), and a decision on the
+pressure GAIN at the end of the probe, with the creep the centre was still showing subtracted.
+
 Method: perturb and observe at quasi-steady state (the line is closed, e.g. the syringe in hold_position):
  1. BUILD: drive f until the pressure levels off: the slope fitted over probe_s drops below plateau_slope, or
     build_max_s passes.
- 2. PROBE: from that plateau, drive f + step (then f - step; the order alternates) for settle_s + probe_s and
-    fit the slope. At the plateau of f, a better frequency keeps raising the pressure (slope above
-    gain_slope and above the slope f itself had at the end of its build); a worse one doesn't.
+ 2. PROBE: from that plateau, drive f + step (then f - step; the order alternates) for settle_s + probe_s.
+    gain = mean of the last third of the probe - the centre's plateau - the centre's remaining creep
+    (its last slope x the time between the two). A better frequency raises the pressure it holds (gain above
+    gain_mbar); a worse one doesn't (or lets it sag).
     - better: move there, BUILD to its plateau, keep the step, probe again;
     - worse: back to f and REBUILD to its plateau before probing the other side (a worse frequency can let
       the pressure sag, which would fake a gain on the next probe);
@@ -32,7 +39,7 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 LOG_COLS = ["t_s", "start_hz", "phase", "f_hz", "step_hz", "dur_s", "p_start_mbar", "p_end_mbar", "p_mean_mbar",
-            "slope_mbar_s", "n", "decision", "note"]
+            "p_tail_mbar", "slope_mbar_s", "gain_mbar", "n", "decision", "note"]
 
 
 @dataclass
@@ -42,15 +49,15 @@ class Params:
     f_max: int = 2000
     step0_hz: float = 50.0          # first perturbation
     step_min_hz: float = 5.0        # resolution: stop when the step is below this
-    settle_s: float = 1.0           # after each frequency change, not used for the slope
-    probe_s: float = 4.0            # slope fit window
-    plateau_slope: float = 0.5      # mbar/s: a build ends below this
-    gain_slope: float = 1.0         # mbar/s: a probe must rise faster than this (and than the centre) to win
-    build_max_s: float = 40.0
-    max_s: float = 600.0            # whole tracking (hold and leak come on top)
+    settle_s: float = 3.0           # after each frequency change, not used for the slope (90 % in 3-5 s)
+    probe_s: float = 15.0           # window for the slope and the end-of-probe pressure
+    plateau_slope: float = 0.2      # mbar/s over probe_s: a build ends below this (2 Nov: reached at 25-35 s)
+    gain_mbar: float = 5.0          # a probe must hold this much more than the centre (creep removed) to win
+    build_max_s: float = 90.0
+    max_s: float = 1200.0           # whole tracking (hold and leak come on top)
     stop_above_mbar: float = 320.0
-    hold_s: float = 20.0
-    leak_s: float = 10.0
+    hold_s: float = 60.0            # the maximum = mean of the second half
+    leak_s: float = 30.0
     sample_dt: float = 0.05
 
     @classmethod
@@ -68,8 +75,8 @@ class Params:
             raise ValueError("need 0 < step_min_hz <= step0_hz <= f_max - f_min")
         if self.probe_s < 1.0 or self.settle_s < 0 or self.build_max_s < self.probe_s:
             raise ValueError("need probe_s >= 1, settle_s >= 0, build_max_s >= probe_s")
-        if not (0 < self.plateau_slope and 0 < self.gain_slope):
-            raise ValueError("plateau_slope and gain_slope must be > 0")
+        if not (0 < self.plateau_slope and 0 < self.gain_mbar):
+            raise ValueError("plateau_slope and gain_mbar must be > 0")
         if not (0 < self.stop_above_mbar):
             raise ValueError("stop_above_mbar must be > 0")
         if self.max_s <= 0 or self.hold_s < 0 or self.leak_s < 0:
@@ -166,32 +173,37 @@ class Tracker:
         t_a = self.io.now()
         ts, ps = self._sample(dur, limited)
         slope, pm = fit_slope(ts, ps)
+        k = max(3, len(ps) // 3)                         # last third: the pressure the window ends at
+        p_tail = sum(ps[-k:]) / len(ps[-k:]) if ps else float("nan")
+        t_tail = sum(ts[-k:]) / len(ts[-k:]) if ts else float("nan")
         row = {"t_s": round(t_a - self.t_run0, 3), "start_hz": start_hz, "phase": phase, "f_hz": f,
                "step_hz": round(step, 2), "dur_s": round(dur, 2),
                "p_start_mbar": round(ps[0], 2) if ps else float("nan"),
                "p_end_mbar": round(ps[-1], 2) if ps else float("nan"),
                "p_mean_mbar": round(pm, 2) if pm == pm else float("nan"),
-               "slope_mbar_s": round(slope, 3) if slope == slope else float("nan"), "n": len(ps),
-               "decision": "", "note": ""}
+               "p_tail_mbar": round(p_tail, 2) if p_tail == p_tail else float("nan"),
+               "slope_mbar_s": round(slope, 3) if slope == slope else float("nan"), "gain_mbar": float("nan"),
+               "n": len(ps), "decision": "", "note": "", "_t_tail": t_tail}
         return row
 
-    def _build(self, f: int, step: float, phase: str, start_hz: int) -> Tuple[float, float]:
-        """Drive f until the slope is below plateau_slope (or build_max_s). Returns (last slope, plateau)."""
+    def _build(self, f: int, step: float, phase: str, start_hz: int) -> Tuple[float, float, float]:
+        """Drive f until the slope is below plateau_slope (or build_max_s).
+        Returns (last slope, plateau = mean of the last third of the last window, its time)."""
         t_b = self.io.now()
         first = True
         while True:
             row = self._window(f, phase, step, self.prm.probe_s, settle=first, start_hz=start_hz)
             first = False
-            s, pm = row["slope_mbar_s"], row["p_mean_mbar"]
+            s, pt = row["slope_mbar_s"], row["p_tail_mbar"]
             done = (s == s and s < self.prm.plateau_slope) or (self.io.now() - t_b >= self.prm.build_max_s)
             row["decision"] = "plateau" if done else "rising"
             self.io.log(row)
-            if pm == pm:
-                self.plateaus[f] = pm
-                if pm > self.best_p:
-                    self.best_p, self.best_f = pm, f
+            if pt == pt:
+                self.plateaus[f] = pt
+                if pt > self.best_p:
+                    self.best_p, self.best_f = pt, f
             if done:
-                return (s if s == s else 0.0), pm
+                return (s if s == s else 0.0), pt, row["_t_tail"]
 
     # ---- the tracking ----
     def run(self) -> Dict[str, Any]:
@@ -201,7 +213,7 @@ class Tracker:
         f, step = start, float(prm.step0_hz)
         io.status(f"max-pressure tracking from {start} Hz, step {step:g} Hz")
         try:
-            s_c, _ = self._build(f, step, "build", start)
+            s_c, p_c, t_c = self._build(f, step, "build", start)
             order = +1
             while step >= prm.step_min_hz:
                 better = None
@@ -210,21 +222,24 @@ class Tracker:
                     if cand == f or not (prm.f_min <= cand <= prm.f_max):
                         continue
                     row = self._window(cand, "probe", step, prm.probe_s, settle=True, start_hz=start)
-                    s = row["slope_mbar_s"]
-                    win = s == s and s > max(prm.gain_slope, s_c + prm.gain_slope)
+                    pt = row["p_tail_mbar"]
+                    creep = max(0.0, s_c) * max(0.0, row["_t_tail"] - t_c)   # what the centre would still have added
+                    gain = pt - p_c - creep if pt == pt and p_c == p_c else float("nan")
+                    win = gain == gain and gain > prm.gain_mbar
+                    row["gain_mbar"] = round(gain, 2) if gain == gain else float("nan")
                     row["decision"] = "better" if win else "not better"
-                    row["note"] = f"centre {f} Hz slope {s_c:.2f}"
+                    row["note"] = f"centre {f} Hz plateau {p_c:.1f} mbar, creep {creep:.1f} mbar"
                     io.log(row)
                     if win:
                         better = cand
                         break
-                    s_c, _ = self._build(f, step, "rebuild", start)
+                    s_c, p_c, t_c = self._build(f, step, "rebuild", start)
                 order = -order
                 if better is not None:
                     f = better
                     self.n_moves += 1
                     io.status(f"moved to {f} Hz (step {step:g} Hz), best plateau {self.best_p:.1f} mbar")
-                    s_c, _ = self._build(f, step, "build", start)
+                    s_c, p_c, t_c = self._build(f, step, "build", start)
                 else:
                     step /= 2.0
                     io.status(f"no better neighbour of {f} Hz; step -> {step:g} Hz")

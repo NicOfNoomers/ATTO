@@ -82,6 +82,9 @@ if __name__ == "__main__":
         ("noisy sensor (1 mbar)", 600, dict(expect_hz=650, noise=1.0)),
         ("stop above 320 mbar", 600, dict(stop_above=320.0, expect_stop=True)),
         ("no creep", 600, dict(expect_hz=650, creep_frac=0.0)),
+        # 2 Nov blocked-outlet steps crept for 30-50 s (98 % at 13-51 s): a slow, large creep compliance
+        ("slow strong creep (50 %, 40 s)", 600, dict(expect_hz=650, creep_frac=0.5, creep_tau=40.0)),
+        ("slow strong creep, broad peak", 1100, dict(expect_hz=1250, tol_hz=15, creep_frac=0.5, creep_tau=40.0)),
     ]
     results = [run_case(n, s, **kw) for n, s, kw in cases]
     print(f"{sum(results)}/{len(results)} passed")

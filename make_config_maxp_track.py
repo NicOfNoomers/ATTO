@@ -10,7 +10,8 @@ Per start frequency: gentle release (pull only, to the floor), hold_position (th
 closed line), then the tracker:
   build to the plateau -> probe f +- step -> move if the pressure keeps rising there, else halve the step -> stop at
   step_min, max_s or stop_above -> hold the best frequency (the mean of the second half of the hold is the maximum)
-  -> 10 s at 0 Hz (leak decay).
+  -> 30 s at 0 Hz (leak decay). Windows are long on purpose (NM 18 Nov; see maxp_tracker.py: the 2 Nov steps
+  creep for 30-50 s): about 10-20 min per start.
 It finds the peak nearest each start, so give one start per suspected peak (e.g. 650,1250).
 
 Limits:
@@ -28,9 +29,9 @@ Results: maxp_track.csv (one row per window) and maxp_track_results.json (one re
 
 usage:
   python make_config_maxp_track.py --pump 261030-1 [--starts 650,1250] [--supply manual|rsd3305p] [--v 2500]
-      [--fmin 200 --fmax 2000] [--step0 50 --step-min 5] [--probe-s 4 --settle-s 1] [--plateau-slope 0.5]
-      [--gain-slope 1.0] [--build-max-s 40] [--max-s 600] [--stop-above 330] [--limit 340] [--hold-s 20]
-      [--leak-s 10] [--release-rate 30 --release-floor 5] [--out <file>]
+      [--fmin 200 --fmax 2000] [--step0 50 --step-min 5] [--probe-s 15 --settle-s 3] [--plateau-slope 0.2]
+      [--gain-mbar 5] [--build-max-s 90] [--max-s 1200] [--stop-above 330] [--limit 340] [--hold-s 60]
+      [--leak-s 30] [--release-rate 30 --release-floor 5] [--out <file>]
 """
 import argparse
 import json
@@ -50,16 +51,16 @@ ap.add_argument("--fmin", type=int, default=200)
 ap.add_argument("--fmax", type=int, default=2000)
 ap.add_argument("--step0", type=float, default=50.0)
 ap.add_argument("--step-min", type=float, default=5.0)
-ap.add_argument("--probe-s", type=float, default=4.0)
-ap.add_argument("--settle-s", type=float, default=1.0)
-ap.add_argument("--plateau-slope", type=float, default=0.5, help="mbar/s")
-ap.add_argument("--gain-slope", type=float, default=1.0, help="mbar/s")
-ap.add_argument("--build-max-s", type=float, default=40.0)
-ap.add_argument("--max-s", type=float, default=600.0, help="tracking time cap per start (hold and leak on top)")
+ap.add_argument("--probe-s", type=float, default=15.0)
+ap.add_argument("--settle-s", type=float, default=3.0)
+ap.add_argument("--plateau-slope", type=float, default=0.2, help="mbar/s over probe_s")
+ap.add_argument("--gain-mbar", type=float, default=5.0, help="a probe must hold this much more than the centre")
+ap.add_argument("--build-max-s", type=float, default=90.0)
+ap.add_argument("--max-s", type=float, default=1200.0, help="tracking time cap per start (hold and leak on top)")
 ap.add_argument("--stop-above", type=float, default=330.0, help="mbar; also capped 5 mbar below the controller limit")
 ap.add_argument("--limit", type=float, default=340.0, help="controller limit, mbar (it also caps at 95 %% of the sensor range)")
-ap.add_argument("--hold-s", type=float, default=20.0)
-ap.add_argument("--leak-s", type=float, default=10.0)
+ap.add_argument("--hold-s", type=float, default=60.0)
+ap.add_argument("--leak-s", type=float, default=30.0)
 ap.add_argument("--release-rate", type=float, default=30.0, help="release ramp, mbar/s")
 ap.add_argument("--release-floor", type=float, default=5.0, help="release stops at this pressure, mbar")
 ap.add_argument("--out", default=None, help="output file (default config_maxp_track_<starts>Hz_<supply>.json)")
@@ -82,7 +83,7 @@ if args.supply == "rsd3305p":
 for f0 in starts:
     blk = {"type": "maxp_track", "start_hz": f0, "f_min": args.fmin, "f_max": args.fmax, "step0_hz": args.step0,
            "step_min_hz": args.step_min, "settle_s": args.settle_s, "probe_s": args.probe_s,
-           "plateau_slope": args.plateau_slope, "gain_slope": args.gain_slope, "build_max_s": args.build_max_s,
+           "plateau_slope": args.plateau_slope, "gain_mbar": args.gain_mbar, "build_max_s": args.build_max_s,
            "max_s": args.max_s, "stop_above_mbar": args.stop_above, "hold_s": args.hold_s, "leak_s": args.leak_s,
            "section": "maxp_track", "level_mv": args.v}
     maxp_tracker.Params.from_block(blk)          # refuses bad values here, not on the rig
@@ -132,4 +133,4 @@ with open(out, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
 n_track = len(starts)
 print(f"wrote {out}: {len(tests)} blocks, {n_track} tracking(s); at most "
-      f"{n_track * (args.max_s + args.hold_s + args.leak_s + 40) / 60:.0f} min (usually 3-5 min per start)")
+      f"{n_track * (args.max_s + args.hold_s + args.leak_s + 40) / 60:.0f} min (usually 10-20 min per start)")
