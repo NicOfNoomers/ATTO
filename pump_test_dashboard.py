@@ -184,6 +184,12 @@ except Exception:
     maxp_tracker = None
     log_exception("Optional import failed: maxp_tracker not available; 'maxp_track' blocks disabled.")
 
+try:
+    import maxflow_tracker             # maximum-flow point tracking with flushes ('maxflow_track' blocks)
+except Exception:
+    maxflow_tracker = None
+    log_exception("Optional import failed: maxflow_tracker not available; 'maxflow_track' blocks disabled.")
+
 SUPPLY_AVAILABLE = False
 try:
     import supply_rsd                  # programmable bench supply (RSD3305P) for automatic voltage steps
@@ -438,6 +444,8 @@ def block_duration_s(t: Dict[str, Any]) -> float:
     if ttype == "pq":
         n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
         return n * (PRESSURE_SETTLE_GUESS_S + max(0.0, safe_float(t.get("measure_s", 30), 30.0)))
+    if ttype == "maxflow_track":      # upper bound: the tracking cap (flushes included) plus the hold
+        return safe_float(t.get("max_s", 1800), 1800.0) + safe_float(t.get("hold_s", 60), 60.0)
     if ttype == "maxp_track":         # upper bound: the tracking time cap plus the hold and the leak record
         return (safe_float(t.get("max_s", 1200), 1200.0) + safe_float(t.get("hold_s", 60), 60.0)
                 + safe_float(t.get("leak_s", 30), 30.0))
@@ -2413,6 +2421,9 @@ class PumpTestRunner(LiveSessionBase):
         if ttype == "maxp_track":
             self._exec_maxp_track(test, log_event, status_prefix)
             return
+        if ttype == "maxflow_track":
+            self._exec_maxflow_track(test, log_event, status_prefix)
+            return
 
         if ttype == "group":
             sub_blocks = test.get("blocks", [])
@@ -2569,6 +2580,74 @@ class PumpTestRunner(LiveSessionBase):
         ctl.note("maxp_track", f"start {prm.start_hz} Hz: best plateau {res.get('best_plateau_mbar')} mbar at "
                                f"{res.get('best_hz')} Hz, hold {res.get('hold_mean_mbar')} mbar"
                                + (" (stopped at the limit: maximum >= that)" if res.get("stop_above") else ""))
+        if not self.stop_flag.is_set():
+            self._nominal_end(dur)
+
+    def _exec_maxflow_track(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'maxflow_track', 'start_hz': 650, 'f_min': 200, 'f_max': 2000, 'step0_hz': 50,
+        'step_min_hz': 5, 'settle_s': 3, 'window_s': 10, 'gain_abs': 3, 'gain_frac': 0.03, 'max_s': 1800,
+        'hold_s': 60, 'flush_rounds': 3, 'flush_every_s': 300, 'flush_extra_hz': [], 'drop_frac': 0.8}:
+        maximum-flow point tracking on the drive frequency at free flow, with prime_at-style flushes at the start,
+        every flush_every_s and after a drop (see maxflow_tracker.py). No pressure control needed.
+        One row per window in maxflow_track.csv, one result per block in maxflow_track_results.json."""
+        if maxflow_tracker is None:
+            raise RuntimeError("maxflow_track block: maxflow_tracker.py could not be imported.")
+        prm = maxflow_tracker.FlowParams.from_block(test)
+        path = os.path.join(self.run_dir, "maxflow_track.csv")
+        new_file = not os.path.exists(path)
+        fh = open(path, "a", newline="", encoding="utf-8")
+        writer = csv.DictWriter(fh, fieldnames=maxflow_tracker.LOG_COLS, lineterminator="\n", extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+
+        def set_freq(hz: int):
+            self._set_freq(int(hz))
+            log_event()
+
+        def log_row(row):
+            writer.writerow(row)
+            fh.flush()
+
+        def wait(dt: float):
+            if dt > 0:
+                self._wait_until(CLOCK() + dt)
+
+        last = {"n": -1}
+
+        def read_flow() -> float:
+            # the newest sample from the sampling loop; NaN until a new one arrives (no double counting)
+            with self.lock:
+                n = len(self.buf_flow)
+                t_new = self.buf_t[-1] if n else None
+                q = self.buf_flow[-1] if n else None
+            if q is None or t_new == last.get("t"):
+                return float("nan")
+            last["t"] = t_new
+            return float(q)
+
+        io = maxp_tracker.Io(set_freq=set_freq, read_p=read_flow, now=CLOCK, sleep=wait,
+                             stopped=self.stop_flag.is_set, log=log_row,
+                             status=lambda m: self._emit("status", status_prefix + m))
+        dur = block_duration_s(test)
+        self._nominal_begin(CLOCK(), dur)
+        res = None
+        try:
+            res = maxflow_tracker.track_flow(prm, io)
+        finally:
+            fh.close()
+            self._set_freq(0)
+            log_event()
+        try:
+            rpath = os.path.join(self.run_dir, "maxflow_track_results.json")
+            prev = []
+            if os.path.exists(rpath):
+                with open(rpath, encoding="utf-8") as f:
+                    prev = json.load(f)
+            prev.append(res)
+            with open(rpath, "w", encoding="utf-8") as f:
+                json.dump(prev, f, indent=2, default=str)
+        except Exception:
+            log_exception("maxflow_track: failed to write maxflow_track_results.json")
         if not self.stop_flag.is_set():
             self._nominal_end(dur)
 
@@ -5554,6 +5633,11 @@ class DashboardApp:
             wait = f", wait until settled (max {safe_float(t.get('timeout_s', 120), 120.0):g} s)" \
                 if t.get("wait_settled", True) else ""
             return f"PRESSURE: hold {safe_float(tgt, 0.0):g} mbar{wait}"
+        if ttype == "maxflow_track":
+            return (f"MAX-FLOW TRACKING from {t.get('start_hz', 650)} Hz "
+                    f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"
+                    f"{t.get('step_min_hz', 5)} Hz, flush x{t.get('flush_rounds', 3)} then every "
+                    f"{t.get('flush_every_s', 300)} s, max {t.get('max_s', 1800)} s)")
         if ttype == "maxp_track":
             return (f"MAX-PRESSURE TRACKING from {t.get('start_hz', 650)} Hz "
                     f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"

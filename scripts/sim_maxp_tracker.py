@@ -73,6 +73,63 @@ def run_case(name, start, stop_above=500.0, noise=0.3, expect_hz=None, tol_hz=10
     return ok
 
 
+class FlowPlant:
+    """Free flow with a gas state g (0 = fully primed): the flow falls (x (1 - 0.5 g)) and the peaks move down
+    (f x (1 + 0.3 g)) with gas; pumping adds gas (r_gas per s) and flow purges it (k_purge x Q / 300 x g)."""
+
+    def __init__(self, peaks=((650, 60, 230.0), (1250, 150, 300.0)), base=40.0, noise=2.0, seed=2,
+                 g0=0.0, r_gas=0.0, k_purge=0.002):
+        self.peaks, self.base, self.noise = peaks, base, noise
+        self.rng = random.Random(seed)
+        self.t, self.f, self.g = 0.0, 0, g0
+        self.r_gas, self.k_purge = r_gas, k_purge
+
+    def q_static(self, f, g=0.0):
+        if f <= 0:
+            return 0.0
+        fe = f * (1.0 + 0.3 * g)
+        return (1.0 - 0.5 * g) * (self.base + sum(a * lor(fe, f0, w) for f0, w, a in self.peaks))
+
+    def advance(self, dt):
+        if self.f > 0:
+            q = self.q_static(self.f, self.g)
+            self.g = min(1.0, max(0.0, self.g + (self.r_gas - self.k_purge * q / 300.0 * self.g) * dt))
+        self.t += dt
+
+    def io(self, rows):
+        return mt.Io(set_freq=lambda f: setattr(self, "f", int(f)),
+                     read_p=lambda: self.q_static(self.f, self.g) * (1 + 0.03 * self.rng.gauss(0, 1))
+                     + self.rng.gauss(0.0, self.noise),
+                     now=lambda: self.t, sleep=self.advance, stopped=lambda: False,
+                     log=rows.append, status=lambda m: None)
+
+
+def run_flow_case(name, start, expect_hz, tol_hz=10, **kw):
+    import maxflow_tracker as mf
+    plant = FlowPlant(**kw)
+    rows = []
+    res = mf.track_flow(mf.FlowParams(start_hz=start), plant.io(rows))
+    ok = abs(res["best_hz"] - expect_hz) <= tol_hz
+    print(f"{name:34s} start {start:5d}  tracked {res['best_hz']:5d} Hz  hold {res['hold_flow']!s:>7} uL/min  "
+          f"Q(tracked, g) {plant.q_static(res['best_hz'], plant.g):6.1f}  g {plant.g:.2f}  moves {res['moves']:2d}  "
+          f"flushes {res['flushes']:2d}  {res['elapsed_s']:6.0f} s  {'OK' if ok else 'FAIL'}")
+    return ok
+
+
+if __name__ == "__main__" and "--flow" in sys.argv:
+    cases = [
+        ("flow: narrow peak, start below", 600, dict(expect_hz=650)),
+        ("flow: narrow peak, start above", 710, dict(expect_hz=650)),
+        ("flow: broad peak, start below", 1100, dict(expect_hz=1250, tol_hz=20)),
+        ("flow: broad peak, start above", 1450, dict(expect_hz=1250, tol_hz=20)),
+        ("flow: noisy (5 uL/min)", 1100, dict(expect_hz=1250, tol_hz=25, noise=5.0)),
+        # gas builds while pumping and flow purges it: the peak sits a little lower (steady g ~0.15)
+        ("flow: gas drift", 1100, dict(expect_hz=1195, tol_hz=45, r_gas=0.0004)),
+    ]
+    results = [run_flow_case(n, s, **kw) for n, s, kw in cases]
+    print(f"{sum(results)}/{len(results)} passed")
+    sys.exit(0 if all(results) else 1)
+
 if __name__ == "__main__":
     cases = [
         ("narrow peak, start below", 600, dict(expect_hz=650)),
