@@ -4366,7 +4366,7 @@ class DashboardApp:
         elif proj and not p["finished"]:
             c, due, _moved = proj[0]
             until = (due - now).total_seconds()
-            self.var_next_change.set(f"Next voltage change #{c['index']} → {c['mv'] / 1000:.3f} V "
+            self.var_next_change.set(f"Next voltage change #{c['index']} -> {c['mv'] / 1000:.3f} V "
                                      f"at {fmt_clock(due)} (in {fmt_duration(until)})" + (", automatic" if auto else ""))
             self.lbl_next_change.configure(fg="#b00000" if until <= lead_s and not auto else self._next_change_fg)
         else:
@@ -5624,7 +5624,7 @@ class DashboardApp:
             pump = "pump holds" if str(t.get("while_waiting", "zero")).lower() == "hold" else "pump 0 Hz"
             w = t.get("window")
             when = f", ask {w[0]}-{w[1]}" if voltage_window(t) else ""
-            return (f"VOLTAGE STEP → {mv / 1000:.3f} V (wait for you, {pump}, "
+            return (f"VOLTAGE STEP -> {mv / 1000:.3f} V (wait for you, {pump}, "
                     f"settle {safe_float(t.get('settle_s', 0), 0.0):g} s{when})")
         if ttype == "pressure":
             tgt = t.get("target_mbar", "release")
@@ -5658,7 +5658,7 @@ class DashboardApp:
         sdur = t.get("step_duration_s", None)
         tdur = t.get("total_duration_s", None)
         d = f"{sdur}s/step" if sdur is not None else f"{tdur}s total"
-        return f"sweep: {t.get('start_hz')}→{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
+        return f"sweep: {t.get('start_hz')}->{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
 
     def refresh_blocks_list(self):
         self.lst_blocks.delete(0, tk.END)

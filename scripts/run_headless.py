@@ -44,7 +44,18 @@ MAX_MV = 2500
 
 
 def out(msg=""):
-    print(f"[{datetime.now():%H:%M:%S}] {msg}" if msg else "", flush=True)
+    # 18 Nov: a non-ASCII character in a block description (the sweep's arrow) killed a headless run in this
+    # print (UnicodeEncodeError on the cp1252 console/log); the pump kept its last frequency. A progress line
+    # must never be able to stop a run: unencodable characters are replaced, and any print error is swallowed.
+    line = f"[{datetime.now():%H:%M:%S}] {msg}" if msg else ""
+    try:
+        print(line, flush=True)
+    except Exception:
+        try:
+            enc = getattr(sys.stdout, "encoding", None) or "ascii"
+            print(line.encode(enc, errors="replace").decode(enc, errors="replace"), flush=True)
+        except Exception:
+            pass
 
 
 def close_app(app):
