@@ -54,6 +54,7 @@ class FlowParams:
     flush_extra_hz: Tuple[int, ...] = ()   # extra flush frequencies, 10 s each per round (e.g. 1300)
     drop_frac: float = 0.8          # centre below this x best -> flush now
     min_flow: float = 5.0           # uL/min: below this at the start (flush and first centre) -> abort "no flow"
+    seed_from_flush: bool = True    # start the climb at the best frequency of the start flush's last round
     sample_dt: float = 0.04
 
     @classmethod
@@ -108,6 +109,7 @@ class FlowTracker:
         self.n_flush = 0
         self.last_flush = self.t0
         self.flush_max_q = -math.inf                    # highest flush-block flow (the no-flow check)
+        self.flush_last: Dict[int, float] = {}          # flush block means of the latest round, per frequency
 
     def _elapsed(self) -> float:
         return self.io.now() - self.t0
@@ -181,6 +183,7 @@ class FlowTracker:
                 m = sum(tail) / len(tail) if tail else float("nan")
                 if m == m:
                     self.flush_max_q = max(self.flush_max_q, m)
+                    self.flush_last[fk] = m
                 self.io.log({"t_s": round(self._elapsed(), 3), "start_hz": start, "phase": "flush", "f_hz": fk,
                              "step_hz": round(step, 2), "dur_s": d, "q_mean": round(m, 2) if m == m else float("nan"),
                              "q_sd": float("nan"), "n": len(tail), "ref_q": float("nan"), "gain": float("nan"),
@@ -195,6 +198,15 @@ class FlowTracker:
         io.status(f"max-flow tracking from {start} Hz, step {step:g} Hz")
         try:
             self._flush(f, prm.flush_rounds, step, start, "start")
+            # 18 Nov (260930-2): the start flush's 0.8 f blocks beat what the climb from f found (520 Hz 65-67 vs
+            # 750 Hz 54 uL/min). The flush is a free 3-point scan, so the climb starts at its best frequency
+            # (last round = the current state; the first round at 1250 Hz read 229, then 74-88).
+            if prm.seed_from_flush and self.flush_last:
+                f_seed = max(self.flush_last, key=self.flush_last.get)
+                if f_seed != f and prm.f_min <= f_seed <= prm.f_max:
+                    io.status(f"seed: flush block {f_seed} Hz ({self.flush_last[f_seed]:.0f} uL/min) beat {f} Hz "
+                              f"({self.flush_last.get(f, float('nan')):.0f}); climbing from {f_seed} Hz")
+                    f = f_seed
             q_c = self._centre(f, step, start)
             # 18 Nov: the outlet was still closed from a manual pressure test; the flow sat at -1.4 uL/min at
             # every frequency and the tracker "converged" on noise. A dead line is reported, not tracked.
@@ -261,6 +273,7 @@ class FlowTracker:
             except _Stopped:
                 res["stopped"] = True
         self._set(0)
+        res.update(seed_hz=None, flush_last={int(k): round(v, 2) for k, v in self.flush_last.items()})
         res.update(best_hz=final_f, hold_flow=hold_q, highest_reading=round(self.best_q, 2) if self.best_q > -math.inf
                    else None, highest_reading_hz=self.best_f, final_step_hz=step, moves=self.n_moves,
                    flushes=self.n_flush, elapsed_s=round(self._elapsed(), 1), params=asdict(prm))

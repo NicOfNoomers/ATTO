@@ -125,6 +125,10 @@ if __name__ == "__main__" and "--flow" in sys.argv:
         ("flow: noisy (5 uL/min)", 1100, dict(expect_hz=1250, tol_hz=25, noise=5.0)),
         # gas builds while pumping and flow purges it: the peak sits a little lower (steady g ~0.15)
         ("flow: gas drift", 1100, dict(expect_hz=1195, tol_hz=45, r_gas=0.0004)),
+        # 18 Nov rig (260930-2): start 650 between a better low peak (~520) and a weaker one (~780);
+        # the start flush's 0.8 f block (520 Hz) seeds the climb
+        ("flow: low peak beside the start", 650,
+         dict(expect_hz=520, tol_hz=15, peaks=((520, 50, 45.0), (790, 60, 30.0)), base=15.0, noise=0.5)),
     ]
     results = [run_flow_case(n, s, **kw) for n, s, kw in cases]
     # 18 Nov rig case: outlet still closed, the sensor reads a constant offset -> must abort, not "converge"
