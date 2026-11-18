@@ -1,0 +1,88 @@
+"""Offline check of maxp_tracker.py against a simulated blocked outlet (no hardware, simulated clock).
+
+Plant: closed line with compliance C (15 nL/mbar, the 2 Nov 261030-1 estimate) plus a slow creep compliance;
+the pump adds Q0(f) x (1 - P / Pmax(f)) (never negative: the valves block backflow), the valves leak G x P
+(1.5 uL/min at 150 mbar, 261030-1 on 2 Nov). Pmax(f) has a narrow peak (default 650 Hz, like NM's 378 mbar
+by hand on 18 Nov) and a broad one (1250 Hz); the sensor adds Gaussian noise.
+
+usage: python scripts/sim_maxp_tracker.py            -> runs the checks below, prints a table, exit 1 on failure
+"""
+import math
+import os
+import random
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import maxp_tracker as mt  # noqa: E402
+
+
+def lor(f, f0, w):
+    return 1.0 / (1.0 + ((f - f0) / w) ** 2)
+
+
+class Plant:
+    def __init__(self, peaks=((650, 35, 380.0), (1250, 120, 250.0)), base=60.0, noise=0.3, seed=1,
+                 C=0.015, G=1.5 / 60.0 / 150.0, creep_frac=0.3, creep_tau=20.0):
+        self.peaks, self.base, self.noise = peaks, base, noise
+        self.C, self.G, self.cf, self.ct = C, G, creep_frac, creep_tau
+        self.rng = random.Random(seed)
+        self.t, self.v, self.vc, self.f = 0.0, 0.0, 0.0, 0
+
+    def pmax(self, f):
+        return self.base + sum(a * lor(f, f0, w) for f0, w, a in self.peaks) if f > 0 else 0.0
+
+    def q0(self, f):                                    # uL/s at zero pressure
+        return (40.0 + 250.0 * lor(f, 1250, 150) + 150.0 * lor(f, 650, 60)) / 60.0 if f > 0 else 0.0
+
+    def p(self):
+        return (self.v - self.vc) / self.C
+
+    def advance(self, dt):
+        n = max(1, int(dt / 0.002))
+        h = dt / n
+        for _ in range(n):
+            p = self.p()
+            pm = self.pmax(self.f)
+            q = self.q0(self.f) * max(0.0, 1.0 - p / pm) if pm > 0 else 0.0
+            self.v += (q - self.G * p) * h
+            self.vc += (self.cf * self.C * p - self.vc) * (h / self.ct)
+        self.t += dt
+
+    def io(self, rows):
+        return mt.Io(set_freq=lambda f: setattr(self, "f", int(f)),
+                     read_p=lambda: self.p() + self.rng.gauss(0.0, self.noise),
+                     now=lambda: self.t, sleep=self.advance, stopped=lambda: False,
+                     log=rows.append, status=lambda m: None)
+
+
+def run_case(name, start, stop_above=500.0, noise=0.3, expect_hz=None, tol_hz=10, expect_stop=False, **kw):
+    plant = Plant(noise=noise, **kw)
+    rows = []
+    prm = mt.Params(start_hz=start, stop_above_mbar=stop_above)
+    res = mt.track(prm, plant.io(rows))
+    ok = True
+    if expect_stop:
+        ok = res["stop_above"]
+    elif expect_hz is not None:
+        ok = (not res["stop_above"]) and abs(res["best_hz"] - expect_hz) <= tol_hz
+    true_best = max(range(200, 2001), key=plant.pmax) if expect_hz is None else expect_hz
+    print(f"{name:34s} start {start:5d}  best {res['best_hz']:5d} Hz  plateau {res['best_plateau_mbar']!s:>7} "
+          f"hold {res['hold_mean_mbar']!s:>7}  Pmax(best) {plant.pmax(res['best_hz']):6.1f}  "
+          f"stop {res['stop_above']!s:5}  moves {res['moves']:2d}  {res['elapsed_s']:6.1f} s  "
+          f"{'OK' if ok else 'FAIL'}")
+    return ok
+
+
+if __name__ == "__main__":
+    cases = [
+        ("narrow peak, start below", 600, dict(expect_hz=650)),
+        ("narrow peak, start above", 720, dict(expect_hz=650)),
+        ("broad peak, start below", 1100, dict(expect_hz=1250, tol_hz=15)),
+        ("broad peak, start above", 1400, dict(expect_hz=1250, tol_hz=15)),
+        ("noisy sensor (1 mbar)", 600, dict(expect_hz=650, noise=1.0)),
+        ("stop above 320 mbar", 600, dict(stop_above=320.0, expect_stop=True)),
+        ("no creep", 600, dict(expect_hz=650, creep_frac=0.0)),
+    ]
+    results = [run_case(n, s, **kw) for n, s, kw in cases]
+    print(f"{sum(results)}/{len(results)} passed")
+    sys.exit(0 if all(results) else 1)

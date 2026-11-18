@@ -178,6 +178,12 @@ except Exception:
     pc = None
     log_exception("Optional import failed: pressure_control not available; pressure control disabled.")
 
+try:
+    import maxp_tracker                # maximum-pressure point tracking on the frequency ('maxp_track' blocks)
+except Exception:
+    maxp_tracker = None
+    log_exception("Optional import failed: maxp_tracker not available; 'maxp_track' blocks disabled.")
+
 SUPPLY_AVAILABLE = False
 try:
     import supply_rsd                  # programmable bench supply (RSD3305P) for automatic voltage steps
@@ -432,6 +438,9 @@ def block_duration_s(t: Dict[str, Any]) -> float:
     if ttype == "pq":
         n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
         return n * (PRESSURE_SETTLE_GUESS_S + max(0.0, safe_float(t.get("measure_s", 30), 30.0)))
+    if ttype == "maxp_track":         # upper bound: the tracking time cap plus the hold and the leak record
+        return (safe_float(t.get("max_s", 600), 600.0) + safe_float(t.get("hold_s", 20), 20.0)
+                + safe_float(t.get("leak_s", 10), 10.0))
     repeat = max(1, repeat)
     if ttype == "constant":
         return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
@@ -456,7 +465,7 @@ def is_pressure_target(t: Dict[str, Any]) -> bool:
 def contains_pressure_block(blocks: List[Dict[str, Any]]) -> bool:
     for b in blocks:
         tt = block_type(b)
-        if tt in ("pressure", "pq") or (tt == "group" and contains_pressure_block(b.get("blocks", []))):
+        if tt in ("pressure", "pq", "maxp_track") or (tt == "group" and contains_pressure_block(b.get("blocks", []))):
             return True
     return False
 
@@ -2401,6 +2410,9 @@ class PumpTestRunner(LiveSessionBase):
         if ttype == "pq":
             self._exec_pq(test, log_event, status_prefix)
             return
+        if ttype == "maxp_track":
+            self._exec_maxp_track(test, log_event, status_prefix)
+            return
 
         if ttype == "group":
             sub_blocks = test.get("blocks", [])
@@ -2492,6 +2504,73 @@ class PumpTestRunner(LiveSessionBase):
                         self._nominal_end(settle_s + step_dur)
             else:
                 raise ValueError(f"Unknown block type: {ttype}")
+
+    def _exec_maxp_track(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'maxp_track', 'start_hz': 650, 'f_min': 200, 'f_max': 2000, 'step0_hz': 50, 'step_min_hz': 5,
+        'probe_s': 4, 'settle_s': 1, 'plateau_slope': 0.5, 'gain_slope': 1.0, 'build_max_s': 40, 'max_s': 600,
+        'stop_above_mbar': 320, 'hold_s': 20, 'leak_s': 10}: maximum-pressure point tracking on the drive
+        frequency with the outlet closed (put a pressure 'hold_position' block before it; see maxp_tracker.py).
+        stop_above_mbar is capped 5 mbar below the controller's limit. One row per window in maxp_track.csv,
+        one result per block in maxp_track_results.json (run folder)."""
+        ctl = self._need_ctl()
+        if maxp_tracker is None:
+            raise RuntimeError("maxp_track block: maxp_tracker.py could not be imported.")
+        prm = maxp_tracker.Params.from_block(test)
+        cap = float(ctl.p_max) - 5.0
+        if prm.stop_above_mbar > cap:
+            self._emit("status", f"{status_prefix}max-pressure tracking: stop lowered from {prm.stop_above_mbar:g} "
+                                 f"to {cap:g} mbar (controller limit {ctl.p_max:g} mbar)")
+            prm.stop_above_mbar = cap
+        path = os.path.join(self.run_dir, "maxp_track.csv")
+        new_file = not os.path.exists(path)
+        fh = open(path, "a", newline="", encoding="utf-8")
+        writer = csv.DictWriter(fh, fieldnames=maxp_tracker.LOG_COLS, lineterminator="\n", extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+
+        def set_freq(hz: int):
+            self._set_freq(int(hz))
+            log_event()
+
+        def log_row(row):
+            writer.writerow(row)
+            fh.flush()
+
+        def wait(dt: float):
+            if dt > 0:
+                self._wait_until(CLOCK() + dt)
+
+        def read_p() -> float:
+            return float("nan") if ctl.mode == "fault" else float(ctl.p)
+
+        io = maxp_tracker.Io(set_freq=set_freq, read_p=read_p, now=CLOCK, sleep=wait,
+                             stopped=self.stop_flag.is_set, log=log_row,
+                             status=lambda m: self._emit("status", status_prefix + m))
+        dur = block_duration_s(test)
+        self._nominal_begin(CLOCK(), dur)
+        res = None
+        try:
+            res = maxp_tracker.track(prm, io)
+        finally:
+            fh.close()
+            self._set_freq(0)
+            log_event()
+        try:
+            rpath = os.path.join(self.run_dir, "maxp_track_results.json")
+            prev = []
+            if os.path.exists(rpath):
+                with open(rpath, encoding="utf-8") as f:
+                    prev = json.load(f)
+            prev.append(res)
+            with open(rpath, "w", encoding="utf-8") as f:
+                json.dump(prev, f, indent=2, default=str)
+        except Exception:
+            log_exception("maxp_track: failed to write maxp_track_results.json")
+        ctl.note("maxp_track", f"start {prm.start_hz} Hz: best plateau {res.get('best_plateau_mbar')} mbar at "
+                               f"{res.get('best_hz')} Hz, hold {res.get('hold_mean_mbar')} mbar"
+                               + (" (stopped at the limit: maximum >= that)" if res.get("stop_above") else ""))
+        if not self.stop_flag.is_set():
+            self._nominal_end(dur)
 
     def _wait_until_pressure(self, t_end: float, p_stop: float) -> Optional[float]:
         """Wait until t_end, Stop, or the outlet pressure reaching p_stop (returns that pressure)."""
@@ -5475,6 +5554,11 @@ class DashboardApp:
             wait = f", wait until settled (max {safe_float(t.get('timeout_s', 120), 120.0):g} s)" \
                 if t.get("wait_settled", True) else ""
             return f"PRESSURE: hold {safe_float(tgt, 0.0):g} mbar{wait}"
+        if ttype == "maxp_track":
+            return (f"MAX-PRESSURE TRACKING from {t.get('start_hz', 650)} Hz "
+                    f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"
+                    f"{t.get('step_min_hz', 5)} Hz, stop {t.get('stop_above_mbar', 320)} mbar, max "
+                    f"{t.get('max_s', 600)} s)")
         if ttype == "pq":
             ps = t.get("pressures_mbar") or []
             fr = ", ".join(str(f) for f in pq_frequencies(t))
