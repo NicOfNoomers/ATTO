@@ -58,6 +58,7 @@ class Params:
     stop_above_mbar: float = 320.0
     hold_s: float = 60.0            # the maximum = mean of the second half
     leak_s: float = 30.0
+    min_rise_mbar: float = 10.0     # first plateau below this -> abort "no pressure rise" (line open?)
     sample_dt: float = 0.05
 
     @classmethod
@@ -105,6 +106,10 @@ class _Stopped(Exception):
 
 
 class _TimeUp(Exception):
+    pass
+
+
+class _NoRise(Exception):
     pass
 
 
@@ -209,11 +214,15 @@ class Tracker:
     def run(self) -> Dict[str, Any]:
         prm, io = self.prm, self.io
         start = int(min(max(prm.start_hz, prm.f_min), prm.f_max))
-        result: Dict[str, Any] = {"start_hz": start, "stop_above": False, "stopped": False, "time_up": False}
+        result: Dict[str, Any] = {"start_hz": start, "stop_above": False, "stopped": False, "time_up": False,
+                                  "no_rise": False}
         f, step = start, float(prm.step0_hz)
         io.status(f"max-pressure tracking from {start} Hz, step {step:g} Hz")
         try:
             s_c, p_c, t_c = self._build(f, step, "build", start)
+            if not (p_c == p_c and p_c > prm.min_rise_mbar):
+                raise _NoRise(f"plateau {p_c:.1f} mbar at {f} Hz is below {prm.min_rise_mbar:g} mbar: outlet not "
+                              f"closed, syringe not holding, or no pressure reading?")
             order = +1
             while step >= prm.step_min_hz:
                 better = None
@@ -251,13 +260,16 @@ class Tracker:
                     "p_mean_mbar": float("nan"), "slope_mbar_s": float("nan"), "n": 1,
                     "decision": "pump 0 Hz", "note": f"pressure reached the {prm.stop_above_mbar:g} mbar stop"})
             self.best_f, self.best_p = e.f, max(self.best_p, e.p)
+        except _NoRise as e:
+            result.update(no_rise=True, converged=False, error=str(e))
+            io.status(f"max-pressure tracking from {start} Hz ABORTED: {e}")
         except _TimeUp:
             result.update(time_up=True, converged=False)
         except _Stopped:
             result.update(stopped=True, converged=False)
 
         hold_mean = float("nan")
-        if not result["stopped"] and not result["stop_above"] and prm.hold_s > 0:
+        if not result["stopped"] and not result["stop_above"] and not result["no_rise"] and prm.hold_s > 0:
             try:
                 # first half settles at the best frequency; the mean of the second half is the maximum it holds
                 half_s = max(1.0, prm.hold_s / 2.0)
@@ -288,7 +300,8 @@ class Tracker:
         io.log({"t_s": round(self._elapsed(), 3), "start_hz": start, "phase": "result", "f_hz": self.best_f,
                 "step_hz": round(step, 2), "dur_s": 0, "p_start_mbar": float("nan"), "p_end_mbar": float("nan"),
                 "p_mean_mbar": hold_mean, "slope_mbar_s": leak_slope, "n": 0,
-                "decision": ("stop_above" if result["stop_above"] else "stopped" if result["stopped"]
+                "decision": ("no_rise" if result["no_rise"] else "stop_above" if result["stop_above"]
+                             else "stopped" if result["stopped"]
                              else "time_up" if result["time_up"] else "converged"),
                 "note": f"best plateau {result['best_plateau_mbar']} mbar at {self.best_f} Hz; peak sample "
                         f"{result['peak_sample_mbar']} mbar at {self.peak_f} Hz; {self.n_moves} moves"})

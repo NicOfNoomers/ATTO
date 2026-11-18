@@ -53,6 +53,7 @@ class FlowParams:
     flush_every_s: float = 300.0    # later flushes (1 round each) at the current best frequency; 0 = never
     flush_extra_hz: Tuple[int, ...] = ()   # extra flush frequencies, 10 s each per round (e.g. 1300)
     drop_frac: float = 0.8          # centre below this x best -> flush now
+    min_flow: float = 5.0           # uL/min: below this at the start (flush and first centre) -> abort "no flow"
     sample_dt: float = 0.04
 
     @classmethod
@@ -91,6 +92,10 @@ class _TimeUp(Exception):
     pass
 
 
+class _NoFlow(Exception):
+    pass
+
+
 class FlowTracker:
     def __init__(self, prm: FlowParams, io: Io):
         prm.check()
@@ -102,6 +107,7 @@ class FlowTracker:
         self.n_moves = 0
         self.n_flush = 0
         self.last_flush = self.t0
+        self.flush_max_q = -math.inf                    # highest flush-block flow (the no-flow check)
 
     def _elapsed(self) -> float:
         return self.io.now() - self.t0
@@ -173,6 +179,8 @@ class FlowTracker:
             if fk > 0:
                 tail = qs[len(qs) * 2 // 5:]
                 m = sum(tail) / len(tail) if tail else float("nan")
+                if m == m:
+                    self.flush_max_q = max(self.flush_max_q, m)
                 self.io.log({"t_s": round(self._elapsed(), 3), "start_hz": start, "phase": "flush", "f_hz": fk,
                              "step_hz": round(step, 2), "dur_s": d, "q_mean": round(m, 2) if m == m else float("nan"),
                              "q_sd": float("nan"), "n": len(tail), "ref_q": float("nan"), "gain": float("nan"),
@@ -183,11 +191,17 @@ class FlowTracker:
         prm, io = self.prm, self.io
         start = int(min(max(prm.start_hz, prm.f_min), prm.f_max))
         f, step = start, float(prm.step0_hz)
-        res: Dict[str, Any] = {"start_hz": start, "stopped": False, "time_up": False}
+        res: Dict[str, Any] = {"start_hz": start, "stopped": False, "time_up": False, "no_flow": False}
         io.status(f"max-flow tracking from {start} Hz, step {step:g} Hz")
         try:
             self._flush(f, prm.flush_rounds, step, start, "start")
             q_c = self._centre(f, step, start)
+            # 18 Nov: the outlet was still closed from a manual pressure test; the flow sat at -1.4 uL/min at
+            # every frequency and the tracker "converged" on noise. A dead line is reported, not tracked.
+            q_any = max(q_c if q_c == q_c else -math.inf, self.flush_max_q)
+            if not q_any > prm.min_flow:
+                raise _NoFlow(f"flow {q_any:.1f} uL/min (centre and flush blocks) is below {prm.min_flow:g}: "
+                              f"outlet closed, line blocked or flow sensor not in line?")
             order = +1
             while step >= prm.step_min_hz:
                 if prm.flush_every_s > 0 and io.now() - self.last_flush >= prm.flush_every_s:
@@ -228,6 +242,9 @@ class FlowTracker:
                     step /= 2.0
                     io.status(f"no better neighbour of {f} Hz; step -> {step:g} Hz")
             res["converged"] = True
+        except _NoFlow as e:
+            res.update(no_flow=True, converged=False, error=str(e))
+            io.status(f"max-flow tracking from {start} Hz ABORTED: {e}")
         except _TimeUp:
             res.update(time_up=True, converged=False)
         except _Stopped:
@@ -236,7 +253,7 @@ class FlowTracker:
         # the tracked frequency is where the climb ended (f); best_f is the single highest reading (can be noise)
         final_f = f
         hold_q = float("nan")
-        if not res["stopped"] and prm.hold_s > 0:
+        if not res["stopped"] and not res["no_flow"] and prm.hold_s > 0:
             try:
                 row = self._measure(final_f, "hold", step, start, limited=False, window=prm.hold_s)
                 io.log(row)
@@ -250,7 +267,8 @@ class FlowTracker:
         io.log({"t_s": round(self._elapsed(), 3), "start_hz": start, "phase": "result", "f_hz": final_f,
                 "step_hz": round(step, 2), "dur_s": 0, "q_mean": hold_q, "q_sd": float("nan"), "n": 0,
                 "ref_q": float("nan"), "gain": float("nan"),
-                "decision": "stopped" if res["stopped"] else "time_up" if res["time_up"] else "converged",
+                "decision": ("no_flow" if res["no_flow"] else "stopped" if res["stopped"]
+                             else "time_up" if res["time_up"] else "converged"),
                 "note": f"hold {hold_q} uL/min at {final_f} Hz; highest reading {res['highest_reading']} at "
                         f"{self.best_f} Hz; {self.n_moves} moves, {self.n_flush} flushes"})
         io.status(f"max-flow tracking from {start} Hz done: {hold_q} uL/min at {final_f} Hz")

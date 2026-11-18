@@ -127,6 +127,14 @@ if __name__ == "__main__" and "--flow" in sys.argv:
         ("flow: gas drift", 1100, dict(expect_hz=1195, tol_hz=45, r_gas=0.0004)),
     ]
     results = [run_flow_case(n, s, **kw) for n, s, kw in cases]
+    # 18 Nov rig case: outlet still closed, the sensor reads a constant offset -> must abort, not "converge"
+    import maxflow_tracker as mf
+    dead = FlowPlant(peaks=((650, 60, 0.0),), base=0.0, noise=0.1)
+    dead.q_static = lambda f, g=0.0: -1.45
+    r = mf.track_flow(mf.FlowParams(start_hz=650), dead.io([]))
+    ok = r["no_flow"] and not r.get("converged")
+    print(f"{'flow: dead line (closed outlet)':34s} no_flow {r['no_flow']}  {r.get('error', '')[:60]}  {'OK' if ok else 'FAIL'}")
+    results.append(ok)
     print(f"{sum(results)}/{len(results)} passed")
     sys.exit(0 if all(results) else 1)
 
@@ -144,5 +152,12 @@ if __name__ == "__main__":
         ("slow strong creep, broad peak", 1100, dict(expect_hz=1250, tol_hz=15, creep_frac=0.5, creep_tau=40.0)),
     ]
     results = [run_case(n, s, **kw) for n, s, kw in cases]
+    # open line / syringe not holding: no rise -> must abort
+    pl = Plant(noise=0.3)
+    pl.q0 = lambda f: 0.0
+    r = mt.track(mt.Params(start_hz=650), pl.io([]))
+    ok = r["no_rise"] and not r.get("converged")
+    print(f"{'no pressure rise (open line)':34s} no_rise {r['no_rise']}  {r.get('error', '')[:60]}  {'OK' if ok else 'FAIL'}")
+    results.append(ok)
     print(f"{sum(results)}/{len(results)} passed")
     sys.exit(0 if all(results) else 1)
