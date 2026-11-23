@@ -2872,7 +2872,7 @@ class PumpTestRunner(LiveSessionBase):
                     why = ctl.hold(tgt, hold_to, stopped)
                     if why in ("stopped", "fault"):
                         break
-                    if why in ("cannot_reach", "at_cap"):
+                    if why in ("cannot_reach", "at_cap", "at_limit"):
                         ctl.note("pinch_pq_stop", f"{tgt:g} mbar: {why}")
                         break
                     ctl.mode = "position"                 # the motor stays still while measuring

@@ -207,5 +207,39 @@ print(f"   start behind the limit refused: {refused}; faults {f.faults}; highest
       f"(limit 327.5) -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 f.stop_flag.set(); c5.close()
+print("case 6: the 23 Nov 520 Hz curve: x1.5-3 per step near closure, +1-step positions (the run that faulted at +10)")
+f6 = types.SimpleNamespace(freq=0)
+pl6 = pinch_control.PinchPlant(get_freq=lambda: f6.freq, x_touch=480, k_mm_per_count=0.0085, r_line=0.015,
+                               r_tube=0.003, q0=470.0, pmax=600.0, tau_s=0.3)
+sy6 = pc.DummySyringe(pl6, 0, 2470 * 16, "v1")
+g6 = make_fake()
+g6.stop_flag.set(); g6.ctl.close()
+g6.stop_flag = threading.Event()
+c6 = pinch_control.PinchController({"limit_mbar": 340, "pinch": {**FAST, "back_limit_pos": sy6.position(),
+                                                                  "approach_steps": 20}},
+                                   sy6, pl6.read_sensor, pl6.range, run_dir=tempfile.mkdtemp(),
+                                   on_fault=g6.faults.append, microsteps=16)
+c6.open(); c6.zero_sensor(0.5); g6.t0 = time.perf_counter(); c6.start(g6.t0)
+g6.ctl, g6.run_dir = c6, c6.run_dir
+g6._set_freq = lambda hz: setattr(f6, "freq", int(hz))
+def feeder6():
+    while not g6.stop_flag.is_set():
+        q = pl6.pump_flow_ul_min(pl6.pressure())
+        with g6.lock:
+            g6.buf_t.append(time.perf_counter() - g6.t0); g6.buf_flow.append(q)
+        time.sleep(0.04)
+threading.Thread(target=feeder6, daemon=True).start()
+test6 = {"type": "pinch_pq", "frequencies_hz": [520], "positions_steps": list(range(0, 17)),
+         "targets_mbar": [100, 250, 300], "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5,
+         "measure_s": 1.0, "hold_timeout_s": 25, "spin_up_s": 1.0}
+m.PumpTestRunner._exec_pinch_pq(g6, test6, lambda: None)
+rows6 = list(csv.DictReader(open(os.path.join(g6.run_dir, "pinch_pq.csv"))))
+for r in rows6:
+    print(f"   {r['kind']:8s} target {r['target_mbar']:>4s} past {r['past_touch_steps']:>6s}  P {r['p_mean_mbar']:>7s}  {r['reason']}")
+pmax6 = max(float(r["p_mean_mbar"]) for r in rows6)
+ok = not g6.faults and pmax6 < 327.5
+print(f"   faults {g6.faults}; highest point {pmax6:.1f} mbar -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+g6.stop_flag.set(); c6.close()
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
