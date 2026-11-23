@@ -77,7 +77,7 @@ PINCH_DEFAULTS: Dict[str, Any] = {
                                   # plunger; a start behind it is refused. None: the start position is the floor.
     "approach_steps": 0,          # full steps from the back limit moved at once before the fine touch search
                                   # (23 Nov: touch at ~530 steps from the limit; the 2-step search took ~160 s)
-    "guard_stop_margin_mbar": 8.0,  # position and closing moves stop this far below their stop pressure
+    "guard_stop_margin_mbar": 10.0, # position and closing moves stop this far below their stop pressure
     "guard_factor": 0.25,         # near closure: step = factor x remaining mbar / local gain
     "settle_window_s": 0.3,       # near closure: read in windows until two agree within settle_tol_mbar
     "settle_tol_mbar": 1.0,
@@ -120,6 +120,11 @@ class PinchController:
         self.pmap: List[Tuple[float, float]] = []       # (steps past touch, mbar) from the last closing sweep
         self.back_limit = int(round(float(self.pc["back_limit_steps"]) * self.m))   # squeeze floor (counts)
         self.min_squeeze_seen = 0                       # for the record: the lowest squeeze ever commanded
+        self.g_hist: List[float] = []                   # last two local gains, for the growth ratio
+        self.g_ratio: Optional[float] = None            # gain growth per step near closure
+        self.g_local: Optional[float] = None            # last measured local gain (mbar per full step), kept
+                                                        # across position points (23 Nov rig: each point started
+                                                        # with a full step and +9 -> +10 jumped 247 -> 328 mbar)
         self.plot_buf: deque = deque(maxlen=6000)       # (t, p, target) for the live plot
         self.hist: deque = deque(maxlen=20000)          # (t, p, squeeze)
         self._win: deque = deque(maxlen=200)
@@ -363,6 +368,7 @@ class PinchController:
         """Pump running. Returns the touch squeeze in full steps (None if stopped or not found)."""
         pc = self.pc
         self.mode = "search"
+        self.g_local, self.g_hist, self.g_ratio = None, [], None
         self._move_full(-float(pc["start_retract_steps"]))
         appr = float(pc.get("approach_steps") or 0)
         if appr > 0:
@@ -429,13 +435,23 @@ class PinchController:
         (s0, p0), (s1, p1) = (pts[0], pts[1]) if s_past < pts[0][0] else (pts[-2], pts[-1])
         return (p1 - p0) / (s1 - s0) if s1 > s0 else None
 
-    def _adaptive_step(self, p: float, stop: float, g: Optional[float], step_max: float) -> float:
-        """Full steps for the next move toward stop: at most step_max, and at most half the remaining pressure
-        divided by the local gain (23 Nov: 81 mbar at +10 and > 320 at +15 steps past touch: ~50 mbar per step
-        near closure), but at least one motor count."""
+    def _adaptive_step(self, p: float, stop: float, g: Optional[float], step_max: float,
+                       r: Optional[float] = None) -> float:
+        """Full steps for the next move toward stop, at least one motor count, at most step_max.
+        Near closure the gain grows step by step (23 Nov rig, 520 Hz: x1.5-3 per step; 167 -> 247 -> > 328 mbar),
+        so with a growth ratio r per step the predicted rise over s steps is g (r^s - 1) / ln r, and s is chosen
+        so that rise = guard_factor x the remaining pressure. Without r: s = factor x remaining / g."""
         if g is None or g <= 0:
             return step_max
-        return max(1.0 / self.m, min(step_max, float(self.pc["guard_factor"]) * (stop - p) / g))
+        budget = float(self.pc["guard_factor"]) * (stop - p)
+        if budget <= 0:
+            return 1.0 / self.m
+        if r is not None and r > 1.05:
+            lr = math.log(min(r, 6.0))
+            s = math.log(1.0 + budget * lr / g) / lr
+        else:
+            s = budget / g
+        return max(1.0 / self.m, min(step_max, s))
 
     def _settled_p(self) -> float:
         """Pressure after it has stopped rising: windows of settle_window_s until two agree within
@@ -449,6 +465,15 @@ class PinchController:
                 return cur
             prev = cur
         return prev
+
+    def _note_gain(self, g_new: float):
+        """Keep the last two local gains (per full step) for the growth ratio r = g_new / g_old."""
+        if g_new <= 0:
+            return
+        self.g_hist.append(g_new)
+        self.g_hist = self.g_hist[-2:]
+        if len(self.g_hist) == 2 and self.g_hist[0] > 0:
+            self.g_ratio = max(1.0, self.g_hist[1] / self.g_hist[0])
 
     def set_squeeze_guarded(self, steps_past_touch: float, stop_mbar: float,
                             stopped: Callable[[], bool] = lambda: False) -> Tuple[bool, float]:
@@ -464,23 +489,28 @@ class PinchController:
         if goal <= self.squeeze():                      # backward: no pressure risk
             self._goto_squeeze(goal)
             return True, self._p_mean(0.3)
-        p_prev, s_prev = self._p_mean(0.3), self.squeeze_full()
-        g = None
+        p_prev, s_prev = self._settled_p(), self.squeeze_full()
+        g = self.g_local
         while self.squeeze() < goal and not stopped():
             if self.mode == "fault":
                 return False, self.p_1s
             if p_prev >= stop:
                 self._event("guard_stop", f"{p_prev:.1f} mbar >= {stop:.1f} at {self.past_touch_full():.2f} steps past touch")
                 return False, p_prev
-            step = min(self._adaptive_step(p_prev, stop, g, 1.0), (goal - self.squeeze()) / self.m)
+            # no gain known yet and already above half the stop: creep (quarter steps) until one is measured
+            step_max = 0.25 if (g is None and p_prev > 0.5 * stop) else 1.0
+            step = min(self._adaptive_step(p_prev, stop, g, step_max, self.g_ratio), (goal - self.squeeze()) / self.m)
             if self._move_full(step) == 0:
                 break
-            p = self._settled_p() if p_prev > 0.3 * stop else self._p_mean(float(pc["touch_settle_s"]))
+            p = self._settled_p()                         # always settled: an early read under-reads (+6: 123 vs 264)
             if self.mode == "fault":
                 return False, self.p_1s
             ds = self.squeeze_full() - s_prev
             if ds > 0 and p > p_prev:
-                g = (p - p_prev) / ds
+                g_new = (p - p_prev) / ds
+                self._note_gain(g_new)
+                g = g_new if g is None else max(g_new, 0.5 * g)   # gains only grow toward closure: keep the bigger
+                self.g_local = g
             p_prev, s_prev = p, self.squeeze_full()
         return self.squeeze() >= goal, p_prev
 
@@ -503,7 +533,12 @@ class PinchController:
                 return "cannot_reach"
             s_goal, _ = self._map_lookup(target)
             if s_goal is not None:
-                self.set_squeeze(s_goal)
+                # guarded: after opening and re-squeezing, the tube gives more pressure at the same squeeze
+                # (relaxation/hysteresis), so the mapped squeeze can overshoot on the steep part (23 Nov sim)
+                cap = min(target + 15.0, self.p_max - 15.0) + float(pc["guard_stop_margin_mbar"])
+                self.set_squeeze_guarded(s_goal, cap, stopped)
+                if self.mode == "fault":
+                    return "fault"
         self.mode = "hold"
         t_end = clock() + timeout_s
         in_tol_since = None
@@ -533,6 +568,12 @@ class PinchController:
             step = max(-smax, min(smax, 0.6 * e / max(g, gmin)))
             if abs(step) < 1.0 / self.m:
                 step = math.copysign(1.0 / self.m, e)
+            if step > 0:                                  # never predict past p_max - 15 mbar
+                room = (self.p_max - 15.0) - p
+                if room <= 0 or g * (1.0 / self.m) > room:
+                    self._event("hold_at_limit", f"{target:g} mbar: {p:.1f} mbar, one count would pass the limit")
+                    return "at_limit"
+                step = min(step, room / max(g, gmin))
             last = (s_now, p)
             moved = self._move_full(step)
             if moved == 0 and e > 0:
@@ -556,8 +597,7 @@ class PinchController:
         while not stopped():
             if self.mode == "fault":
                 return self.p_1s, "fault"
-            near = self.pmap and self.pmap[-1][1] > 0.3 * stop_mbar
-            p = self._settled_p() if near else self._p_mean(float(pc["touch_settle_s"]))
+            p = self._settled_p()                         # always settled (an early read under-reads near closure)
             if self.mode == "fault":
                 return self.p_1s, "fault"
             p_first = p if p_first is None else p_first
@@ -572,14 +612,21 @@ class PinchController:
                     and p - p_first >= float(pc["plateau_min_rise_mbar"])):
                 self.mode = "position"
                 return p, "plateau"
-            g = None
+            g = self.g_local
             if len(self.pmap) >= 2 and self.pmap[-1][0] > self.pmap[-2][0]:
-                g = (self.pmap[-1][1] - self.pmap[-2][1]) / (self.pmap[-1][0] - self.pmap[-2][0])
+                g_new = (self.pmap[-1][1] - self.pmap[-2][1]) / (self.pmap[-1][0] - self.pmap[-2][0])
+                if g_new > 0:
+                    self._note_gain(g_new)
+                    g = g_new if g is None else max(g_new, 0.5 * g)
+                    self.g_local = g
+            if g is None and p > 0.5 * stop_mbar:
+                g = None                                   # unknown: _adaptive_step gets a quarter step below
             guard = stop_mbar - float(pc["guard_stop_margin_mbar"])
             if p >= guard:
                 self.mode = "position"
                 return p, "stop"
-            if self._move_full(self._adaptive_step(p, guard, g, step_full)) == 0:
+            smax = 0.25 if (g is None and p > 0.5 * guard) else step_full
+            if self._move_full(self._adaptive_step(p, guard, g, smax, self.g_ratio)) == 0:
                 self.mode = "position"
                 return p, "at_cap"
         return self.p_1s, "stopped"

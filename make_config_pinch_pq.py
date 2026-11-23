@@ -42,7 +42,9 @@ ap.add_argument("--measure-s", type=float, default=20.0)
 ap.add_argument("--hold-timeout-s", type=float, default=60.0)
 ap.add_argument("--spin-up-s", type=float, default=10.0)
 ap.add_argument("--limit", type=float, default=330.0, help="mbar; also capped at 95 %% of the sensor range")
-ap.add_argument("--max-stop", type=float, default=320.0, help="closing sweep stops here (mbar)")
+ap.add_argument("--max-stop", type=float, default=300.0,
+                help="closing sweep and position points stop here, minus a 10 mbar guard (mbar); on the steep closure "
+                     "the last step can overshoot (23 Nov sim: 323-326 with a 320 stop): keep >= 25 below the 327.5 limit")
 ap.add_argument("--max-squeeze", type=float, default=150.0, help="full steps past touch, hard cap")
 ap.add_argument("--start-retract", type=float, default=0.0, help="full steps retracted before the touch search (clamped by --back-limit)")
 ap.add_argument("--back-limit", type=float, default=0.0, help="HARD floor in full steps from the start position (0 = never behind the start)")
