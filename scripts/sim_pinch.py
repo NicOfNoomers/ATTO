@@ -107,5 +107,16 @@ print(f"   close_until -> {p:.1f} mbar ({why}); faults {f.faults}; pressure afte
 ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
+print("case 3: no tube in reach -> touch not found -> back to the start")
+f = make_fake(pinch={"max_search_steps": 60})
+f.plant.x_touch = 10 ** 9                      # the plunger never meets the tube
+f.freq = 1150
+time.sleep(1.0)
+res = f.ctl.find_touch()
+ok = res is None and f.ctl.squeeze() == 0 and f.ctl.min_squeeze_seen >= 0 and f.ctl.mode == "idle"
+print(f"   find_touch -> {res}; squeeze now {f.ctl.squeeze() / 16:.2f} full steps (start = 0) -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+f.stop_flag.set()
+f.ctl.close()
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)

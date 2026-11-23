@@ -45,7 +45,7 @@ ap.add_argument("--max-stop", type=float, default=320.0, help="closing sweep sto
 ap.add_argument("--max-squeeze", type=float, default=150.0, help="full steps past touch, hard cap")
 ap.add_argument("--start-retract", type=float, default=0.0, help="full steps retracted before the touch search (clamped by --back-limit)")
 ap.add_argument("--back-limit", type=float, default=0.0, help="HARD floor in full steps from the start position (0 = never behind the start)")
-ap.add_argument("--max-search", type=float, default=300.0, help="full steps of touch search before giving up")
+ap.add_argument("--max-search", type=float, default=800.0, help="full steps of touch search before giving up (~18 mm); then back to the start")
 ap.add_argument("--touch-mbar", type=float, default=3.0)
 ap.add_argument("--supply", choices=("manual", "rsd3305p"), default="manual")
 ap.add_argument("--address", default="COM7")

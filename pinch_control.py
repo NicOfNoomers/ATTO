@@ -53,7 +53,8 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "back_limit_steps": 0,        # HARD floor: the squeeze never goes below this (0 = the start position).
                                   # NM 23 Nov: the plunger starts just off the tube; further back it falls
                                   # off its stage. Every backward move (open, retract, fault) is clamped.
-    "max_search_steps": 300,      # full steps of search before giving up (~7 mm at 0.023 mm/step)
+    "max_search_steps": 800,      # full steps of search before giving up (~18 mm at 0.023 mm/step; NM 23 Nov:
+                                  # the plunger sits ~1.5 cm from the tube; the pressure limit is the guard)
     "max_squeeze_steps": 400,     # full steps past touch: hard cap (tube protection)
     "open_back_steps": 10,        # open position = touch - this
     "retract_steps": 40,          # full steps retracted on a fault
@@ -321,9 +322,13 @@ class PinchController:
                                      f"now {p:.1f} mbar")
                 self.mode = "idle"
                 return self.touch / self.m
+        # NM 23 Nov: no touch -> go back to where the search started (never behind the back limit)
+        self._event("touch_not_found", f"{moved} full steps searched, baseline {p0:.1f} mbar; back to the start")
+        try:
+            self._goto_squeeze(max(self.back_limit, 0))
+        except Exception as e:  # noqa: BLE001
+            self._event("return_failed", str(e))
         self.mode = "idle"
-        if not stopped():
-            self._event("touch_not_found", f"{moved} full steps searched, baseline {p0:.1f} mbar")
         return None
 
     def go_open(self):
