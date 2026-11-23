@@ -59,6 +59,7 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "open_back_steps": 10,        # open position = touch - this
     "retract_steps": 40,          # full steps retracted on a fault
     "hold_tol_mbar": 2.0,
+    "hold_tol_frac": 0.01,        # tolerance = max(hold_tol_mbar, frac x target): 300 mbar -> 3 mbar
     "hold_settle_s": 3.0,
     "hold_dt": 0.6,               # s between corrections
     "max_step": 6,                # full steps per correction
@@ -71,6 +72,16 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "stale_s": 2.0,
     "move_timeout_s": 10.0,
     "max_move_counts": 800,      # motor counts per move command (long moves are chunked)
+    "back_limit_pos": None,      # ABSOLUTE motor count of the hard back limit (syringe_v2 keeps its count in
+                                  # EEPROM). Set: the floor no longer depends on where the last run left the
+                                  # plunger; a start behind it is refused. None: the start position is the floor.
+    "approach_steps": 0,          # full steps from the back limit moved at once before the fine touch search
+                                  # (23 Nov: touch at ~530 steps from the limit; the 2-step search took ~160 s)
+    "guard_stop_margin_mbar": 8.0,  # position and closing moves stop this far below their stop pressure
+    "guard_factor": 0.25,         # near closure: step = factor x remaining mbar / local gain
+    "settle_window_s": 0.3,       # near closure: read in windows until two agree within settle_tol_mbar
+    "settle_tol_mbar": 1.0,
+    "settle_max_s": 4.0,
 }
 
 
@@ -140,6 +151,13 @@ class PinchController:
                 raise RuntimeError(f"pinch: the motor position is not stable at start ({got} then {again}): "
                                    f"refusing to start")
         self.start_pos = self.syr.position()
+        blp = self.pc.get("back_limit_pos")
+        if blp is not None:
+            # position counts DOWN as the plunger goes in; behind the limit = a larger count
+            if self.start_pos > int(blp):
+                raise RuntimeError(f"pinch: the plunger (count {self.start_pos}) is BEHIND the back limit {int(blp)}: "
+                                   f"refusing to start")
+            self.back_limit = self.start_pos - int(blp)            # <= 0: the floor lies behind the start
         if self.run_dir:
             d = os.path.join(self.run_dir, "pinch")
             os.makedirs(d, exist_ok=True)
@@ -214,7 +232,13 @@ class PinchController:
                 "squeeze_steps": round(self.squeeze_full(), 2), "touch_steps": None if self.touch is None
                 else round(self.touch / self.m, 2), "gain_mbar_step": round(self.gain, 3), "pinch": True,
                 "stale": (clock() - self.t_last_sample) > float(self.pc["stale_s"]),
-                "back_limit_steps": self.back_limit / self.m, "min_squeeze_seen": self.min_squeeze_seen / self.m}
+                "back_limit_steps": self.back_limit / self.m, "min_squeeze_seen": self.min_squeeze_seen / self.m,
+                # fields the dashboard's pressure panel reads for the syringe controller
+                "settled": False, "protocol": getattr(self.syr, "protocol", "?"), "microsteps": self.m,
+                "resolution_mbar": None, "limit_source": "pinch limit_mbar / 95 % of the sensor range",
+                "blocked": None, "remaining_pull": max(0, self.squeeze() - self.back_limit),
+                "backlash_steps": 0.0, "drift_mbar_s": 0.0, "gain_push_mbar_step": round(self.gain, 3),
+                "gain_pull_mbar_step": round(self.gain, 3)}
 
     def settled(self) -> bool:
         return False
@@ -340,6 +364,12 @@ class PinchController:
         pc = self.pc
         self.mode = "search"
         self._move_full(-float(pc["start_retract_steps"]))
+        appr = float(pc.get("approach_steps") or 0)
+        if appr > 0:
+            goal = self.back_limit + int(round(appr * self.m))      # squeeze counts
+            if self.squeeze() < goal:
+                self._event("approach", f"to {appr:g} full steps from the back limit")
+                self._goto_squeeze(goal)
         time.sleep(1.0)
         p0 = self._p_mean(1.5)
         hits, moved = 0, 0
@@ -399,6 +429,61 @@ class PinchController:
         (s0, p0), (s1, p1) = (pts[0], pts[1]) if s_past < pts[0][0] else (pts[-2], pts[-1])
         return (p1 - p0) / (s1 - s0) if s1 > s0 else None
 
+    def _adaptive_step(self, p: float, stop: float, g: Optional[float], step_max: float) -> float:
+        """Full steps for the next move toward stop: at most step_max, and at most half the remaining pressure
+        divided by the local gain (23 Nov: 81 mbar at +10 and > 320 at +15 steps past touch: ~50 mbar per step
+        near closure), but at least one motor count."""
+        if g is None or g <= 0:
+            return step_max
+        return max(1.0 / self.m, min(step_max, float(self.pc["guard_factor"]) * (stop - p) / g))
+
+    def _settled_p(self) -> float:
+        """Pressure after it has stopped rising: windows of settle_window_s until two agree within
+        settle_tol_mbar, at most settle_max_s (23 Nov sim: reading too early under-reads, the next step overshoots)."""
+        pc = self.pc
+        t_end = clock() + float(pc["settle_max_s"])
+        prev = self._p_mean(float(pc["settle_window_s"]))
+        while clock() < t_end:
+            cur = self._p_mean(float(pc["settle_window_s"]))
+            if abs(cur - prev) <= float(pc["settle_tol_mbar"]):
+                return cur
+            prev = cur
+        return prev
+
+    def set_squeeze_guarded(self, steps_past_touch: float, stop_mbar: float,
+                            stopped: Callable[[], bool] = lambda: False) -> Tuple[bool, float]:
+        """Go to touch + steps (position mode) in small adaptive moves, watching the pressure; stops short when
+        the pressure reaches stop_mbar - guard margin. Returns (reached, pressure)."""
+        if self.touch is None:
+            raise RuntimeError("set_squeeze_guarded needs the touch point")
+        pc = self.pc
+        stop = min(stop_mbar, self.p_max - 5.0) - float(pc["guard_stop_margin_mbar"])
+        goal = int(round(self.touch + max(-float(pc["open_back_steps"]),
+                                          min(float(steps_past_touch), float(pc["max_squeeze_steps"]))) * self.m))
+        self.mode = "position"
+        if goal <= self.squeeze():                      # backward: no pressure risk
+            self._goto_squeeze(goal)
+            return True, self._p_mean(0.3)
+        p_prev, s_prev = self._p_mean(0.3), self.squeeze_full()
+        g = None
+        while self.squeeze() < goal and not stopped():
+            if self.mode == "fault":
+                return False, self.p_1s
+            if p_prev >= stop:
+                self._event("guard_stop", f"{p_prev:.1f} mbar >= {stop:.1f} at {self.past_touch_full():.2f} steps past touch")
+                return False, p_prev
+            step = min(self._adaptive_step(p_prev, stop, g, 1.0), (goal - self.squeeze()) / self.m)
+            if self._move_full(step) == 0:
+                break
+            p = self._settled_p() if p_prev > 0.3 * stop else self._p_mean(float(pc["touch_settle_s"]))
+            if self.mode == "fault":
+                return False, self.p_1s
+            ds = self.squeeze_full() - s_prev
+            if ds > 0 and p > p_prev:
+                g = (p - p_prev) / ds
+            p_prev, s_prev = p, self.squeeze_full()
+        return self.squeeze() >= goal, p_prev
+
     def hold(self, target: float, timeout_s: float = 60.0, stopped: Callable[[], bool] = lambda: False) -> str:
         """Squeeze to hold target mbar. Returns settled / timeout / at_cap / cannot_reach / stopped / fault.
         With a map from a closing sweep (close_until, same frequency) it first moves to the mapped squeeze and
@@ -407,7 +492,8 @@ class PinchController:
         pc = self.pc
         if target > self.p_max - 5.0:
             raise ValueError(f"target {target:g} mbar is above the limit {self.p_max - 5:g} mbar")
-        tol, dt = float(pc["hold_tol_mbar"]), float(pc["hold_dt"])
+        tol = max(float(pc["hold_tol_mbar"]), float(pc["hold_tol_frac"]) * abs(float(target)))
+        dt = float(pc["hold_dt"])
         gmin, smax = float(pc["gain_min"]), float(pc["max_step"])
         self.target = float(target)
         if self.pmap and self.touch is not None:
@@ -470,7 +556,10 @@ class PinchController:
         while not stopped():
             if self.mode == "fault":
                 return self.p_1s, "fault"
-            p = self._p_mean(float(pc["touch_settle_s"]))
+            near = self.pmap and self.pmap[-1][1] > 0.3 * stop_mbar
+            p = self._settled_p() if near else self._p_mean(float(pc["touch_settle_s"]))
+            if self.mode == "fault":
+                return self.p_1s, "fault"
             p_first = p if p_first is None else p_first
             pt = self.past_touch_full()
             if pt is not None:
@@ -483,7 +572,14 @@ class PinchController:
                     and p - p_first >= float(pc["plateau_min_rise_mbar"])):
                 self.mode = "position"
                 return p, "plateau"
-            if self._move_full(step_full) == 0:
+            g = None
+            if len(self.pmap) >= 2 and self.pmap[-1][0] > self.pmap[-2][0]:
+                g = (self.pmap[-1][1] - self.pmap[-2][1]) / (self.pmap[-1][0] - self.pmap[-2][0])
+            guard = stop_mbar - float(pc["guard_stop_margin_mbar"])
+            if p >= guard:
+                self.mode = "position"
+                return p, "stop"
+            if self._move_full(self._adaptive_step(p, guard, g, step_full)) == 0:
                 self.mode = "position"
                 return p, "at_cap"
         return self.p_1s, "stopped"
@@ -508,6 +604,7 @@ class PinchPlant:
         self.rng = random.Random(seed)
         self.lock = threading.Lock()
         self.x = 0                         # squeeze (motor counts) relative to the start
+        self.x_max = 0                     # deepest squeeze reached (tests)
         self.x_relax = 0.0                 # part of the squeeze the tube has relaxed back
         self.pos = pos_max // 2
         self.P = 0.0
@@ -517,6 +614,7 @@ class PinchPlant:
         with self.lock:
             self._advance()
             self.x += direction * n
+            self.x_max = max(self.x_max, self.x)
             self.pos -= direction * n
         return n
 

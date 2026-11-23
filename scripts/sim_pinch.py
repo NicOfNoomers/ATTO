@@ -94,15 +94,21 @@ ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
 
-print("case 2: pressure limit 100 mbar, close to 300")
+print("case 2: pressure limit 100 mbar, unguarded jump to 60 steps past touch -> fault + retract")
 f = make_fake(limit=100.0)
 f.freq = 1150
 time.sleep(1.0)
 f.ctl.find_touch()
-p, why = f.ctl.close_until(300.0, 1.0)
+why = 'direct jump'
+try:
+    f.ctl.set_squeeze(60)                       # unguarded position jump: must trip the limit and retract
+except RuntimeError:
+    pass
+p = f.ctl.p_1s
 time.sleep(1.5)
-ok = bool(f.faults) and f.ctl.mode == "fault" and f.plant.pressure() < 95.0 and f.ctl.squeeze() >= 0
-print(f"   close_until -> {p:.1f} mbar ({why}); faults {f.faults}; pressure after retract {f.plant.pressure():.1f} -> "
+backed_off = (f.plant.x_max - f.plant.x) >= 39 * 16          # the fault retract (40 full steps) happened
+ok = bool(f.faults) and f.ctl.mode == "fault" and backed_off and f.ctl.squeeze() >= 0
+print(f"   {why} -> {p:.1f} mbar; faults {f.faults}; backed off {(f.plant.x_max - f.plant.x) / 16:.1f} full steps, squeeze {f.ctl.squeeze() / 16:.1f} -> "
       f"{'OK' if ok else 'FAIL'}")
 ok_all &= ok
 f.stop_flag.set()
@@ -154,5 +160,52 @@ print(f"   start_pos {c4.start_pos} (true 27133); backward request moved {moved}
       f"-> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 c4.close()
+print("case 5: the 23 Nov rig: steep closure, the pump can exceed the sensor range; absolute back limit + approach")
+f5 = types.SimpleNamespace(freq=0)
+pl5 = pinch_control.PinchPlant(get_freq=lambda: f5.freq, x_touch=480, k_mm_per_count=0.005, r_line=0.019,
+                               r_tube=0.004, q0=450.0, pmax=450.0, tau_s=0.3)
+sy5 = pc.DummySyringe(pl5, 0, 2470 * 16, "v1")
+start5 = sy5.position()
+refused = False
+try:
+    bad = pinch_control.PinchController({"limit_mbar": 340, "pinch": {**FAST, "back_limit_pos": start5 - 100}},
+                                        sy5, pl5.read_sensor, pl5.range, microsteps=16)
+    bad.open()
+except RuntimeError as e:
+    refused = "BEHIND" in str(e)
+fake5 = make_fake()
+fake5.stop_flag.set(); fake5.ctl.close()                 # reuse the helper's runner wiring with a new controller
+f = make_fake()
+f.stop_flag.set(); f.ctl.close()
+f.stop_flag = threading.Event()
+f.plant = pl5
+c5 = pinch_control.PinchController({"limit_mbar": 340, "pinch": {**FAST, "back_limit_pos": start5, "approach_steps": 20}},
+                                   sy5, pl5.read_sensor, pl5.range, run_dir=tempfile.mkdtemp(),
+                                   on_fault=f.faults.append, microsteps=16)
+c5.open(); c5.zero_sensor(0.5); f.t0 = time.perf_counter(); c5.start(f.t0)
+f.ctl = c5
+f.run_dir = c5.run_dir
+f._set_freq = lambda hz: setattr(f5, "freq", int(hz))
+def feeder5():
+    while not f.stop_flag.is_set():
+        q = pl5.pump_flow_ul_min(pl5.pressure())
+        with f.lock:
+            f.buf_t.append(time.perf_counter() - f.t0); f.buf_flow.append(q)
+        time.sleep(0.04)
+threading.Thread(target=feeder5, daemon=True).start()
+test5 = {"type": "pinch_pq", "frequencies_hz": [600], "positions_steps": [0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+         "targets_mbar": [25, 100, 200, 300], "close_max": True, "max_stop_mbar": 320, "settle_s": 0.5,
+         "measure_s": 1.0, "hold_timeout_s": 25, "spin_up_s": 1.0}
+m.PumpTestRunner._exec_pinch_pq(f, test5, lambda: None)
+rows5 = list(csv.DictReader(open(os.path.join(f.run_dir, "pinch_pq.csv"))))
+for r in rows5:
+    print(f"   {r['kind']:8s} target {r['target_mbar']:>4s} past {r['past_touch_steps']:>6s}  P {r['p_mean_mbar']:>7s}  "
+          f"Q {r['flow_mean']:>8s}  {r['reason']}")
+pmax_seen = max(float(r["p_mean_mbar"]) for r in rows5)
+ok = refused and not f.faults and pmax_seen < 327.5 and c5.min_squeeze_seen >= c5.back_limit
+print(f"   start behind the limit refused: {refused}; faults {f.faults}; highest point {pmax_seen:.1f} mbar "
+      f"(limit 327.5) -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+f.stop_flag.set(); c5.close()
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)

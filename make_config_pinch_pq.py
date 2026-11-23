@@ -33,7 +33,8 @@ import json
 ap = argparse.ArgumentParser(description="PQ through the pinch-valve loop")
 ap.add_argument("--pump", required=True)
 ap.add_argument("--freqs", required=True, help="e.g. 1150 or 1150,520")
-ap.add_argument("--positions", default="0,10,20,30,40,50,60", help="full steps past touch ('' = none)")
+ap.add_argument("--positions", default="0,2,4,6,8,9,10,11,12,13,14,15,16",
+                help="full steps past touch ('' = none); 23 Nov: 81 mbar at +10, > 320 at +15, so fine near closure")
 ap.add_argument("--targets", default="10,25,50,75,100,150,200,250,300", help="mbar ('' = none)")
 ap.add_argument("--no-close", action="store_true", help="skip the fully closed point (targets still map)")
 ap.add_argument("--settle-s", type=float, default=5.0)
@@ -45,6 +46,10 @@ ap.add_argument("--max-stop", type=float, default=320.0, help="closing sweep sto
 ap.add_argument("--max-squeeze", type=float, default=150.0, help="full steps past touch, hard cap")
 ap.add_argument("--start-retract", type=float, default=0.0, help="full steps retracted before the touch search (clamped by --back-limit)")
 ap.add_argument("--back-limit", type=float, default=0.0, help="HARD floor in full steps from the start position (0 = never behind the start)")
+ap.add_argument("--back-limit-pos", type=int, default=None,
+                help="ABSOLUTE motor count of the hard back limit (23 Nov rig: 27133); a start behind it is refused")
+ap.add_argument("--approach", type=float, default=0.0,
+                help="full steps from the back limit moved at once before the fine search (23 Nov rig: 480; touch ~530)")
 ap.add_argument("--max-search", type=float, default=800.0, help="full steps of touch search before giving up (~18 mm); then back to the start")
 ap.add_argument("--touch-mbar", type=float, default=3.0)
 ap.add_argument("--supply", choices=("manual", "rsd3305p"), default="manual")
@@ -89,7 +94,8 @@ pressure = {"enabled": True, "mode": "pinch", "backend": "dummy" if a.dummy else
             "limit_mbar": a.limit, "min_mbar": -60.0, "microsteps": 16, "pos_min": 0, "pos_max": 2470,
             "pos_margin": 30, "clear_reserve_steps": 150, "ul_per_step": 0.4049,
             "pinch": {"touch_mbar": a.touch_mbar, "start_retract_steps": a.start_retract,
-                      "back_limit_steps": a.back_limit, "max_search_steps": a.max_search,
+                      "back_limit_steps": a.back_limit, "back_limit_pos": a.back_limit_pos,
+                      "approach_steps": a.approach, "max_search_steps": a.max_search,
                       "max_squeeze_steps": a.max_squeeze}}
 desc = (f"PQ through the pinch-valve loop (motor squeezes the flex tube) at {', '.join(str(f) for f in freqs)} Hz: "
         f"touch search, open point, positions {positions or '-'} steps past touch, closing sweep to "
