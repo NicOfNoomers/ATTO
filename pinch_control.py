@@ -70,6 +70,7 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "log_hz": 25.0,
     "stale_s": 2.0,
     "move_timeout_s": 10.0,
+    "max_move_counts": 800,      # motor counts per move command (long moves are chunked)
 }
 
 
@@ -283,12 +284,23 @@ class PinchController:
             n = min(n, cap - self.squeeze())
         if n == 0:
             return 0
+        # 23 Nov: the v1 driver waits at most min(timeout, 3 ms/count + 1 s) for DONE and cannot stop a move,
+        # so a long move (e.g. back to the start from 800 steps = 12800 counts) is sent in chunks that each finish
+        # well inside their wait; a failed chunk ends the move.
+        chunk = max(1, int(self.pc["max_move_counts"]))
+        done = 0
         with self.mlock:
-            ok = self.syr.move(n, timeout_s=float(self.pc["move_timeout_s"]))
+            while done != n:
+                if self.mode == "fault" and n > 0:
+                    break
+                c = max(-chunk, min(chunk, n - done))
+                ok = self.syr.move(c, timeout_s=0.004 * abs(c) + 2.0)
+                if not ok:
+                    self._event("move_failed", f"chunk {c} counts after {done} of {n}")
+                    break
+                done += c
         self.min_squeeze_seen = min(self.min_squeeze_seen, self.squeeze())
-        if not ok:
-            self._event("move_failed", f"{n} counts")
-        return n
+        return done
 
     def _goto_squeeze(self, counts: int):
         self._move_full((counts - self.squeeze()) / self.m)
