@@ -2744,6 +2744,7 @@ class PumpTestRunner(LiveSessionBase):
         'squeeze' ('steps' past touch) | 'hold' ('target_mbar', 'timeout_s') | 'close' ('stop_mbar', 'step')}:
         one pinch-valve action. find_touch needs the pump running (it drives frequency_hz first if given)."""
         ctl = self._need_pinch()
+        ctl.flow_fn = lambda: self._window_flow_stats(CLOCK() - 1.0, CLOCK())["flow_mean"]
         act = str(test.get("action", "open")).lower()
         stopped = self.stop_flag.is_set
         if act == "find_touch":
@@ -2783,6 +2784,9 @@ class PumpTestRunner(LiveSessionBase):
         then each target (ascending; moved to its mapped squeeze, held, then measured with the motor still);
         open again. One row per point in pinch_pq.csv."""
         ctl = self._need_pinch()
+        # closure is judged by the flow when there is one (23 Nov new holder: the pressure rose < 3 mbar per 3 steps
+        # far from closure, and the pressure-only rule called the tube closed with 354 uL/min still flowing)
+        ctl.flow_fn = lambda: self._window_flow_stats(CLOCK() - 1.0, CLOCK())["flow_mean"]
         stopped = self.stop_flag.is_set
         freqs = [int(f) for f in (test.get("frequencies_hz") or [test.get("frequency_hz")]) if f]
         positions = [float(x) for x in (test.get("positions_steps") or [])]

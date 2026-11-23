@@ -89,6 +89,11 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "lost_drop_frac": 0.5,        # a forward move after which the pressure fell by more than this fraction of a
     "lost_min_mbar": 40.0,        # reading >= lost_min_mbar = tube lost (23 Nov: 195 -> 5 mbar at +123): fault
     "hold_factor": 0.5,           # hold(): a forward correction covers this fraction of the error (approach from below)
+    "closed_flow_frac": 0.05,     # with a flow reading (flow_fn): closed = flow <= this x the flow at the sweep start
+    "closed_flow_min": 3.0,       # ... or <= this (uL/min), whichever is larger
+    "closed_after_steps_flow": 12.0,  # with flow known, the pressure-only rule needs no 3 mbar rise over this many
+                                  # steps (23 Nov new holder: < 3 mbar per 3 steps far from closure, 354 uL/min
+                                  # still flowing at the "closed" point)
 }
 
 
@@ -126,6 +131,8 @@ class PinchController:
         self.gain = float(self.pc["gain_init"])         # mbar per FULL step
         self.pmap: List[Tuple[float, float]] = []       # (steps past touch, mbar) from the last closing sweep
         self.s_ceiling: Optional[float] = None          # steps past touch hold() may not pass (closing sweep)
+        self.flow_fn: Optional[Callable[[], float]] = None   # set by the runner: mean flow (uL/min) of the last ~1 s
+        self.q_open = float("nan")                      # flow at the start of the last closing sweep
         self.back_limit = int(round(float(self.pc["back_limit_steps"]) * self.m))   # squeeze floor (counts)
         self.min_squeeze_seen = 0                       # for the record: the lowest squeeze ever commanded
         self.g_hist: List[float] = []                   # last two local gains, for the growth ratio
@@ -484,6 +491,16 @@ class PinchController:
         if len(self.g_hist) == 2 and self.g_hist[0] > 0:
             self.g_ratio = max(1.0, self.g_hist[1] / self.g_hist[0])
 
+    def _flow_now(self) -> float:
+        """Mean flow of the last ~1 s from the runner (nan without a flow reading)."""
+        if self.flow_fn is None:
+            return float("nan")
+        try:
+            q = float(self.flow_fn())
+        except Exception:  # noqa: BLE001
+            return float("nan")
+        return q
+
     def _lost_check(self, p_before: float, p_after: float) -> bool:
         """After a FORWARD move: a pressure fall by more than lost_drop_frac from a reading >= lost_min_mbar means
         the tube is no longer pinched (slipped out, split, or a joint came off: 23 Nov, 195 -> 5 mbar at 123 steps
@@ -638,6 +655,11 @@ class PinchController:
         p_rise = float("nan")
         p_fwd: Optional[float] = None
         over = float(pc["over_closed_steps"])
+        self.q_open = self._flow_now()                  # the sweep starts at the open point
+        flow_known = self.q_open == self.q_open and self.q_open > 0
+        q_closed = (max(float(pc["closed_flow_frac"]) * self.q_open, float(pc["closed_flow_min"]))
+                    if flow_known else float("nan"))
+        after = float(pc["closed_after_steps_flow"] if flow_known else pc["closed_after_steps"])
         while not stopped():
             if self.mode == "fault":
                 return self.p_1s, "fault"
@@ -648,14 +670,24 @@ class PinchController:
             pt = self.past_touch_full()
             if pt is not None:
                 self.pmap.append((pt, p))
-                if s_rise is None or p - p_rise >= float(pc["closed_rise_mbar"]):
-                    s_rise, p_rise = pt, p
-                elif pt - s_rise >= float(pc["closed_after_steps"]) and p - p_first >= float(pc["plateau_min_rise_mbar"]):
-                    self.s_ceiling = s_rise + over
-                    self._event("closed", f"{p:.1f} mbar: no rise of {float(pc['closed_rise_mbar']):g} mbar over "
-                                          f"{pt - s_rise:.2f} steps after {s_rise:.2f} steps past touch")
+                q = self._flow_now() if flow_known else float("nan")
+                if flow_known and q == q and q <= q_closed:      # closed by flow: the outlet is blocked
+                    self.s_ceiling = pt + over
+                    self._event("closed", f"{p:.1f} mbar: flow {q:.1f} uL/min <= {q_closed:.1f} "
+                                          f"({float(pc['closed_flow_frac']):g} x {self.q_open:.1f} at the open point) "
+                                          f"at {pt:.2f} steps past touch")
                     self.mode = "position"
                     return p, "closed"
+                if s_rise is None or p - p_rise >= float(pc["closed_rise_mbar"]):
+                    s_rise, p_rise = pt, p
+                elif pt - s_rise >= after and p - p_first >= float(pc["plateau_min_rise_mbar"]):
+                    self.s_ceiling = s_rise + over
+                    self._event("closed", f"{p:.1f} mbar: no rise of {float(pc['closed_rise_mbar']):g} mbar over "
+                                          f"{pt - s_rise:.2f} steps after {s_rise:.2f} steps past touch"
+                                          + (f"; flow {q:.1f} uL/min (open {self.q_open:.1f}): the tube does not "
+                                             f"close further" if flow_known else ""))
+                    self.mode = "position"
+                    return p, ("plateau_open" if flow_known else "closed")
             hist.append(p)
             if p >= stop_mbar:
                 self.s_ceiling = (pt or 0.0) + over

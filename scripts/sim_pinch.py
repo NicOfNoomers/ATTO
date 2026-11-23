@@ -326,5 +326,22 @@ f8, rows8, pl8, c8 = rig_case(
 ok = bool(f8) and "tube lost" in f8[0] and c8.mode == "fault"
 print(f"   faults {f8} -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
+# case 9: the 23 Nov new holder: a gentle squeeze (pressure rises < 3 mbar per 3 steps far from closure). The
+# pressure-only rule called the tube closed at ~29 mbar with 354 uL/min still flowing; with the flow reading the
+# sweep must go on to a real closure (flow < 5 % of open) and the targets up to 200 mbar must become reachable.
+f9, rows9, pl9, c9 = rig_case(
+    "case 9: gentle holder (new 23 Nov): closure judged by the flow; targets 25-250 at 520 Hz", 520,
+    dict(x_touch=480, k_mm_per_count=0.0016, r_line=0.015, r_tube=0.003, q0=420.0, pmax=300.0, tau_s=0.3),
+    {"type": "pinch_pq", "frequencies_hz": [520], "positions_steps": [], "targets_mbar": [25, 50, 100, 150, 200, 250],
+     "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5, "measure_s": 1.0, "hold_timeout_s": 40, "spin_up_s": 1.0},
+    pinch_extra={"max_squeeze_steps": 100})
+q_open9 = [float(r["flow_mean"]) for r in rows9 if r["kind"] == "open"]
+closed9 = [r for r in rows9 if r["kind"] == "closed"]
+settled9 = [float(r["target_mbar"]) for r in rows9 if r["kind"] == "target" and r["reason"] == "settled"]
+ok = (not f9 and closed9 and q_open9 and float(closed9[0]["flow_mean"]) <= 0.1 * q_open9[0]
+      and float(closed9[0]["p_mean_mbar"]) > 250 and max(settled9 or [0]) >= 200)
+print(f"   closed {closed9[0]['p_mean_mbar'] if closed9 else '-'} mbar at flow {closed9[0]['flow_mean'] if closed9 else '-'} "
+      f"(open {q_open9[0] if q_open9 else '-'}); settled targets {settled9}; faults {f9} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
