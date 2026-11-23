@@ -70,6 +70,7 @@ ap.add_argument("--prime-f", type=int, default=0, help="priming frequency before
 ap.add_argument("--prime-rounds", type=int, default=4, help="priming rounds, each followed by the flow checks")
 ap.add_argument("--checks", default="", help="flow-check frequencies after each priming round and after the PQ, e.g. 520,780,1090")
 ap.add_argument("--check-s", type=float, default=20.0, help="s per check frequency (>= 10; 1 s steps are unusable)")
+ap.add_argument("--no-track", action="store_true", help="motor still while a target point is measured (old behaviour)")
 ap.add_argument("--dummy", action="store_true", help="simulated loop, motor and sensor (test without the rig)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
@@ -127,7 +128,8 @@ tests += prime
 tests += [{"type": "constant", "frequency_hz": 0, "duration_s": 10.0, "repeat": 1, "settle_ms": 0},
           {"type": "pinch_pq", "frequencies_hz": freqs, "positions_steps": positions, "targets_mbar": targets,
            "close_max": not a.no_close, "max_stop_mbar": a.max_stop, "settle_s": a.settle_s, "measure_s": a.measure_s,
-           "hold_timeout_s": a.hold_timeout_s, "spin_up_s": a.spin_up_s, "section": "pinch_pq", "level_mv": a.v},
+           "hold_timeout_s": a.hold_timeout_s, "spin_up_s": a.spin_up_s, "section": "pinch_pq", "level_mv": a.v,
+           "track_targets": not a.no_track},
           {"type": "constant", "frequency_hz": 0, "duration_s": 10.0, "repeat": 1, "settle_ms": 0}]
 tests += check_blocks("post_check", 0)
 if a.supply == "manual":

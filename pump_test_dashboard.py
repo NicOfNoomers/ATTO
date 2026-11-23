@@ -2806,13 +2806,23 @@ class PumpTestRunner(LiveSessionBase):
             w.writeheader()
         npoint = [0]
 
+        track = bool(test.get("track_targets", True))     # keep holding while a target point is measured
+
         def measure(hz, kind, target, why):
             if stopped():
                 return None
-            if settle_s > 0:
-                self._wait_until(CLOCK() + settle_s)
-            t_a = CLOCK()
-            self._wait_until(t_a + measure_s)
+            moves = 0
+            if target is not None and track:
+                if settle_s > 0:
+                    moves += ctl.track(target, CLOCK() + settle_s, stopped)
+                t_a = CLOCK()
+                moves += ctl.track(target, t_a + measure_s, stopped)
+                why = f"{why}, held ({moves} corrections)"
+            else:
+                if settle_s > 0:
+                    self._wait_until(CLOCK() + settle_s)
+                t_a = CLOCK()
+                self._wait_until(t_a + measure_s)
             t_b = CLOCK()
             st = ctl.window_stats(t_a - self.t0, t_b - self.t0)
             fl = self._window_flow_stats(t_a, t_b)
@@ -2879,7 +2889,8 @@ class PumpTestRunner(LiveSessionBase):
                     if why in ("cannot_reach", "at_cap", "at_limit"):
                         ctl.note("pinch_pq_stop", f"{tgt:g} mbar: {why}")
                         break
-                    ctl.mode = "position"                 # the motor stays still while measuring
+                    if not track:
+                        ctl.mode = "position"             # the motor stays still while measuring
                     measure(hz, "target", tgt, why)
                 if not stopped():
                     ctl.go_open()

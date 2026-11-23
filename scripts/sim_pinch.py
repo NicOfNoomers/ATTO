@@ -337,7 +337,7 @@ f9, rows9, pl9, c9 = rig_case(
     pinch_extra={"max_squeeze_steps": 100})
 q_open9 = [float(r["flow_mean"]) for r in rows9 if r["kind"] == "open"]
 closed9 = [r for r in rows9 if r["kind"] == "closed"]
-settled9 = [float(r["target_mbar"]) for r in rows9 if r["kind"] == "target" and r["reason"] == "settled"]
+settled9 = [float(r["target_mbar"]) for r in rows9 if r["kind"] == "target" and r["reason"].startswith("settled")]
 ok = (not f9 and closed9 and q_open9 and float(closed9[0]["flow_mean"]) <= 0.1 * q_open9[0]
       and float(closed9[0]["p_mean_mbar"]) > 250 and max(settled9 or [0]) >= 200)
 print(f"   closed {closed9[0]['p_mean_mbar'] if closed9 else '-'} mbar at flow {closed9[0]['flow_mean'] if closed9 else '-'} "
@@ -355,8 +355,12 @@ f10, rows10, pl10, c10 = rig_case(
     pinch_extra={"max_squeeze_steps": 100})
 p10 = max([float(r["p_mean_mbar"]) for r in rows10] or [0])
 ev10 = [e["event"] for e in c10.events]
-ok = not f10 and p10 < 327.5
-print(f"   faults {f10}; highest point {p10:.1f} mbar; soft back-offs {ev10.count('soft_backoff')} -> {'OK' if ok else 'FAIL'}")
+# held targets: the measured mean stays within max(3 mbar, 3 %) of the target despite the creep (track())
+dev10 = [abs(float(r["p_mean_mbar"]) - float(r["target_mbar"])) - max(3.0, 0.03 * float(r["target_mbar"]))
+         for r in rows10 if r["kind"] == "target"]
+ok = not f10 and p10 < 327.5 and dev10 and max(dev10) <= 0
+print(f"   faults {f10}; highest point {p10:.1f} mbar; soft back-offs {ev10.count('soft_backoff')}; worst target excess "
+      f"{max(dev10) if dev10 else float('nan'):.1f} mbar -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)

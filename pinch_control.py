@@ -95,6 +95,8 @@ PINCH_DEFAULTS: Dict[str, Any] = {
                                   # 4.3-step correction from the map gain took 153 -> 328 mbar in 1.6 s)
     "soft_margin_mbar": 15.0,     # sampler: above p_max - this while squeezing, back off soft_backoff_steps at once
     "soft_backoff_steps": 2.0,    # (before the hard limit faults the run)
+    "track_max_step": 0.25,       # track(): corrections while a target point is measured (full steps)
+    "track_dt": 0.6,              # track(): s between corrections
     "plateau_min_steps": 2.0,     # pressure-plateau rule only over at least this much squeeze
     "closed_after_steps_flow": 12.0,  # with flow known, the pressure-only rule needs no 3 mbar rise over this many
                                   # steps (23 Nov new holder: < 3 mbar per 3 steps far from closure, 354 uL/min
@@ -682,6 +684,44 @@ class PinchController:
                 self._move_full(step)
             self.mode = "hold"
         return "timeout"
+
+    def track(self, target: float, t_end: float, stopped: Callable[[], bool] = lambda: False) -> int:
+        """Keep the pressure at target until clock() >= t_end with small corrections (while a target point is
+        measured). B2, 780 Hz: with the motor still, the tube crept and the 150 mbar point drifted 142 -> 123 mbar.
+        Corrections only outside the hold tolerance, at most track_max_step full steps, never past the ceiling or
+        min(target + 15, p_max - 25). Returns the number of corrections."""
+        pc = self.pc
+        tol = max(float(pc["hold_tol_mbar"]), float(pc["hold_tol_frac"]) * abs(float(target)))
+        gmin, smax, dt = float(pc["gain_min"]), float(pc["track_max_step"]), float(pc["track_dt"])
+        self.target = float(target)
+        self.mode = "hold"
+        moves = 0
+        while clock() < t_end and not stopped():
+            if self.mode == "fault":
+                break
+            p = self._p_mean(min(dt, max(0.05, t_end - clock())))
+            if p != p or self.mode == "fault":
+                continue
+            e = target - p
+            if abs(e) <= tol:
+                continue
+            g = self._map_gain(self.past_touch_full()) if (self.pmap and self.touch is not None) else None
+            g = max(g or self.gain, gmin)
+            step = max(-smax, min(smax, 0.5 * e / g))
+            if abs(step) < 1.0 / self.m:
+                step = math.copysign(1.0 / self.m, e)
+            if step > 0:
+                p_cap = min(target + 15.0, self.p_max - 25.0)
+                if p + g * step > p_cap:
+                    step = (p_cap - p) / g
+                if self.s_ceiling is not None and self.touch is not None:
+                    step = min(step, self.s_ceiling - self.past_touch_full())
+                if step < 1.0 / self.m:
+                    continue
+            if self._move_full(step) != 0:
+                moves += 1
+            self.mode = "hold"
+        return moves
 
     def close_until(self, stop_mbar: float, step_full: float = 1.0,
                     stopped: Callable[[], bool] = lambda: False) -> Tuple[float, str]:
