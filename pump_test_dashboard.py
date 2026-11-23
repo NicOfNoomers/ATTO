@@ -2843,10 +2843,15 @@ class PumpTestRunner(LiveSessionBase):
                     ctl.note("touch", f"{ctl.touch / ctl.m:.1f} full steps")
                 ctl.go_open()
                 measure(hz, "open", None, "open")
+                stop_p = safe_float(test.get("max_stop_mbar", ctl.p_max - 5.0), ctl.p_max - 5.0)
                 for pos in positions:
                     if stopped():
                         break
-                    ctl.set_squeeze(pos)
+                    reached, p_now = ctl.set_squeeze_guarded(pos, stop_p, stopped)
+                    if not reached:
+                        measure(hz, "position", None, f"guard stop at {ctl.past_touch_full():.2f} steps past touch "
+                                                        f"({p_now:.0f} mbar)")
+                        break
                     measure(hz, "position", None, f"{pos:g} steps past touch")
                 if positions:
                     ctl.go_open()
