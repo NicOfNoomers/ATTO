@@ -50,6 +50,8 @@ ap.add_argument("--touch-mbar", type=float, default=3.0)
 ap.add_argument("--supply", choices=("manual", "rsd3305p"), default="manual")
 ap.add_argument("--address", default="COM7")
 ap.add_argument("--v", type=int, default=2500)
+ap.add_argument("--firmware", choices=("v2", "v1", "auto"), default="v2",
+                help="syringe firmware (23 Nov: COM6 runs syringe_v2; auto-detect misread it as v1 after the reset)")
 ap.add_argument("--dummy", action="store_true", help="simulated loop, motor and sensor (test without the rig)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
@@ -83,7 +85,7 @@ else:
               "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF", "address": a.address}
     stxt = f"{a.v / 1000:.2f} V by the RSD3305P ({a.address})"
 pressure = {"enabled": True, "mode": "pinch", "backend": "dummy" if a.dummy else "arduino", "port": "COM6",
-            "baud": 115200, "firmware": "auto", "sensor": {"backend": "fluigent", "channel": 1},
+            "baud": 115200, "firmware": a.firmware, "sensor": {"backend": "fluigent", "channel": 1},
             "limit_mbar": a.limit, "min_mbar": -60.0, "microsteps": 16, "pos_min": 0, "pos_max": 2470,
             "pos_margin": 30, "clear_reserve_steps": 150, "ul_per_step": 0.4049,
             "pinch": {"touch_mbar": a.touch_mbar, "start_retract_steps": a.start_retract,

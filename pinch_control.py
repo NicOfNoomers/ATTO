@@ -121,6 +121,24 @@ class PinchController:
     # ---- life cycle ----
     def open(self):
         self.syr.open()
+        # 23 Nov: the motor's count is only known once the firmware has reported it (POS? / stream); reading
+        # it right after opening gives 0 (the driver's initial value) while the rig sat at 27133. A wrong start
+        # would put the back limit in the wrong place, so ask until it answers, or refuse to start.
+        if hasattr(self.syr, "query_position"):
+            got = None
+            for _ in range(8):                         # the Uno resets on connect: ~2 s before it answers
+                got = self.syr.query_position()
+                if got is not None:
+                    break
+                time.sleep(0.5)
+            if got is None:
+                raise RuntimeError("pinch: the syringe motor does not report its position (POS?): refusing to "
+                                   "start, the back limit would be unknown")
+            time.sleep(0.3)
+            again = self.syr.query_position()
+            if again is None or again != got:
+                raise RuntimeError(f"pinch: the motor position is not stable at start ({got} then {again}): "
+                                   f"refusing to start")
         self.start_pos = self.syr.position()
         if self.run_dir:
             d = os.path.join(self.run_dir, "pinch")
@@ -131,7 +149,8 @@ class PinchController:
 
     def start(self, t0: float):
         self.t0 = t0
-        self._event("start", f"p_max {self.p_max:g} mbar, microsteps {self.m}, start position {self.start_pos}")
+        self._event("start", f"p_max {self.p_max:g} mbar, microsteps {self.m}, start position {self.start_pos} "
+                             f"(= back limit + {self.back_limit} counts), protocol {getattr(self.syr, 'protocol', '?')}")
         self._thread = threading.Thread(target=self._sample_loop, daemon=True)
         self._thread.start()
 
@@ -278,7 +297,8 @@ class PinchController:
         self._check()
         n = int(round(n_full * self.m))
         if n < 0:                                      # never behind the back limit (start position)
-            n = max(n, self.back_limit - self.squeeze())
+            allowed = max(0, self.squeeze() - self.back_limit)   # how far back we may still go (>= 0)
+            n = max(n, -allowed)                       # a backward request can only shrink, never turn forward
         if n > 0 and self.touch is not None:
             cap = self.touch + int(self.pc["max_squeeze_steps"]) * self.m
             n = min(n, cap - self.squeeze())

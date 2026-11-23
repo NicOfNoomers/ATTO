@@ -118,5 +118,41 @@ print(f"   find_touch -> {res}; squeeze now {f.ctl.squeeze() / 16:.2f} full step
 ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
+print("case 4: the motor reports its position only when asked (POS?), as on the rig (27133)")
+
+
+class LateSyringe(pc.DummySyringe):
+    """Like the real driver: position 0 until the firmware reports it."""
+    def __init__(self, plant, lo, hi):
+        super().__init__(plant, lo, hi, "v1")
+        self.true_pos = 27133
+        self.pos = 0
+
+    def query_position(self):
+        with self.lock:
+            self.pos = self.true_pos
+        return self.position()
+
+    def _do(self, steps):
+        self.plant.step(1 if steps > 0 else -1, abs(steps))
+        with self.lock:
+            self.true_pos -= steps
+            self.pos = self.true_pos
+
+
+fz = types.SimpleNamespace(freq=0)
+pl = pinch_control.PinchPlant(get_freq=lambda: fz.freq, x_touch=600, tau_s=0.3)
+ls = LateSyringe(pl, 0, 2470 * 16)
+c4 = pinch_control.PinchController({"limit_mbar": 340, "pinch": FAST}, ls, pl.read_sensor, pl.range,
+                                   run_dir=tempfile.mkdtemp(), microsteps=16)
+c4.open()
+start_ok = c4.start_pos == 27133
+c4.start(time.perf_counter())
+moved = c4._move_full(-20)                      # a backward request at the back limit: must move nothing
+ok = start_ok and moved == 0 and c4.squeeze() == 0 and ls.true_pos == 27133
+print(f"   start_pos {c4.start_pos} (true 27133); backward request moved {moved} counts; position {ls.true_pos} "
+      f"-> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+c4.close()
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
