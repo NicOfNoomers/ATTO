@@ -91,6 +91,11 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "hold_factor": 0.5,           # hold(): a forward correction covers this fraction of the error (approach from below)
     "closed_flow_frac": 0.05,     # with a flow reading (flow_fn): closed = flow <= this x the flow at the sweep start
     "closed_flow_min": 3.0,       # ... or <= this (uL/min), whichever is larger
+    "hold_max_fwd_step": 1.0,     # hold(): forward corrections at most this many full steps (group B, 780 Hz: a
+                                  # 4.3-step correction from the map gain took 153 -> 328 mbar in 1.6 s)
+    "soft_margin_mbar": 15.0,     # sampler: above p_max - this while squeezing, back off soft_backoff_steps at once
+    "soft_backoff_steps": 2.0,    # (before the hard limit faults the run)
+    "plateau_min_steps": 2.0,     # pressure-plateau rule only over at least this much squeeze
     "closed_after_steps_flow": 12.0,  # with flow known, the pressure-only rule needs no 3 mbar rise over this many
                                   # steps (23 Nov new holder: < 3 mbar per 3 steps far from closure, 354 uL/min
                                   # still flowing at the "closed" point)
@@ -133,6 +138,8 @@ class PinchController:
         self.s_ceiling: Optional[float] = None          # steps past touch hold() may not pass (closing sweep)
         self.flow_fn: Optional[Callable[[], float]] = None   # set by the runner: mean flow (uL/min) of the last ~1 s
         self.q_open = float("nan")                      # flow at the start of the last closing sweep
+        self._soft_active = False                       # a soft back-off happened and the pressure is still high
+        self._t_soft = -1e9                             # clock() of the last soft back-off
         self.back_limit = int(round(float(self.pc["back_limit_steps"]) * self.m))   # squeeze floor (counts)
         self.min_squeeze_seen = 0                       # for the record: the lowest squeeze ever commanded
         self.g_hist: List[float] = []                   # last two local gains, for the growth ratio
@@ -309,9 +316,30 @@ class PinchController:
                         self._fault(f"pressure sensor saturated ({raw:.1f} mbar raw)")
                     elif p > self.p_max:
                         self._fault(f"pressure {p:.1f} mbar above the {self.p_max:g} mbar limit")
+                    elif (p > self.p_max - float(self.pc["soft_margin_mbar"]) and not self._soft_active
+                          and self.mode in ("hold", "position", "closing") and self.touch is not None):
+                        self._soft_active = True
+                        self._soft_backoff(p)
+                    elif self._soft_active and p < self.p_max - 3 * float(self.pc["soft_margin_mbar"]):
+                        self._soft_active = False
             elif self.mode != "fault" and t - self.t_last_sample > float(self.pc["stale_s"]):
                 self._fault(f"no pressure reading for {t - self.t_last_sample:.1f} s")
             time.sleep(max(0.0, dt - (clock() - t)))
+
+    def _soft_backoff(self, p: float):
+        """Pressure close to the hard limit while squeezing: retract soft_backoff_steps now (sampler thread), so an
+        overshoot (tube recovering after a re-squeeze, a pump getting stronger) does not fault the whole run."""
+        try:
+            with self.mlock:
+                back = min(int(round(float(self.pc["soft_backoff_steps"]) * self.m)),
+                           max(0, self.squeeze() - self.back_limit))
+                if back > 0:
+                    self.syr.move(-back, timeout_s=float(self.pc["move_timeout_s"]))
+                self._t_soft = clock()
+            self._event("soft_backoff", f"{p:.1f} mbar > {self.p_max - float(self.pc['soft_margin_mbar']):.1f}: "
+                                        f"retracted {back / self.m:g} full steps")
+        except Exception as e:  # noqa: BLE001
+            self._event("soft_backoff_failed", str(e))
 
     def _fault(self, msg: str):
         with self.lock:
@@ -506,6 +534,8 @@ class PinchController:
         the tube is no longer pinched (slipped out, split, or a joint came off: 23 Nov, 195 -> 5 mbar at 123 steps
         past touch). Fault: the motor retracts and the run stops; a person has to look at the tube."""
         pc = self.pc
+        if clock() - self._t_soft < 10.0:                # the drop came from our own soft back-off (sim case 5)
+            return False
         if p_before == p_before and p_after == p_after and p_before >= float(pc["lost_min_mbar"]) \
                 and p_after < (1.0 - float(pc["lost_drop_frac"])) * p_before:
             pt = self.past_touch_full()
@@ -584,7 +614,10 @@ class PinchController:
         in_tol_since = None
         last: Optional[Tuple[float, float]] = None
         p_fwd: Optional[float] = None                     # reading before the last forward move (tube-lost check)
+        s_fwd: Optional[float] = None
+        g_meas: Optional[float] = None                    # gain measured from the hold's own forward moves
         hf = float(pc["hold_factor"])
+        fwd_max = float(pc["hold_max_fwd_step"])
         while clock() < t_end:
             if stopped():
                 return "stopped"
@@ -597,7 +630,12 @@ class PinchController:
                 return "fault"
             if p_fwd is not None and self._lost_check(p_fwd, p):
                 return "fault"
-            p_fwd = None
+            if p_fwd is not None and s_fwd is not None:
+                ds = self.squeeze_full() - s_fwd
+                if ds > 0.5 / self.m and p > p_fwd:
+                    g_new = (p - p_fwd) / ds
+                    g_meas = g_new if g_meas is None else max(g_new, 0.5 * g_meas)
+            p_fwd, s_fwd = None, None
             s_now = self.squeeze_full()
             e = target - p
             if abs(e) <= tol:
@@ -611,9 +649,16 @@ class PinchController:
                 if last is not None and abs(s_now - last[0]) >= 1.0 and abs(p - last[1]) > 3 * tol:
                     self.gain = 0.7 * self.gain + 0.3 * abs((p - last[1]) / (s_now - last[0]))
                 g = self.gain
-            g = max(g, gmin)
+            g = max(g, gmin, g_meas or 0.0)                # the measured gain wins when larger: the tube can give
+                                                           # much more after a re-squeeze than the map says
+            p_top_map = max((pp for _, pp in self.pmap), default=0.0)
+            if self.g_local and p_top_map > 0 and p > 0.5 * p_top_map:
+                g = max(g, 0.5 * self.g_local)             # near closure: at least half the sweep's last gain
             if e > 0:                                     # forward: a fraction of the error, never past the ceiling
-                step = max(1.0 / self.m, min(smax, hf * e / g))
+                step = max(1.0 / self.m, min(fwd_max, hf * e / g))
+                p_cap = min(target + 15.0, self.p_max - 25.0)
+                if p + g * step > p_cap:
+                    step = max(1.0 / self.m, (p_cap - p) / g)
                 room = (self.p_max - 15.0) - p            # never predict past p_max - 15 mbar
                 if room <= 0 or g * (1.0 / self.m) > room:
                     self._event("hold_at_limit", f"{target:g} mbar: {p:.1f} mbar, one count would pass the limit")
@@ -627,7 +672,7 @@ class PinchController:
                                                       f"({self.s_ceiling:.2f}): the pump cannot make it now")
                         return "cannot_reach"
                     step = min(step, allowed)
-                last, p_fwd = (s_now, p), p
+                last, p_fwd, s_fwd = (s_now, p), p, s_now
                 if self._move_full(step) == 0:
                     self._event("hold_at_cap", f"{target:g} mbar: {p:.1f} mbar at the squeeze cap")
                     return "at_cap"
@@ -688,12 +733,17 @@ class PinchController:
                                              f"close further" if flow_known else ""))
                     self.mode = "position"
                     return p, ("plateau_open" if flow_known else "closed")
-            hist.append(p)
+            hist.append((pt if pt is not None else 0.0, p))
             if p >= stop_mbar:
                 self.s_ceiling = (pt or 0.0) + over
                 self.mode = "position"
                 return p, "stop"
-            if (len(hist) == hist.maxlen and hist[-1] - hist[0] < float(pc["plateau_mbar"])
+            # plateau over a real squeeze distance, flat (not falling: group B 780 Hz, the tube crept open at a
+            # fixed squeeze and a falling pressure ended the sweep at 270 mbar with 76 uL/min flowing); with a
+            # flow reading only the flow and the 12-step rule decide
+            if (not flow_known and len(hist) == hist.maxlen
+                    and abs(hist[-1][1] - hist[0][1]) < float(pc["plateau_mbar"])
+                    and hist[-1][0] - hist[0][0] >= float(pc["plateau_min_steps"])
                     and p - p_first >= float(pc["plateau_min_rise_mbar"])):
                 self.s_ceiling = (s_rise if s_rise is not None else (pt or 0.0)) + over
                 self.mode = "position"

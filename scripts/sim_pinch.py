@@ -343,5 +343,20 @@ ok = (not f9 and closed9 and q_open9 and float(closed9[0]["flow_mean"]) <= 0.1 *
 print(f"   closed {closed9[0]['p_mean_mbar'] if closed9 else '-'} mbar at flow {closed9[0]['flow_mean'] if closed9 else '-'} "
       f"(open {q_open9[0] if q_open9 else '-'}); settled targets {settled9}; faults {f9} -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
+# case 10: group B, 780 Hz: the tube creeps open at a fixed squeeze during the closing sweep (strong creep), and
+# after opening and re-squeezing gives far more pressure than the map; the pump can pass the 327.5 limit.
+# The hold must not fault (soft back-off and capped forward steps) and the sweep must not stop on a falling pressure.
+f10, rows10, pl10, c10 = rig_case(
+    "case 10: strong tube creep, pump above the limit (group B 780 Hz): targets 25-250, no fault", 780,
+    dict(x_touch=480, k_mm_per_count=0.0040, r_line=0.015, r_tube=0.003, q0=480.0, pmax=420.0, tau_s=0.3,
+         creep_frac=0.15, creep_tau_s=8.0),
+    {"type": "pinch_pq", "frequencies_hz": [780], "positions_steps": [], "targets_mbar": [25, 50, 100, 150, 200, 250],
+     "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5, "measure_s": 1.0, "hold_timeout_s": 40, "spin_up_s": 1.0},
+    pinch_extra={"max_squeeze_steps": 100})
+p10 = max([float(r["p_mean_mbar"]) for r in rows10] or [0])
+ev10 = [e["event"] for e in c10.events]
+ok = not f10 and p10 < 327.5
+print(f"   faults {f10}; highest point {p10:.1f} mbar; soft back-offs {ev10.count('soft_backoff')} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
