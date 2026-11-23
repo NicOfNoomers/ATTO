@@ -178,6 +178,24 @@ except Exception:
     pc = None
     log_exception("Optional import failed: pressure_control not available; pressure control disabled.")
 
+try:
+    import maxp_tracker                # maximum-pressure point tracking on the frequency ('maxp_track' blocks)
+except Exception:
+    maxp_tracker = None
+    log_exception("Optional import failed: maxp_tracker not available; 'maxp_track' blocks disabled.")
+
+try:
+    import pinch_control               # pinch-valve pressure control: the motor squeezes a flex tube in a loop
+except Exception:
+    pinch_control = None
+    log_exception("Optional import failed: pinch_control not available; pinch mode disabled.")
+
+try:
+    import maxflow_tracker             # maximum-flow point tracking with flushes ('maxflow_track' blocks)
+except Exception:
+    maxflow_tracker = None
+    log_exception("Optional import failed: maxflow_tracker not available; 'maxflow_track' blocks disabled.")
+
 SUPPLY_AVAILABLE = False
 try:
     import supply_rsd                  # programmable bench supply (RSD3305P) for automatic voltage steps
@@ -432,6 +450,21 @@ def block_duration_s(t: Dict[str, Any]) -> float:
     if ttype == "pq":
         n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
         return n * (PRESSURE_SETTLE_GUESS_S + max(0.0, safe_float(t.get("measure_s", 30), 30.0)))
+    if ttype == "pinch":              # rough plan values; the actions end on their own conditions
+        act = str(t.get("action", "open")).lower()
+        return {"find_touch": 30.0 + safe_float(t.get("spin_up_s", 5), 5.0), "hold": safe_float(t.get("timeout_s", 60), 60.0),
+                "close": 30.0}.get(act, 5.0)
+    if ttype == "pinch_pq":
+        nf = len(t.get("frequencies_hz") or [t.get("frequency_hz")])
+        npts = 1 + len(t.get("positions_steps") or []) + len(t.get("targets_mbar") or []) + (1 if t.get("close_max", True) else 0)
+        per = safe_float(t.get("settle_s", 5), 5.0) + safe_float(t.get("measure_s", 20), 20.0)
+        return nf * (safe_float(t.get("spin_up_s", 10), 10.0) + 30.0 + npts * per
+                     + 20.0 * len(t.get("targets_mbar") or []))
+    if ttype == "maxflow_track":      # upper bound: the tracking cap (flushes included) plus the hold
+        return safe_float(t.get("max_s", 1800), 1800.0) + safe_float(t.get("hold_s", 60), 60.0)
+    if ttype == "maxp_track":         # upper bound: the tracking time cap plus the hold and the leak record
+        return (safe_float(t.get("max_s", 1200), 1200.0) + safe_float(t.get("hold_s", 60), 60.0)
+                + safe_float(t.get("leak_s", 30), 30.0))
     repeat = max(1, repeat)
     if ttype == "constant":
         return repeat * (safe_float(t.get("duration_s", 0), 0.0) + settle_s)
@@ -453,10 +486,19 @@ def is_pressure_target(t: Dict[str, Any]) -> bool:
     return not isinstance(t.get("target_mbar", "release"), str) and t.get("target_mbar") is not None
 
 
+def contains_pinch_block(blocks: List[Dict[str, Any]]) -> bool:
+    """'pinch' / 'pinch_pq' blocks (pinch-valve loop; need pressure control with mode 'pinch', no person)."""
+    for b in blocks:
+        tt = block_type(b)
+        if tt in ("pinch", "pinch_pq") or (tt == "group" and contains_pinch_block(b.get("blocks", []))):
+            return True
+    return False
+
+
 def contains_pressure_block(blocks: List[Dict[str, Any]]) -> bool:
     for b in blocks:
         tt = block_type(b)
-        if tt in ("pressure", "pq") or (tt == "group" and contains_pressure_block(b.get("blocks", []))):
+        if tt in ("pressure", "pq", "maxp_track") or (tt == "group" and contains_pressure_block(b.get("blocks", []))):
             return True
     return False
 
@@ -1214,6 +1256,39 @@ class LiveSessionBase:
         with self.lock:
             return float(self.freq_set if getattr(self, "output_enabled", True) else 0)
 
+    def _make_pinch(self, who: str, on_fault, pcfg: Dict[str, Any]):
+        """pressure.mode 'pinch' (NM 23 Nov): the syringe motor squeezes a flex tube in the flow loop
+        (pump -> flow sensor -> pressure sensor -> flex tube -> reservoir); see pinch_control.py. backend 'dummy'
+        simulates the loop (PinchPlant), the motor and the sensor. The sensor offset is taken here, pump off."""
+        if pinch_control is None or not PRESSURE_AVAILABLE:
+            raise RuntimeError(f"{who}: pinch mode needs pinch_control.py and pressure_control.py.")
+        c = pc.motor_cfg(pcfg)
+        m = pc.microsteps(pc.merged_cfg(pcfg))
+        sensor = None
+        if str(c["backend"]).lower() == "dummy":
+            self.plant = pinch_control.PinchPlant(get_freq=self._pump_hz, pos_max=int(c["pos_max"]))
+            syr = pc.DummySyringe(self.plant, int(c["pos_min"]), int(c["pos_max"]), "v1")
+            read, rng = self.plant.read_sensor, self.plant.range
+        else:
+            sensor = make_flow_sensor(c["sensor"], f"{who} pressure sensor")
+            sensor.open()
+            read = sensor.read
+            rng = sensor.sensor_range() or tuple(c["sensor"].get("range_mbar") or (-344.74, 344.74))
+            syr = pc.make_syringe(c)
+        try:
+            ctl = pinch_control.PinchController(c, syr, read, sensor_range=rng, run_dir=self.run_dir,
+                                                on_fault=on_fault, microsteps=m)
+            ctl.open()
+            ctl.zero_sensor(2.0)
+        except Exception:
+            if sensor is not None:
+                sensor.close()
+            raise
+        ctl.sensor_obj = sensor
+        self._emit("status", f"{who}: pinch control ready (limit {ctl.p_max:g} mbar, offset {ctl.offset:.2f} mbar, "
+                             f"{m} microsteps)")
+        return ctl
+
     def _make_pressure(self, who: str, on_fault):
         """PressureController from cfg['pressure'] (None when disabled): opens the syringe and the
         pressure sensor (a Fluigent channel sharing the SDK session with the flow sensor, or a
@@ -1222,6 +1297,8 @@ class LiveSessionBase:
         pcfg = self.cfg.get("pressure") or {}
         if not pcfg.get("enabled"):
             return None
+        if str(pcfg.get("mode") or "").lower() == "pinch":
+            return self._make_pinch(who, on_fault, pcfg)
         if not PRESSURE_AVAILABLE:
             raise RuntimeError(f"{who}: pressure control enabled but pressure_control.py could not be imported.")
         c = pc.merged_cfg(pcfg)
@@ -1805,6 +1882,8 @@ class PumpTestRunner(LiveSessionBase):
         'hold_position': no regulation, the motor stays energised at its position (dead-head steps);
         'min_pull_room': 0.3 asks for a syringe clear first when less than that fraction is left to pull."""
         ctl = self._need_ctl()
+        if pinch_control is not None and isinstance(ctl, pinch_control.PinchController):
+            raise RuntimeError("'pressure' blocks are for the syringe; in pinch mode use 'pinch' blocks.")
         tgt = test.get("target_mbar", "release")
         if isinstance(tgt, str) or tgt is None:
             if str(tgt).lower() == "idle":
@@ -1885,6 +1964,8 @@ class PumpTestRunner(LiveSessionBase):
         The pump flow fills the syringe; when it would run out, the run pauses for the operator
         to clear the syringe by hand (pump at 0 Hz) and the point is repeated."""
         ctl = self._need_ctl()
+        if pinch_control is not None and isinstance(ctl, pinch_control.PinchController):
+            raise RuntimeError("'pq' blocks are for the syringe; in pinch mode use 'pinch_pq' blocks.")
         pressures = [float(p) for p in test.get("pressures_mbar") or []]
         settle_to = safe_float(test.get("settle_timeout_s", 120), 120.0)
         measure_s = max(1.0, safe_float(test.get("measure_s", 30), 30.0))
@@ -2401,6 +2482,18 @@ class PumpTestRunner(LiveSessionBase):
         if ttype == "pq":
             self._exec_pq(test, log_event, status_prefix)
             return
+        if ttype == "maxp_track":
+            self._exec_maxp_track(test, log_event, status_prefix)
+            return
+        if ttype == "maxflow_track":
+            self._exec_maxflow_track(test, log_event, status_prefix)
+            return
+        if ttype == "pinch":
+            self._exec_pinch(test, log_event, status_prefix)
+            return
+        if ttype == "pinch_pq":
+            self._exec_pinch_pq(test, log_event, status_prefix)
+            return
 
         if ttype == "group":
             sub_blocks = test.get("blocks", [])
@@ -2492,6 +2585,297 @@ class PumpTestRunner(LiveSessionBase):
                         self._nominal_end(settle_s + step_dur)
             else:
                 raise ValueError(f"Unknown block type: {ttype}")
+
+    def _exec_maxp_track(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'maxp_track', 'start_hz': 650, 'f_min': 200, 'f_max': 2000, 'step0_hz': 50, 'step_min_hz': 5,
+        'probe_s': 15, 'settle_s': 3, 'plateau_slope': 0.2, 'gain_mbar': 5, 'build_max_s': 90, 'max_s': 1200,
+        'stop_above_mbar': 320, 'hold_s': 60, 'leak_s': 30}: maximum-pressure point tracking on the drive
+        frequency with the outlet closed (put a pressure 'hold_position' block before it; see maxp_tracker.py).
+        stop_above_mbar is capped 5 mbar below the controller's limit. One row per window in maxp_track.csv,
+        one result per block in maxp_track_results.json (run folder)."""
+        ctl = self._need_ctl()
+        if maxp_tracker is None:
+            raise RuntimeError("maxp_track block: maxp_tracker.py could not be imported.")
+        prm = maxp_tracker.Params.from_block(test)
+        cap = float(ctl.p_max) - 5.0
+        if prm.stop_above_mbar > cap:
+            self._emit("status", f"{status_prefix}max-pressure tracking: stop lowered from {prm.stop_above_mbar:g} "
+                                 f"to {cap:g} mbar (controller limit {ctl.p_max:g} mbar)")
+            prm.stop_above_mbar = cap
+        path = os.path.join(self.run_dir, "maxp_track.csv")
+        new_file = not os.path.exists(path)
+        fh = open(path, "a", newline="", encoding="utf-8")
+        writer = csv.DictWriter(fh, fieldnames=maxp_tracker.LOG_COLS, lineterminator="\n", extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+
+        def set_freq(hz: int):
+            self._set_freq(int(hz))
+            log_event()
+
+        def log_row(row):
+            writer.writerow(row)
+            fh.flush()
+
+        def wait(dt: float):
+            if dt > 0:
+                self._wait_until(CLOCK() + dt)
+
+        def read_p() -> float:
+            return float("nan") if ctl.mode == "fault" else float(ctl.p)
+
+        io = maxp_tracker.Io(set_freq=set_freq, read_p=read_p, now=CLOCK, sleep=wait,
+                             stopped=self.stop_flag.is_set, log=log_row,
+                             status=lambda m: self._emit("status", status_prefix + m))
+        dur = block_duration_s(test)
+        self._nominal_begin(CLOCK(), dur)
+        res = None
+        try:
+            res = maxp_tracker.track(prm, io)
+        finally:
+            fh.close()
+            self._set_freq(0)
+            log_event()
+        try:
+            rpath = os.path.join(self.run_dir, "maxp_track_results.json")
+            prev = []
+            if os.path.exists(rpath):
+                with open(rpath, encoding="utf-8") as f:
+                    prev = json.load(f)
+            prev.append(res)
+            with open(rpath, "w", encoding="utf-8") as f:
+                json.dump(prev, f, indent=2, default=str)
+        except Exception:
+            log_exception("maxp_track: failed to write maxp_track_results.json")
+        ctl.note("maxp_track", f"start {prm.start_hz} Hz: best plateau {res.get('best_plateau_mbar')} mbar at "
+                               f"{res.get('best_hz')} Hz, hold {res.get('hold_mean_mbar')} mbar"
+                               + (" (stopped at the limit: maximum >= that)" if res.get("stop_above") else ""))
+        if not self.stop_flag.is_set():
+            self._nominal_end(dur)
+
+    def _exec_maxflow_track(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'maxflow_track', 'start_hz': 650, 'f_min': 200, 'f_max': 2000, 'step0_hz': 50,
+        'step_min_hz': 5, 'settle_s': 3, 'window_s': 10, 'gain_abs': 3, 'gain_frac': 0.03, 'max_s': 1800,
+        'hold_s': 60, 'flush_rounds': 3, 'flush_every_s': 300, 'flush_extra_hz': [], 'drop_frac': 0.8}:
+        maximum-flow point tracking on the drive frequency at free flow, with prime_at-style flushes at the start,
+        every flush_every_s and after a drop (see maxflow_tracker.py). No pressure control needed.
+        One row per window in maxflow_track.csv, one result per block in maxflow_track_results.json."""
+        if maxflow_tracker is None:
+            raise RuntimeError("maxflow_track block: maxflow_tracker.py could not be imported.")
+        prm = maxflow_tracker.FlowParams.from_block(test)
+        path = os.path.join(self.run_dir, "maxflow_track.csv")
+        new_file = not os.path.exists(path)
+        fh = open(path, "a", newline="", encoding="utf-8")
+        writer = csv.DictWriter(fh, fieldnames=maxflow_tracker.LOG_COLS, lineterminator="\n", extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+
+        def set_freq(hz: int):
+            self._set_freq(int(hz))
+            log_event()
+
+        def log_row(row):
+            writer.writerow(row)
+            fh.flush()
+
+        def wait(dt: float):
+            if dt > 0:
+                self._wait_until(CLOCK() + dt)
+
+        last = {"n": -1}
+
+        def read_flow() -> float:
+            # the newest sample from the sampling loop; NaN until a new one arrives (no double counting)
+            with self.lock:
+                n = len(self.buf_flow)
+                t_new = self.buf_t[-1] if n else None
+                q = self.buf_flow[-1] if n else None
+            if q is None or t_new == last.get("t"):
+                return float("nan")
+            last["t"] = t_new
+            return float(q)
+
+        io = maxp_tracker.Io(set_freq=set_freq, read_p=read_flow, now=CLOCK, sleep=wait,
+                             stopped=self.stop_flag.is_set, log=log_row,
+                             status=lambda m: self._emit("status", status_prefix + m))
+        dur = block_duration_s(test)
+        self._nominal_begin(CLOCK(), dur)
+        res = None
+        try:
+            res = maxflow_tracker.track_flow(prm, io)
+        finally:
+            fh.close()
+            self._set_freq(0)
+            log_event()
+        try:
+            rpath = os.path.join(self.run_dir, "maxflow_track_results.json")
+            prev = []
+            if os.path.exists(rpath):
+                with open(rpath, encoding="utf-8") as f:
+                    prev = json.load(f)
+            prev.append(res)
+            with open(rpath, "w", encoding="utf-8") as f:
+                json.dump(prev, f, indent=2, default=str)
+        except Exception:
+            log_exception("maxflow_track: failed to write maxflow_track_results.json")
+        if not self.stop_flag.is_set():
+            self._nominal_end(dur)
+
+    # ---- pinch-valve loop (pressure.mode 'pinch', NM 23 Nov 2026; pinch_control.py) ----
+    def _need_pinch(self):
+        ctl = self._need_ctl()
+        if pinch_control is None or not isinstance(ctl, pinch_control.PinchController):
+            raise RuntimeError("'pinch' / 'pinch_pq' blocks need pressure.mode 'pinch' in the config.")
+        return ctl
+
+    def _window_flow_stats(self, t0_abs: float, t1_abs: float) -> Dict[str, Any]:
+        a, b = t0_abs - self.t0, t1_abs - self.t0
+        with self.lock:
+            vals = [q for t, q in zip(self.buf_t, self.buf_flow) if a <= t <= b]
+        n = len(vals)
+        if not n:
+            return {"flow_mean": float("nan"), "flow_sd": float("nan"), "flow_n": 0}
+        m = sum(vals) / n
+        sd = math.sqrt(sum((x - m) ** 2 for x in vals) / (n - 1)) if n > 1 else float("nan")
+        return {"flow_mean": m, "flow_sd": sd, "flow_n": n}
+
+    def _exec_pinch(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'pinch', 'action': 'find_touch' (optional 'frequency_hz', 'spin_up_s') | 'open' |
+        'squeeze' ('steps' past touch) | 'hold' ('target_mbar', 'timeout_s') | 'close' ('stop_mbar', 'step')}:
+        one pinch-valve action. find_touch needs the pump running (it drives frequency_hz first if given)."""
+        ctl = self._need_pinch()
+        act = str(test.get("action", "open")).lower()
+        stopped = self.stop_flag.is_set
+        if act == "find_touch":
+            hz = int(test.get("frequency_hz") or 0)
+            if hz > 0:
+                self._set_freq(hz)
+                log_event()
+                self._wait_until(CLOCK() + safe_float(test.get("spin_up_s", 5), 5.0))
+            res = ctl.find_touch(stopped)
+            if res is None and not stopped():
+                raise RuntimeError("pinch: no pressure rise while squeezing (no touch found): is the flex tube in the "
+                                   "plunger's path and the pump running?")
+            if res is not None:
+                self._emit("status", f"{status_prefix}pinch: touch at {res:.1f} full steps")
+        elif act == "open":
+            ctl.go_open()
+        elif act == "squeeze":
+            ctl.set_squeeze(float(test["steps"]))
+        elif act == "hold":
+            why = ctl.hold(float(test["target_mbar"]), safe_float(test.get("timeout_s", 60), 60.0), stopped)
+            ctl.note("hold", f"{test['target_mbar']} mbar: {why} at {ctl.p_1s:.1f} mbar, squeeze {ctl.squeeze_full():.1f}")
+            self._emit("status", f"{status_prefix}pinch hold {test['target_mbar']} mbar: {why} ({ctl.p_1s:.1f} mbar)")
+        elif act == "close":
+            p, why = ctl.close_until(safe_float(test.get("stop_mbar", ctl.p_max - 5.0), ctl.p_max - 5.0),
+                                     safe_float(test.get("step", 1), 1.0), stopped)
+            ctl.note("close", f"{p:.1f} mbar ({why}), squeeze {ctl.squeeze_full():.1f}")
+            self._emit("status", f"{status_prefix}pinch closed: {p:.1f} mbar ({why})")
+        else:
+            raise ValueError(f"pinch: unknown action {act!r}")
+
+    def _exec_pinch_pq(self, test, log_event, status_prefix: str = ""):
+        """{'type': 'pinch_pq', 'frequencies_hz': [1150, 520], 'positions_steps': [0, 5, 10, ...] (squeeze past
+        touch, position mode) and/or 'targets_mbar': [10, 25, 50, ...] (pressure hold), 'settle_s': 5,
+        'measure_s': 20, 'hold_timeout_s': 60, 'close_max': true, 'max_stop_mbar': 320, 'spin_up_s': 10}:
+        PQ through the pinch valve. Per frequency: run up, find the touch (once per run), the open point, each
+        position, then a closing sweep (the fully closed point = blocked outlet, and the pressure-squeeze map),
+        then each target (ascending; moved to its mapped squeeze, held, then measured with the motor still);
+        open again. One row per point in pinch_pq.csv."""
+        ctl = self._need_pinch()
+        stopped = self.stop_flag.is_set
+        freqs = [int(f) for f in (test.get("frequencies_hz") or [test.get("frequency_hz")]) if f]
+        positions = [float(x) for x in (test.get("positions_steps") or [])]
+        targets = sorted(float(x) for x in (test.get("targets_mbar") or []))
+        settle_s = safe_float(test.get("settle_s", 5), 5.0)
+        measure_s = safe_float(test.get("measure_s", 20), 20.0)
+        hold_to = safe_float(test.get("hold_timeout_s", 60), 60.0)
+        spin = safe_float(test.get("spin_up_s", 10), 10.0)
+        cols = ["point", "frequency_hz", "kind", "target_mbar", "squeeze_steps", "past_touch_steps", "p_mean_mbar",
+                "p_sd_mbar", "p_start_mbar", "p_end_mbar", "flow_mean", "flow_sd", "flow_n", "reason", "t_start_s",
+                "t_end_s"]
+        path = os.path.join(self.run_dir, "pinch_pq.csv")
+        new_file = not os.path.exists(path)
+        fh = open(path, "a", newline="", encoding="utf-8")
+        w = csv.DictWriter(fh, fieldnames=cols, lineterminator="\n", extrasaction="ignore")
+        if new_file:
+            w.writeheader()
+        npoint = [0]
+
+        def measure(hz, kind, target, why):
+            if stopped():
+                return None
+            if settle_s > 0:
+                self._wait_until(CLOCK() + settle_s)
+            t_a = CLOCK()
+            self._wait_until(t_a + measure_s)
+            t_b = CLOCK()
+            st = ctl.window_stats(t_a - self.t0, t_b - self.t0)
+            fl = self._window_flow_stats(t_a, t_b)
+            npoint[0] += 1
+            pt = ctl.past_touch_full()
+            row = {"point": npoint[0], "frequency_hz": hz, "kind": kind,
+                   "target_mbar": "" if target is None else f"{target:g}",
+                   "squeeze_steps": f"{ctl.squeeze_full():.2f}", "past_touch_steps": "" if pt is None else f"{pt:.2f}",
+                   "p_mean_mbar": f"{st.get('p_mean', float('nan')):.2f}", "p_sd_mbar": f"{st.get('p_sd', float('nan')):.2f}",
+                   "p_start_mbar": f"{st.get('p_start', float('nan')):.2f}", "p_end_mbar": f"{st.get('p_end', float('nan')):.2f}",
+                   "flow_mean": f"{fl['flow_mean']:.3f}", "flow_sd": f"{fl['flow_sd']:.3f}", "flow_n": fl["flow_n"],
+                   "reason": why, "t_start_s": f"{t_a - self.t0:.2f}", "t_end_s": f"{t_b - self.t0:.2f}"}
+            w.writerow(row)
+            fh.flush()
+            self._emit("status", f"{status_prefix}pinch PQ {hz} Hz {kind} {row['target_mbar']}: "
+                                 f"{row['p_mean_mbar']} mbar, {row['flow_mean']} uL/min ({why})")
+            return row
+
+        try:
+            for hz in freqs:
+                if stopped():
+                    break
+                ctl.go_open()
+                self._set_freq(hz)
+                log_event()
+                self._wait_until(CLOCK() + spin)
+                if ctl.touch is None:
+                    if ctl.find_touch(stopped) is None:
+                        if stopped():
+                            break
+                        raise RuntimeError("pinch PQ: no touch found (no pressure rise while squeezing).")
+                    ctl.note("touch", f"{ctl.touch / ctl.m:.1f} full steps")
+                ctl.go_open()
+                measure(hz, "open", None, "open")
+                for pos in positions:
+                    if stopped():
+                        break
+                    ctl.set_squeeze(pos)
+                    measure(hz, "position", None, f"{pos:g} steps past touch")
+                if positions:
+                    ctl.go_open()
+                # closing sweep first: the fully closed point (blocked outlet) and the pressure-squeeze map
+                # that the targets use (the map belongs to this frequency: P(squeeze) follows the pump curve)
+                if (test.get("close_max", True) or targets) and not stopped():
+                    p, why = ctl.close_until(safe_float(test.get("max_stop_mbar", ctl.p_max - 5.0), ctl.p_max - 5.0),
+                                             1.0, stopped)
+                    if test.get("close_max", True):
+                        measure(hz, "closed", None, why)
+                    ctl.go_open()
+                for tgt in targets:
+                    if stopped():
+                        break
+                    if tgt > ctl.p_max - 5.0:
+                        ctl.note("pinch_pq_skip", f"{tgt:g} mbar is above the limit")
+                        continue
+                    why = ctl.hold(tgt, hold_to, stopped)
+                    if why in ("stopped", "fault"):
+                        break
+                    if why in ("cannot_reach", "at_cap"):
+                        ctl.note("pinch_pq_stop", f"{tgt:g} mbar: {why}")
+                        break
+                    ctl.mode = "position"                 # the motor stays still while measuring
+                    measure(hz, "target", tgt, why)
+                if not stopped():
+                    ctl.go_open()
+        finally:
+            fh.close()
 
     def _wait_until_pressure(self, t_end: float, p_stop: float) -> Optional[float]:
         """Wait until t_end, Stop, or the outlet pressure reaching p_stop (returns that pressure)."""
@@ -4208,7 +4592,7 @@ class DashboardApp:
         elif proj and not p["finished"]:
             c, due, _moved = proj[0]
             until = (due - now).total_seconds()
-            self.var_next_change.set(f"Next voltage change #{c['index']} → {c['mv'] / 1000:.3f} V "
+            self.var_next_change.set(f"Next voltage change #{c['index']} -> {c['mv'] / 1000:.3f} V "
                                      f"at {fmt_clock(due)} (in {fmt_duration(until)})" + (", automatic" if auto else ""))
             self.lbl_next_change.configure(fg="#b00000" if until <= lead_s and not auto else self._next_change_fg)
         else:
@@ -5466,7 +5850,7 @@ class DashboardApp:
             pump = "pump holds" if str(t.get("while_waiting", "zero")).lower() == "hold" else "pump 0 Hz"
             w = t.get("window")
             when = f", ask {w[0]}-{w[1]}" if voltage_window(t) else ""
-            return (f"VOLTAGE STEP → {mv / 1000:.3f} V (wait for you, {pump}, "
+            return (f"VOLTAGE STEP -> {mv / 1000:.3f} V (wait for you, {pump}, "
                     f"settle {safe_float(t.get('settle_s', 0), 0.0):g} s{when})")
         if ttype == "pressure":
             tgt = t.get("target_mbar", "release")
@@ -5475,6 +5859,27 @@ class DashboardApp:
             wait = f", wait until settled (max {safe_float(t.get('timeout_s', 120), 120.0):g} s)" \
                 if t.get("wait_settled", True) else ""
             return f"PRESSURE: hold {safe_float(tgt, 0.0):g} mbar{wait}"
+        if ttype == "pinch":
+            act = str(t.get("action", "open")).lower()
+            extra = {"squeeze": f" {t.get('steps')} steps past touch", "hold": f" {t.get('target_mbar')} mbar",
+                     "close": f" until {t.get('stop_mbar', 'plateau')} mbar",
+                     "find_touch": f" at {t.get('frequency_hz', 'the current')} Hz"}.get(act, "")
+            return f"PINCH: {act}{extra}"
+        if ttype == "pinch_pq":
+            fr = ", ".join(str(f) for f in (t.get("frequencies_hz") or [t.get("frequency_hz")]))
+            return (f"PINCH PQ: {fr} Hz; positions {t.get('positions_steps') or '-'}; targets "
+                    f"{t.get('targets_mbar') or '-'} mbar; closed point {bool(t.get('close_max', True))}; "
+                    f"measure {t.get('measure_s', 20)} s")
+        if ttype == "maxflow_track":
+            return (f"MAX-FLOW TRACKING from {t.get('start_hz', 650)} Hz "
+                    f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"
+                    f"{t.get('step_min_hz', 5)} Hz, flush x{t.get('flush_rounds', 3)} then every "
+                    f"{t.get('flush_every_s', 300)} s, max {t.get('max_s', 1800)} s)")
+        if ttype == "maxp_track":
+            return (f"MAX-PRESSURE TRACKING from {t.get('start_hz', 650)} Hz "
+                    f"({t.get('f_min', 200)}-{t.get('f_max', 2000)} Hz, step {t.get('step0_hz', 50)}->"
+                    f"{t.get('step_min_hz', 5)} Hz, stop {t.get('stop_above_mbar', 320)} mbar, max "
+                    f"{t.get('max_s', 1200)} s)")
         if ttype == "pq":
             ps = t.get("pressures_mbar") or []
             fr = ", ".join(str(f) for f in pq_frequencies(t))
@@ -5490,7 +5895,7 @@ class DashboardApp:
         sdur = t.get("step_duration_s", None)
         tdur = t.get("total_duration_s", None)
         d = f"{sdur}s/step" if sdur is not None else f"{tdur}s total"
-        return f"sweep: {t.get('start_hz')}→{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
+        return f"sweep: {t.get('start_hz')}->{t.get('end_hz')} Hz, {t.get('steps')} steps, {d} (x{t.get('repeat', 1)})"
 
     def refresh_blocks_list(self):
         self.lst_blocks.delete(0, tk.END)
@@ -5877,7 +6282,8 @@ class DashboardApp:
                                             "(Run details) and start again.")
             return
 
-        if contains_pressure_block(cfg["tests"]) and not (cfg.get("pressure") or {}).get("enabled"):
+        if (contains_pressure_block(cfg["tests"]) or contains_pinch_block(cfg["tests"])) and \
+                not (cfg.get("pressure") or {}).get("enabled"):
             messagebox.showerror("Pressure control", "The sequence has pressure / PQ blocks: tick 'Control "
                                                      "pressure' in the Pressure panel first.")
             return
