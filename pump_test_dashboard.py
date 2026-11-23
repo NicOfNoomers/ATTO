@@ -2879,6 +2879,10 @@ class PumpTestRunner(LiveSessionBase):
                     measure(hz, "target", tgt, why)
                 if not stopped():
                     ctl.go_open()
+                    # 23 Nov run _b: the targets sat 10-15 % below the position curve measured minutes earlier;
+                    # the open point again at the end shows how much the pump drifted within this frequency
+                    if ctl.mode != "fault":
+                        measure(hz, "open_end", None, "open, end of this frequency")
         finally:
             fh.close()
 

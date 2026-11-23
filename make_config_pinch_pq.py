@@ -46,12 +46,13 @@ ap.add_argument("--no-close", action="store_true", help="skip the fully closed p
 ap.add_argument("--settle-s", type=float, default=5.0)
 ap.add_argument("--measure-s", type=float, default=20.0)
 ap.add_argument("--hold-timeout-s", type=float, default=60.0)
-ap.add_argument("--spin-up-s", type=float, default=10.0)
+ap.add_argument("--spin-up-s", type=float, default=30.0,
+                help="s at each new frequency before its first point (23 Nov: 1090 Hz after 520 Hz climbed 209 -> 420 uL/min over ~1 min)")
 ap.add_argument("--limit", type=float, default=330.0, help="mbar; also capped at 95 %% of the sensor range")
 ap.add_argument("--max-stop", type=float, default=300.0,
                 help="closing sweep and position points stop here, minus a 10 mbar guard (mbar); on the steep closure "
                      "the last step can overshoot (23 Nov sim: 323-326 with a 320 stop): keep >= 25 below the 327.5 limit")
-ap.add_argument("--max-squeeze", type=float, default=150.0, help="full steps past touch, hard cap")
+ap.add_argument("--max-squeeze", type=float, default=50.0, help="full steps past touch, hard cap (23 Nov: closed at 12-37)")
 ap.add_argument("--start-retract", type=float, default=0.0, help="full steps retracted before the touch search (clamped by --back-limit)")
 ap.add_argument("--back-limit", type=float, default=0.0, help="HARD floor in full steps from the start position (0 = never behind the start)")
 ap.add_argument("--back-limit-pos", type=int, default=None,
