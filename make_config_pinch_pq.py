@@ -17,7 +17,8 @@ the run stops (pump 0 Hz). Squeeze never goes past --max-squeeze full steps beyo
 Plunger travel: about 0.023 mm per full step if the lead screw matches the 1 mL syringe calibration
 (0.4049 uL per full step, BD 1 mL bore 4.78 mm); a 1.59 mm bore then closes within ~70 full steps past touch.
 
-Setup: the plunger off the tube at the start (it retracts --start-retract steps before searching anyway);
+Setup: the plunger just off the tube at the start. That start position is a HARD back limit (NM 23 Nov: further
+back the plunger falls off its stage): open, the safety retract and the search never go behind it;
 pump at 0 Hz when the run starts (the sensor zero is taken then); outlet loop open to the reservoir.
 
 usage:
@@ -42,7 +43,9 @@ ap.add_argument("--spin-up-s", type=float, default=10.0)
 ap.add_argument("--limit", type=float, default=330.0, help="mbar; also capped at 95 %% of the sensor range")
 ap.add_argument("--max-stop", type=float, default=320.0, help="closing sweep stops here (mbar)")
 ap.add_argument("--max-squeeze", type=float, default=150.0, help="full steps past touch, hard cap")
-ap.add_argument("--start-retract", type=float, default=40.0, help="full steps retracted before the touch search")
+ap.add_argument("--start-retract", type=float, default=0.0, help="full steps retracted before the touch search (clamped by --back-limit)")
+ap.add_argument("--back-limit", type=float, default=0.0, help="HARD floor in full steps from the start position (0 = never behind the start)")
+ap.add_argument("--max-search", type=float, default=300.0, help="full steps of touch search before giving up")
 ap.add_argument("--touch-mbar", type=float, default=3.0)
 ap.add_argument("--supply", choices=("manual", "rsd3305p"), default="manual")
 ap.add_argument("--address", default="COM7")
@@ -84,6 +87,7 @@ pressure = {"enabled": True, "mode": "pinch", "backend": "dummy" if a.dummy else
             "limit_mbar": a.limit, "min_mbar": -60.0, "microsteps": 16, "pos_min": 0, "pos_max": 2470,
             "pos_margin": 30, "clear_reserve_steps": 150, "ul_per_step": 0.4049,
             "pinch": {"touch_mbar": a.touch_mbar, "start_retract_steps": a.start_retract,
+                      "back_limit_steps": a.back_limit, "max_search_steps": a.max_search,
                       "max_squeeze_steps": a.max_squeeze}}
 desc = (f"PQ through the pinch-valve loop (motor squeezes the flex tube) at {', '.join(str(f) for f in freqs)} Hz: "
         f"touch search, open point, positions {positions or '-'} steps past touch, closing sweep to "

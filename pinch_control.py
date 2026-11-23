@@ -49,8 +49,11 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "touch_mbar": 3.0,            # rise above the open-tube baseline that marks contact
     "touch_step": 2,              # full steps per probe while searching
     "touch_settle_s": 0.4,
-    "start_retract_steps": 40,    # full steps retracted before the search (the plunger may sit on the tube)
-    "max_search_steps": 3000,     # full steps of search before giving up
+    "start_retract_steps": 0,     # full steps retracted before the search (clamped by back_limit_steps)
+    "back_limit_steps": 0,        # HARD floor: the squeeze never goes below this (0 = the start position).
+                                  # NM 23 Nov: the plunger starts just off the tube; further back it falls
+                                  # off its stage. Every backward move (open, retract, fault) is clamped.
+    "max_search_steps": 300,      # full steps of search before giving up (~7 mm at 0.023 mm/step)
     "max_squeeze_steps": 400,     # full steps past touch: hard cap (tube protection)
     "open_back_steps": 10,        # open position = touch - this
     "retract_steps": 40,          # full steps retracted on a fault
@@ -102,6 +105,8 @@ class PinchController:
         self.touch: Optional[int] = None                # squeeze (motor counts) at contact
         self.gain = float(self.pc["gain_init"])         # mbar per FULL step
         self.pmap: List[Tuple[float, float]] = []       # (steps past touch, mbar) from the last closing sweep
+        self.back_limit = int(round(float(self.pc["back_limit_steps"]) * self.m))   # squeeze floor (counts)
+        self.min_squeeze_seen = 0                       # for the record: the lowest squeeze ever commanded
         self.plot_buf: deque = deque(maxlen=6000)       # (t, p, target) for the live plot
         self.hist: deque = deque(maxlen=20000)          # (t, p, squeeze)
         self._win: deque = deque(maxlen=200)
@@ -187,7 +192,8 @@ class PinchController:
                 "p_max": self.p_max, "p_min": self.p_min, "pos": self.syr.position(),
                 "squeeze_steps": round(self.squeeze_full(), 2), "touch_steps": None if self.touch is None
                 else round(self.touch / self.m, 2), "gain_mbar_step": round(self.gain, 3), "pinch": True,
-                "stale": (clock() - self.t_last_sample) > float(self.pc["stale_s"])}
+                "stale": (clock() - self.t_last_sample) > float(self.pc["stale_s"]),
+                "back_limit_steps": self.back_limit / self.m, "min_squeeze_seen": self.min_squeeze_seen / self.m}
 
     def settled(self) -> bool:
         return False
@@ -250,7 +256,9 @@ class PinchController:
         self._event("fault", msg)
         try:
             with self.mlock:
-                self.syr.move(-int(self.pc["retract_steps"]) * self.m, timeout_s=float(self.pc["move_timeout_s"]))
+                back = min(int(self.pc["retract_steps"]) * self.m, max(0, self.squeeze() - self.back_limit))
+                if back > 0:
+                    self.syr.move(-back, timeout_s=float(self.pc["move_timeout_s"]))
         except Exception as e:  # noqa: BLE001
             self._event("fault_retract_failed", str(e))
         try:
@@ -267,6 +275,8 @@ class PinchController:
         """Relative move in full steps (+ = squeeze), capped at max_squeeze_steps past touch. Returns counts moved."""
         self._check()
         n = int(round(n_full * self.m))
+        if n < 0:                                      # never behind the back limit (start position)
+            n = max(n, self.back_limit - self.squeeze())
         if n > 0 and self.touch is not None:
             cap = self.touch + int(self.pc["max_squeeze_steps"]) * self.m
             n = min(n, cap - self.squeeze())
@@ -274,6 +284,7 @@ class PinchController:
             return 0
         with self.mlock:
             ok = self.syr.move(n, timeout_s=float(self.pc["move_timeout_s"]))
+        self.min_squeeze_seen = min(self.min_squeeze_seen, self.squeeze())
         if not ok:
             self._event("move_failed", f"{n} counts")
         return n

@@ -25,7 +25,7 @@ spec.loader.exec_module(m)
 import pinch_control  # noqa: E402
 import pressure_control as pc  # noqa: E402
 
-FAST = {"touch_settle_s": 0.25, "hold_dt": 0.35, "hold_settle_s": 1.0, "start_retract_steps": 10}
+FAST = {"touch_settle_s": 0.25, "hold_dt": 0.35, "hold_settle_s": 1.0, "start_retract_steps": 10}   # the retract is clamped by back_limit 0
 
 
 def make_fake(limit=340.0, pinch=None):
@@ -81,10 +81,14 @@ for r in rows:
 kinds = [r["kind"] for r in rows]
 targets_ok = all(abs(float(r["p_mean_mbar"]) - float(r["target_mbar"])) < 6 for r in rows if r["kind"] == "target")
 closed = [float(r["p_mean_mbar"]) for r in rows if r["kind"] == "closed"]
-touch_ok = f.ctl.touch is not None and abs(f.ctl.touch - (600 + 10 * 16)) < 5 * 16   # start_retract moved x by -160
+# the first measurable rise comes after geometric contact (a barely squeezed tube adds little resistance)
+touch_ok = f.ctl.touch is not None and 600 <= f.ctl.touch <= 600 + 20 * 16
 ok = (kinds.count("target") == 4 and kinds.count("position") == 4 and "open" in kinds and closed
       and closed[0] > 200 and targets_ok and touch_ok and not f.faults)
-print(f"   touch at {f.ctl.touch / 16:.1f} full steps (plant contact at {(600 + 160) / 16:.1f}); "
+back_ok = f.ctl.min_squeeze_seen >= 0 and min(x for x in [f.plant.x]) >= 0
+ok = ok and back_ok
+print(f"   lowest squeeze ever {f.ctl.min_squeeze_seen / 16:.2f} full steps (must be >= 0: back limit {back_ok}); "
+      f"touch at {f.ctl.touch / 16:.1f} full steps (plant contact at {600 / 16:.1f}); "
       f"closed {closed}; {time.perf_counter() - t0:.0f} s -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 f.stop_flag.set()
@@ -97,7 +101,7 @@ time.sleep(1.0)
 f.ctl.find_touch()
 p, why = f.ctl.close_until(300.0, 1.0)
 time.sleep(1.5)
-ok = bool(f.faults) and f.ctl.mode == "fault" and f.plant.pressure() < 95.0
+ok = bool(f.faults) and f.ctl.mode == "fault" and f.plant.pressure() < 95.0 and f.ctl.squeeze() >= 0
 print(f"   close_until -> {p:.1f} mbar ({why}); faults {f.faults}; pressure after retract {f.plant.pressure():.1f} -> "
       f"{'OK' if ok else 'FAIL'}")
 ok_all &= ok
