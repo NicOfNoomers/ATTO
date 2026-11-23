@@ -55,7 +55,8 @@ PINCH_DEFAULTS: Dict[str, Any] = {
                                   # off its stage. Every backward move (open, retract, fault) is clamped.
     "max_search_steps": 800,      # full steps of search before giving up (~18 mm at 0.023 mm/step; NM 23 Nov:
                                   # the plunger sits ~1.5 cm from the tube; the pressure limit is the guard)
-    "max_squeeze_steps": 400,     # full steps past touch: hard cap (tube protection)
+    "max_squeeze_steps": 60,      # full steps past touch: hard cap (tube protection; 23 Nov rig: closed at
+                                  # 12-37 steps, the hold then drove to 123 and the tube gave way)
     "open_back_steps": 10,        # open position = touch - this
     "retract_steps": 40,          # full steps retracted on a fault
     "hold_tol_mbar": 2.0,
@@ -82,6 +83,12 @@ PINCH_DEFAULTS: Dict[str, Any] = {
     "settle_window_s": 0.3,       # near closure: read in windows until two agree within settle_tol_mbar
     "settle_tol_mbar": 1.0,
     "settle_max_s": 4.0,
+    "closed_rise_mbar": 3.0,      # close_until: closed when the squeeze has gone closed_after_steps past the last
+    "closed_after_steps": 3.0,    # point that rose >= closed_rise_mbar (23 Nov 1090 Hz: +12 mbar over 14 steps)
+    "over_closed_steps": 3.0,     # hold() never squeezes more than this past the closed point (or the guard stop)
+    "lost_drop_frac": 0.5,        # a forward move after which the pressure fell by more than this fraction of a
+    "lost_min_mbar": 40.0,        # reading >= lost_min_mbar = tube lost (23 Nov: 195 -> 5 mbar at +123): fault
+    "hold_factor": 0.5,           # hold(): a forward correction covers this fraction of the error (approach from below)
 }
 
 
@@ -118,6 +125,7 @@ class PinchController:
         self.touch: Optional[int] = None                # squeeze (motor counts) at contact
         self.gain = float(self.pc["gain_init"])         # mbar per FULL step
         self.pmap: List[Tuple[float, float]] = []       # (steps past touch, mbar) from the last closing sweep
+        self.s_ceiling: Optional[float] = None          # steps past touch hold() may not pass (closing sweep)
         self.back_limit = int(round(float(self.pc["back_limit_steps"]) * self.m))   # squeeze floor (counts)
         self.min_squeeze_seen = 0                       # for the record: the lowest squeeze ever commanded
         self.g_hist: List[float] = []                   # last two local gains, for the growth ratio
@@ -369,6 +377,7 @@ class PinchController:
         pc = self.pc
         self.mode = "search"
         self.g_local, self.g_hist, self.g_ratio = None, [], None
+        self.s_ceiling = None
         self._move_full(-float(pc["start_retract_steps"]))
         appr = float(pc.get("approach_steps") or 0)
         if appr > 0:
@@ -475,6 +484,20 @@ class PinchController:
         if len(self.g_hist) == 2 and self.g_hist[0] > 0:
             self.g_ratio = max(1.0, self.g_hist[1] / self.g_hist[0])
 
+    def _lost_check(self, p_before: float, p_after: float) -> bool:
+        """After a FORWARD move: a pressure fall by more than lost_drop_frac from a reading >= lost_min_mbar means
+        the tube is no longer pinched (slipped out, split, or a joint came off: 23 Nov, 195 -> 5 mbar at 123 steps
+        past touch). Fault: the motor retracts and the run stops; a person has to look at the tube."""
+        pc = self.pc
+        if p_before == p_before and p_after == p_after and p_before >= float(pc["lost_min_mbar"]) \
+                and p_after < (1.0 - float(pc["lost_drop_frac"])) * p_before:
+            pt = self.past_touch_full()
+            self._fault(f"tube lost? pressure fell from {p_before:.0f} to {p_after:.0f} mbar on a forward move at "
+                        f"{pt if pt is None else round(pt, 2)} steps past touch: check the flex tube under the "
+                        f"plunger and the joints")
+            return True
+        return False
+
     def set_squeeze_guarded(self, steps_past_touch: float, stop_mbar: float,
                             stopped: Callable[[], bool] = lambda: False) -> Tuple[bool, float]:
         """Go to touch + steps (position mode) in small adaptive moves, watching the pressure; stops short when
@@ -503,7 +526,7 @@ class PinchController:
             if self._move_full(step) == 0:
                 break
             p = self._settled_p()                         # always settled: an early read under-reads (+6: 123 vs 264)
-            if self.mode == "fault":
+            if self.mode == "fault" or self._lost_check(p_prev, p):
                 return False, self.p_1s
             ds = self.squeeze_full() - s_prev
             if ds > 0 and p > p_prev:
@@ -543,15 +566,21 @@ class PinchController:
         t_end = clock() + timeout_s
         in_tol_since = None
         last: Optional[Tuple[float, float]] = None
-        self._p_mean(2 * dt)                              # let the last move settle
+        p_fwd: Optional[float] = None                     # reading before the last forward move (tube-lost check)
+        hf = float(pc["hold_factor"])
         while clock() < t_end:
             if stopped():
                 return "stopped"
             if self.mode == "fault":
                 return "fault"
-            p = self._p_mean(dt)
+            p = self._settled_p()                         # settled: the tube lags and creeps (23 Nov oscillation)
             if p != p:
                 continue
+            if self.mode == "fault":
+                return "fault"
+            if p_fwd is not None and self._lost_check(p_fwd, p):
+                return "fault"
+            p_fwd = None
             s_now = self.squeeze_full()
             e = target - p
             if abs(e) <= tol:
@@ -565,20 +594,30 @@ class PinchController:
                 if last is not None and abs(s_now - last[0]) >= 1.0 and abs(p - last[1]) > 3 * tol:
                     self.gain = 0.7 * self.gain + 0.3 * abs((p - last[1]) / (s_now - last[0]))
                 g = self.gain
-            step = max(-smax, min(smax, 0.6 * e / max(g, gmin)))
-            if abs(step) < 1.0 / self.m:
-                step = math.copysign(1.0 / self.m, e)
-            if step > 0:                                  # never predict past p_max - 15 mbar
-                room = (self.p_max - 15.0) - p
+            g = max(g, gmin)
+            if e > 0:                                     # forward: a fraction of the error, never past the ceiling
+                step = max(1.0 / self.m, min(smax, hf * e / g))
+                room = (self.p_max - 15.0) - p            # never predict past p_max - 15 mbar
                 if room <= 0 or g * (1.0 / self.m) > room:
                     self._event("hold_at_limit", f"{target:g} mbar: {p:.1f} mbar, one count would pass the limit")
                     return "at_limit"
-                step = min(step, room / max(g, gmin))
-            last = (s_now, p)
-            moved = self._move_full(step)
-            if moved == 0 and e > 0:
-                self._event("hold_at_cap", f"{target:g} mbar: {p:.1f} mbar at the squeeze cap")
-                return "at_cap"
+                step = min(step, room / g)
+                if self.s_ceiling is not None and self.touch is not None:
+                    allowed = self.s_ceiling - self.past_touch_full()
+                    if allowed < 1.0 / self.m:
+                        self._event("hold_at_closed", f"{target:g} mbar: {p:.1f} mbar at {self.past_touch_full():.2f} "
+                                                      f"steps past touch, the closed point + margin "
+                                                      f"({self.s_ceiling:.2f}): the pump cannot make it now")
+                        return "cannot_reach"
+                    step = min(step, allowed)
+                last, p_fwd = (s_now, p), p
+                if self._move_full(step) == 0:
+                    self._event("hold_at_cap", f"{target:g} mbar: {p:.1f} mbar at the squeeze cap")
+                    return "at_cap"
+            else:                                         # overshoot: back off
+                step = max(-smax, min(-1.0 / self.m, 0.6 * e / g))
+                last = (s_now, p)
+                self._move_full(step)
             self.mode = "hold"
         return "timeout"
 
@@ -592,24 +631,39 @@ class PinchController:
         stop_mbar = min(stop_mbar, self.p_max - 5.0)
         self.mode = "closing"
         self.pmap = []
+        self.s_ceiling = None
         hist: deque = deque(maxlen=int(pc["plateau_n"]) + 1)
         p_first = None
+        s_rise: Optional[float] = None               # last squeeze that raised the pressure
+        p_rise = float("nan")
+        p_fwd: Optional[float] = None
+        over = float(pc["over_closed_steps"])
         while not stopped():
             if self.mode == "fault":
                 return self.p_1s, "fault"
             p = self._settled_p()                         # always settled (an early read under-reads near closure)
-            if self.mode == "fault":
+            if self.mode == "fault" or (p_fwd is not None and self._lost_check(p_fwd, p)):
                 return self.p_1s, "fault"
             p_first = p if p_first is None else p_first
             pt = self.past_touch_full()
             if pt is not None:
                 self.pmap.append((pt, p))
+                if s_rise is None or p - p_rise >= float(pc["closed_rise_mbar"]):
+                    s_rise, p_rise = pt, p
+                elif pt - s_rise >= float(pc["closed_after_steps"]) and p - p_first >= float(pc["plateau_min_rise_mbar"]):
+                    self.s_ceiling = s_rise + over
+                    self._event("closed", f"{p:.1f} mbar: no rise of {float(pc['closed_rise_mbar']):g} mbar over "
+                                          f"{pt - s_rise:.2f} steps after {s_rise:.2f} steps past touch")
+                    self.mode = "position"
+                    return p, "closed"
             hist.append(p)
             if p >= stop_mbar:
+                self.s_ceiling = (pt or 0.0) + over
                 self.mode = "position"
                 return p, "stop"
             if (len(hist) == hist.maxlen and hist[-1] - hist[0] < float(pc["plateau_mbar"])
                     and p - p_first >= float(pc["plateau_min_rise_mbar"])):
+                self.s_ceiling = (s_rise if s_rise is not None else (pt or 0.0)) + over
                 self.mode = "position"
                 return p, "plateau"
             g = self.g_local
@@ -623,10 +677,13 @@ class PinchController:
                 g = None                                   # unknown: _adaptive_step gets a quarter step below
             guard = stop_mbar - float(pc["guard_stop_margin_mbar"])
             if p >= guard:
+                self.s_ceiling = (pt or 0.0) + over
                 self.mode = "position"
                 return p, "stop"
             smax = 0.25 if (g is None and p > 0.5 * guard) else step_full
+            p_fwd = p
             if self._move_full(self._adaptive_step(p, guard, g, smax, self.g_ratio)) == 0:
+                self.s_ceiling = (pt or 0.0) + over
                 self.mode = "position"
                 return p, "at_cap"
         return self.p_1s, "stopped"
@@ -642,7 +699,8 @@ class PinchPlant:
     def __init__(self, get_freq: Callable[[], float] = lambda: 0.0, x_touch: int = 600, k_mm_per_count: float = 0.0014,
                  h0_mm: float = 1.59, r_line: float = 0.05, r_tube: float = 0.02, q0: float = 200.0, pmax: float = 250.0,
                  tau_s: float = 0.6, creep_frac: float = 0.05, creep_tau_s: float = 20.0, noise_mbar: float = 0.3,
-                 sensor_range=(-344.74, 344.74), seed: int = 3, pos_max: int = 2470 * 16):
+                 sensor_range=(-344.74, 344.74), seed: int = 3, pos_max: int = 2470 * 16,
+                 escape_past: Optional[int] = None):
         self.get_freq = get_freq
         self.x_touch, self.k, self.h0 = x_touch, k_mm_per_count, h0_mm
         self.r_line, self.r_tube, self.q0, self.pmax = r_line, r_tube, q0, pmax   # R in mbar per (uL/min)
@@ -653,6 +711,8 @@ class PinchPlant:
         self.x = 0                         # squeeze (motor counts) relative to the start
         self.x_max = 0                     # deepest squeeze reached (tests)
         self.x_relax = 0.0                 # part of the squeeze the tube has relaxed back
+        self.escape_past = escape_past     # counts past touch at which the tube slips out (tests); then open
+        self.escaped = False
         self.pos = pos_max // 2
         self.P = 0.0
         self.t = clock()
@@ -667,6 +727,9 @@ class PinchPlant:
 
     def _gap(self) -> float:
         past = (self.x - self.x_relax) - self.x_touch
+        if self.escape_past is not None and (self.escaped or past > self.escape_past):
+            self.escaped = True
+            return self.h0
         return self.h0 - self.k * past if past > 0 else self.h0
 
     def _p_target(self) -> float:

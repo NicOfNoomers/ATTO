@@ -241,5 +241,90 @@ ok = not g6.faults and pmax6 < 327.5
 print(f"   faults {g6.faults}; highest point {pmax6:.1f} mbar -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 g6.stop_flag.set(); c6.close()
+
+
+def rig_case(title, freq, plant_kw, test, pinch_extra=None, pmax_after_close=None):
+    """One pinch_pq block on a PinchPlant through the real runner method; returns (faults, rows, plant, ctl)."""
+    print(title)
+    fz = types.SimpleNamespace(freq=0)
+    pl = pinch_control.PinchPlant(get_freq=lambda: fz.freq, **plant_kw)
+    sy = pc.DummySyringe(pl, 0, 2470 * 16, "v1")
+    gg = make_fake()
+    gg.stop_flag.set(); gg.ctl.close()
+    gg.stop_flag = threading.Event()
+    cc = pinch_control.PinchController({"limit_mbar": 340, "pinch": {**FAST, "back_limit_pos": sy.position(),
+                                                                     "approach_steps": 20, **(pinch_extra or {})}},
+                                       sy, pl.read_sensor, pl.range, run_dir=tempfile.mkdtemp(),
+                                       on_fault=gg.faults.append, microsteps=16)
+    cc.open(); cc.zero_sensor(0.5); gg.t0 = time.perf_counter(); cc.start(gg.t0)
+    gg.ctl, gg.run_dir = cc, cc.run_dir
+    gg._set_freq = lambda hz: setattr(fz, "freq", int(hz))
+
+    def feeder():
+        while not gg.stop_flag.is_set():
+            q = pl.pump_flow_ul_min(pl.pressure())
+            with gg.lock:
+                gg.buf_t.append(time.perf_counter() - gg.t0); gg.buf_flow.append(q)
+            time.sleep(0.04)
+    threading.Thread(target=feeder, daemon=True).start()
+    if pmax_after_close is not None:                 # the pump weakens once the closing sweep is done (23 Nov)
+        def weaken():
+            while not gg.stop_flag.is_set():
+                if cc.s_ceiling is not None and cc.mode != "closing":
+                    pl.pmax = pmax_after_close
+                    return
+                time.sleep(0.05)
+        threading.Thread(target=weaken, daemon=True).start()
+    try:
+        m.PumpTestRunner._exec_pinch_pq(gg, test, lambda: None)
+    except RuntimeError as e:
+        print(f"   run stopped: {e}")
+    rows = list(csv.DictReader(open(os.path.join(gg.run_dir, "pinch_pq.csv"))))
+    for r in rows:
+        print(f"   {r['kind']:8s} target {r['target_mbar']:>4s} past {r['past_touch_steps']:>6s}  P {r['p_mean_mbar']:>7s}  {r['reason']}")
+    gg.stop_flag.set(); cc.close()
+    return gg.faults, rows, pl, cc
+
+
+# case 7: the 23 Nov 1090 Hz end: the pump can only make ~205 mbar now, targets up to 250; the tube slips out
+# 40 steps past touch. The hold must stop at the closed point + 3 steps, never reach the slip point.
+f7, rows7, pl7, c7 = rig_case(
+    "case 7: target above what the pump makes now; tube slips out 40 steps past touch (the 1090 Hz failure)", 1090,
+    dict(x_touch=480, k_mm_per_count=0.0085, r_line=0.015, r_tube=0.003, q0=440.0, pmax=205.0, tau_s=0.3,
+         escape_past=40 * 16),
+    {"type": "pinch_pq", "frequencies_hz": [1090], "positions_steps": [0, 4, 8, 12], "targets_mbar": [100, 150, 200, 250],
+     "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5, "measure_s": 1.0, "hold_timeout_s": 25, "spin_up_s": 1.0})
+deep7 = (pl7.x_max - pl7.x_touch) / 16
+ok = not f7 and not pl7.escaped and deep7 < 30
+print(f"   deepest squeeze {deep7:.1f} steps past the plant's contact; ceiling {c7.s_ceiling}; escaped {pl7.escaped}; "
+      f"faults {f7} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+
+# case 7b: the pump makes 250 mbar during the closing sweep, then only 190 (gas, as at 1090 Hz on 23 Nov);
+# a 240 mbar target is inside the map, so only the closed-point ceiling stops the hold; the tube slips at 25 steps
+f7b, rows7b, pl7b, c7b = rig_case(
+    "case 7b: the pump weakens after the closing sweep (250 -> 190 mbar); target 240 inside the map; slip at 25 steps", 1090,
+    dict(x_touch=480, k_mm_per_count=0.0085, r_line=0.015, r_tube=0.003, q0=440.0, pmax=250.0, tau_s=0.3,
+         escape_past=25 * 16),
+    {"type": "pinch_pq", "frequencies_hz": [1090], "positions_steps": [], "targets_mbar": [100, 240],
+     "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5, "measure_s": 1.0, "hold_timeout_s": 40, "spin_up_s": 1.0},
+    pmax_after_close=190.0)
+deep7b = (pl7b.x_max - pl7b.x_touch) / 16
+evs7b = [e["event"] for e in c7b.events]
+ok = not f7b and not pl7b.escaped and "hold_at_closed" in evs7b
+print(f"   deepest squeeze {deep7b:.1f} steps past the plant's contact; ceiling {c7b.s_ceiling}; escaped {pl7b.escaped}; "
+      f"hold_at_closed {'hold_at_closed' in evs7b}; faults {f7b} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+
+# case 8: the tube slips out INSIDE the closing range (12 steps past contact): the run must stop on 'tube lost'
+f8, rows8, pl8, c8 = rig_case(
+    "case 8: the tube slips out during the closing sweep -> fault 'tube lost', retract, run stops", 520,
+    dict(x_touch=480, k_mm_per_count=0.0085, r_line=0.015, r_tube=0.003, q0=470.0, pmax=600.0, tau_s=0.3,
+         escape_past=int(9.5 * 16)),
+    {"type": "pinch_pq", "frequencies_hz": [520], "positions_steps": [], "targets_mbar": [100],
+     "close_max": True, "max_stop_mbar": 300, "settle_s": 0.5, "measure_s": 1.0, "hold_timeout_s": 25, "spin_up_s": 1.0})
+ok = bool(f8) and "tube lost" in f8[0] and c8.mode == "fault"
+print(f"   faults {f8} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
 print("all OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
