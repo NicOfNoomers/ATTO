@@ -61,7 +61,9 @@ ap.add_argument("--fine-mbar", type=float, default=40.0,
 ap.add_argument("--fine-counts", type=int, default=6, help="size of those moves (counts; 6 = 0.15 uL, ~5 mbar)")
 ap.add_argument("--room-steps", type=float, default=150.0, help="most full steps the plunger may move from its start")
 ap.add_argument("--min-mbar", type=float, default=-330.0)
-ap.add_argument("--limit", type=float, default=100.0)
+ap.add_argument("--limit", type=float, default=250.0,
+                help="upper limit (mbar): clamping the inlet squeezes liquid through the pump into the closed line "
+                     "(+38 mbar per clamping on 26 Nov, the line sat at 125 mbar and faulted a 100 mbar limit)")
 ap.add_argument("--prime-f", type=int, default=0, help="priming frequency before the test (0 = none)")
 ap.add_argument("--prime-rounds", type=int, default=4)
 ap.add_argument("--checks", default="", help="flow-check frequencies after each priming round and after the test")
