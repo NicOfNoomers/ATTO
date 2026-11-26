@@ -2028,14 +2028,16 @@ class PumpTestRunner(LiveSessionBase):
         """{'type': 'pressure', 'target_mbar': 'pv_steps', 'direction': 'pull' | 'push', 'until_mbar': -300,
         'target_dp_mbar': 20, 'first_counts': 4, 'min_counts': 2, 'max_counts': 160, 'max_moves': 40,
         'hold_s': 8, 'measure_s': 4, 'takeup_mbar': 2, 'takeup_counts': 4, 'takeup_wait_s': 0.25,
-        'takeup_max_counts': 800, 'room_steps': 150, 'back_limit_pos': null, 'section': ..., 'rep': ...}
+        'takeup_max_counts': 800, 'room_steps': 150, 'back_limit_pos': null, 'fine_mbar': 0, 'fine_counts': 4,
+        'section': ..., 'rep': ...}
 
         G test (compliance = volume step / pressure step): open-loop syringe moves of a known number of
         motor counts, each followed by a hold with the motor energised and no regulation; pump at 0 Hz.
         1. Slack: after a direction change the plunger doesn't move for some counts (~350 at x16, lab
            29 Oct); small moves (takeup_counts) until the pressure has moved takeup_mbar (row 'takeup').
-        2. Moves: the first is first_counts; then sized for target_dp_mbar from the last measured mbar per
-           count (min_counts..max_counts). Each move: hold hold_s, pressure averaged over its last
+        2. Moves: fine_mbar > 0: fixed fine_counts moves until the pressure is fine_mbar from where the moves
+           began (resolves the check valve's cracking pressure); then the first is first_counts and the rest
+           are sized for target_dp_mbar from the last measured mbar per count (min_counts..max_counts). Each move: hold hold_s, pressure averaged over its last
            measure_s, one row in pv_steps.csv (counts, uL, pressure before/after, drift during the hold,
            flow-sensor volume as a cross-check).
         Ends when the held pressure has passed until_mbar, after max_moves, when the next move would leave
@@ -2050,6 +2052,9 @@ class PumpTestRunner(LiveSessionBase):
         until = g("until_mbar", -300.0 if d < 0 else 0.0)
         target_dp = max(1.0, g("target_dp_mbar", 20.0))
         first_c = max(1, int(g("first_counts", 4)))
+        # fine start: fixed small moves until the pressure is fine_mbar from where the moves began, so the
+        # check valve's opening (compliance steps up from line to line + chamber) is resolved
+        fine_mbar, fine_c = max(0.0, g("fine_mbar", 0.0)), max(1, int(g("fine_counts", first_c)))
         min_c, max_c = max(1, int(g("min_counts", 2))), max(1, int(g("max_counts", 160)))
         max_moves = max(1, int(g("max_moves", 40)))
         hold_s, meas_s = max(1.0, g("hold_s", 8.0)), max(0.5, g("measure_s", 4.0))
@@ -2161,6 +2166,9 @@ class PumpTestRunner(LiveSessionBase):
         # 2. Volume steps
         k_est: Optional[float] = None             # |mbar| per count in this direction, from the last move
         n_done, why = 0, f"max_moves {max_moves}"
+        p_begin = prev["p"]
+        if fine_mbar > 0:
+            max_moves += int(fine_mbar / 2.0)     # room for the fine moves on top
         for move in range(1, max_moves + 1):
             if stopped() or ctl.mode == "fault":
                 why = "stopped"
@@ -2168,7 +2176,10 @@ class PumpTestRunner(LiveSessionBase):
             if passed(prev["p"]):
                 why = f"reached {prev['p']:.1f} mbar (until {until:g})"
                 break
-            counts = first_c if k_est is None else int(min(max_c, max(min_c, round(target_dp / k_est))))
+            if fine_mbar > 0 and abs(prev["p"] - p_begin) < fine_mbar:
+                counts = fine_c
+            else:
+                counts = first_c if k_est is None else int(min(max_c, max(min_c, round(target_dp / k_est))))
             if k_est is not None:                 # don't let the next move cross the limits
                 room_mbar = (prev["p"] - guard_lo) if d < 0 else (guard_hi - prev["p"])
                 if counts * k_est * 1.5 > room_mbar:

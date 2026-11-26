@@ -98,9 +98,11 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 40.0,
+      "fine_counts": 6,
       "section": "g_pull",
       "rep": 1,
-      "plan_moves": 17
+      "plan_moves": 25
     },
     {
       "type": "pressure",
@@ -119,6 +121,8 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 0.0,
+      "fine_counts": 6,
       "section": "g_push",
       "rep": 1,
       "plan_moves": 17
@@ -140,9 +144,11 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 40.0,
+      "fine_counts": 6,
       "section": "g_pull",
       "rep": 2,
-      "plan_moves": 17
+      "plan_moves": 25
     },
     {
       "type": "pressure",
@@ -161,6 +167,8 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 0.0,
+      "fine_counts": 6,
       "section": "g_push",
       "rep": 2,
       "plan_moves": 17
@@ -182,9 +190,11 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 40.0,
+      "fine_counts": 6,
       "section": "g_pull",
       "rep": 3,
-      "plan_moves": 17
+      "plan_moves": 25
     },
     {
       "type": "pressure",
@@ -203,6 +213,8 @@
       "takeup_wait_s": 0.25,
       "takeup_max_counts": 800,
       "room_steps": 150.0,
+      "fine_mbar": 0.0,
+      "fine_counts": 6,
       "section": "g_push",
       "rep": 3,
       "plan_moves": 17

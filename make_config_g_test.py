@@ -55,6 +55,10 @@ ap.add_argument("--hold-s", type=float, default=8.0, help="hold after each move 
 ap.add_argument("--measure-s", type=float, default=4.0, help="last part of the hold that is averaged")
 ap.add_argument("--first-counts", type=int, default=4, help="first move of a staircase (motor counts; 4 = 0.1 uL)")
 ap.add_argument("--max-counts", type=int, default=160, help="largest move (counts; 160 = 4 uL)")
+ap.add_argument("--fine-mbar", type=float, default=40.0,
+                help="pull staircases start with fixed small moves over this many mbar: they resolve where the "
+                     "outlet valve opens (its cracking pressure, ~10-20 mbar expected); 0 = off")
+ap.add_argument("--fine-counts", type=int, default=6, help="size of those moves (counts; 6 = 0.15 uL, ~5 mbar)")
 ap.add_argument("--room-steps", type=float, default=150.0, help="most full steps the plunger may move from its start")
 ap.add_argument("--min-mbar", type=float, default=-330.0)
 ap.add_argument("--limit", type=float, default=100.0)
@@ -109,11 +113,13 @@ def prompt(title, text, plan_s=60):
 
 
 def pv(direction, until, rep, section, plan_moves):
+    fine = a.fine_mbar if direction == "pull" else 0.0
     return {"type": "pressure", "target_mbar": "pv_steps", "direction": direction, "until_mbar": until,
             "target_dp_mbar": a.dp, "first_counts": a.first_counts, "min_counts": 2, "max_counts": a.max_counts,
             "max_moves": 40, "hold_s": a.hold_s, "measure_s": a.measure_s, "takeup_mbar": 2.0, "takeup_counts": 4,
-            "takeup_wait_s": 0.25, "takeup_max_counts": 800, "room_steps": a.room_steps, "section": section,
-            "rep": rep, "plan_moves": plan_moves}
+            "takeup_wait_s": 0.25, "takeup_max_counts": 800, "room_steps": a.room_steps,
+            "fine_mbar": fine, "fine_counts": a.fine_counts, "section": section, "rep": rep,
+            "plan_moves": plan_moves + (int(fine / 5.0) if fine else 0)}
 
 
 nmoves = int(round(abs(a.until) / a.dp)) + 2
@@ -196,7 +202,7 @@ cfg = {
     "tests": tests,
 }
 per_stair = nmoves * (a.hold_s + 0.3) + a.hold_s + 20
-est = a.reps * 2 * per_stair + (a.reps - 1) * 30 + 3 * 60 + 6
+est = a.reps * 2 * per_stair + a.reps * int(a.fine_mbar / 5.0) * (a.hold_s + 0.3) + (a.reps - 1) * 30 + 3 * 60 + 6
 est += sum(t["duration_s"] for t in tests if t.get("type") == "constant")
 out = a.out or ("config_g_test_baseline" if a.baseline else "config_g_test") + ("_dummy" if a.dummy else "") + ".json"
 with open(out, "w", encoding="utf-8") as f:

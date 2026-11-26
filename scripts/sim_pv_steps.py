@@ -39,6 +39,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--gas", type=float, default=2.5, help="gas in the chamber at 1 atm (uL)")
 ap.add_argument("--c-line", type=float, default=0.020, help="outlet line compliance (uL/mbar)")
 ap.add_argument("--c-ch", type=float, default=0.0015, help="chamber structural compliance (uL/mbar)")
+ap.add_argument("--crack", type=float, default=15.0, help="outlet valve cracking pressure (mbar)")
 ap.add_argument("--hold", type=float, default=2.0, help="hold per move (s); the rig config uses 8")
 a = ap.parse_args()
 MS = 16
@@ -53,9 +54,9 @@ def quad_p(c: float, g: float, v: float, pa: float) -> float:
 
 
 class ValvedPlant(pc.PressurePlant):
-    def __init__(self, c_line, c_ch, gas_ul, **kw):
+    def __init__(self, c_line, c_ch, gas_ul, crack_mbar=0.0, **kw):
         super().__init__(compliance_ul_mbar=c_line, r_leak=1e12, **kw)
-        self.c_line, self.c_ch, self.gas = c_line, c_ch, gas_ul
+        self.c_line, self.c_ch, self.gas, self.crack = c_line, c_ch, gas_ul, crack_mbar
         self.v_ch = 0.0                       # excess volume in the chamber compartment (uL)
 
     def pressure(self) -> float:
@@ -63,10 +64,10 @@ class ValvedPlant(pc.PressurePlant):
             self._advance()
             p_line = (self.v_in - self.v_ch) / self.c_line
             p_ch = quad_p(self.c_ch, self.gas, self.v_ch, self.p_atm)
-            if p_line < p_ch:                 # outlet valve opens: the chamber follows the line
-                p = quad_p(self.c_line + self.c_ch, self.gas, self.v_in, self.p_atm)
-                self.v_ch = self.c_ch * p + self.gas * p / (self.p_atm + p)
-                p_line = p
+            if p_line < p_ch - self.crack:    # outlet valve opens: the chamber follows, crack above the line
+                q = quad_p(self.c_line + self.c_ch, self.gas, self.v_in + self.c_line * self.crack, self.p_atm)
+                self.v_ch = self.c_ch * q + self.gas * q / (self.p_atm + q)
+                p_line = q - self.crack
             return p_line
 
     def unclamp_inlet(self):
@@ -77,7 +78,7 @@ class ValvedPlant(pc.PressurePlant):
 
 def make_fake(room_steps_note=""):
     fake = types.SimpleNamespace()
-    plant = ValvedPlant(a.c_line, a.c_ch, a.gas, ul_per_step=0.4049 / MS, backlash=22 * MS, p_lose=0.0,
+    plant = ValvedPlant(a.c_line, a.c_ch, a.gas, a.crack, ul_per_step=0.4049 / MS, backlash=22 * MS, p_lose=0.0,
                         pos_max=2470 * MS, sensor_range=(-344.74, 344.74), offset_mbar=0.8, noise_mbar=0.3)
     syr = pc.DummySyringe(plant, 0, 2470 * MS, "v2")
     faults = []
@@ -124,7 +125,8 @@ def block(direction, until, rep, section, **kw):
     b = {"type": "pressure", "target_mbar": "pv_steps", "direction": direction, "until_mbar": until,
          "target_dp_mbar": 20, "first_counts": 4, "min_counts": 2, "max_counts": 160, "max_moves": 40,
          "hold_s": a.hold, "measure_s": a.hold / 2, "takeup_mbar": 2.0, "takeup_counts": 4, "takeup_wait_s": 0.15,
-         "takeup_max_counts": 800, "room_steps": 150, "section": section, "rep": rep}
+         "takeup_max_counts": 800, "room_steps": 150, "section": section, "rep": rep,
+         "fine_mbar": 40.0 if direction == "pull" else 0.0, "fine_counts": 6}
     b.update(kw)
     return b
 
@@ -153,6 +155,7 @@ ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
 csv_path = os.path.join(f.run_dir, "pv_steps.csv")
+print(f"   pv_steps.csv: {csv_path}")
 
 print("   analysis (scripts/analyze_pv_steps.py, line from the push branch):")
 res = subprocess.run([sys.executable, os.path.join(W, "scripts", "analyze_pv_steps.py"), f.run_dir,
@@ -164,9 +167,12 @@ if res.returncode != 0:
 else:
     import json
     fit = json.loads(res.stdout.strip().splitlines()[-1])
-    ok = abs(fit["gas_ul"] - a.gas) <= max(0.35, 0.15 * a.gas) and abs(fit["c_struct_ul_mbar"] - a.c_ch) <= 0.0008
-    print(f"   recovered gas {fit['gas_ul']:.2f} uL (true {a.gas}), structure {fit['c_struct_ul_mbar']:.4f} "
-          f"uL/mbar (true {a.c_ch}) -> {'OK' if ok else 'FAIL'}")
+    ok = (abs(fit["gas_ul"] - a.gas) <= max(0.35, 0.15 * a.gas) and abs(fit["c_struct_ul_mbar"] - a.c_ch) <= 0.0008
+          and abs(fit["p_crack_mbar"] - a.crack) <= 5.0 and fit["gate"].get("verdict") in ("GO", "NO-GO"))
+    print(f"   recovered gas {fit['gas_ul']:.2f} uL (true {a.gas}; {fit['gas_ul_no_pcr']:.2f} without the P_cr "
+          f"correction), structure {fit['c_struct_ul_mbar']:.4f} uL/mbar (true {a.c_ch}), P_cr "
+          f"{fit['p_crack_mbar']:.1f} mbar (true {a.crack}), gate {fit['gate'].get('verdict')} -> "
+          f"{'OK' if ok else 'FAIL'}")
     ok_all &= ok
 
 print("case 2: room_steps 3 -> ends on the room limit")
