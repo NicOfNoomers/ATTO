@@ -123,7 +123,8 @@ def pv(direction, until, rep, section, plan_moves):
     return {"type": "pressure", "target_mbar": "pv_steps", "direction": direction, "until_mbar": until,
             "target_dp_mbar": a.dp, "first_counts": a.first_counts, "min_counts": 2, "max_counts": a.max_counts,
             "max_moves": 40, "hold_s": a.hold_s, "measure_s": a.measure_s, "takeup_mbar": 2.0, "takeup_counts": 4,
-            "takeup_wait_s": 0.25, "takeup_max_counts": 800, "room_steps": a.room_steps,
+            "takeup_wait_s": 0.3, "takeup_max_counts": 800, "room_steps": a.room_steps,
+            "max_c_ul_mbar": 0.15, "check_counts": 30,
             "fine_mbar": fine, "fine_counts": a.fine_counts, "section": section, "rep": rep,
             "plan_moves": plan_moves + (int(fine / 5.0) if fine else 0)}
 

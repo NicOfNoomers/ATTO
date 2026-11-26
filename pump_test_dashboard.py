@@ -2055,6 +2055,9 @@ class PumpTestRunner(LiveSessionBase):
         # fine start: fixed small moves until the pressure is fine_mbar from where the moves began, so the
         # check valve's opening (compliance steps up from line to line + chamber) is resolved
         fine_mbar, fine_c = max(0.0, g("fine_mbar", 0.0)), max(1, int(g("fine_counts", first_c)))
+        # too-soft check: compliance over the last check_counts counts above max_c_ul_mbar = air in the line or an
+        # open path (inlet clamp) -> stop the run (0 = off)
+        max_c_chk, chk_counts = max(0.0, g("max_c_ul_mbar", 0.0)), max(1, int(g("check_counts", 30)))
         min_c, max_c = max(1, int(g("min_counts", 2))), max(1, int(g("max_counts", 160)))
         max_moves = max(1, int(g("max_moves", 40)))
         hold_s, meas_s = max(1.0, g("hold_s", 8.0)), max(0.5, g("measure_s", 4.0))
@@ -2135,12 +2138,18 @@ class PumpTestRunner(LiveSessionBase):
 
         # 1. Slack after the direction change
         pos_b, t_tk = ctl.syr.position(), rel()
-        moved, p_ref, responded = 0, start["p"], tk_max == 0
+        # Engaged = a single small move changes the pressure by >= takeup_mbar / 2 (min 1 mbar) the expected way:
+        # judged per move, so a slow creep during the search can't fake it (26 Nov rig: 48 counts "took up" a
+        # ~350-count slack on a creeping line). Two moves in a row the wrong way = syringe reversed.
+        moved, responded, wrong = 0, tk_max == 0, 0
+        thr = max(1.0, 0.5 * tk_mbar)
+        p_ref = start["p"]
         while not responded and moved < tk_max and not stopped() and ctl.mode != "fault":
             if not room_ok(tk_c):
                 self._emit("status", f"PV steps ({dname}): no room left while taking up the slack.")
                 ctl.note("pv_end", "room (slack)")
                 return
+            p_bm = ctl.p
             if not ctl.syr.move(d * tk_c):
                 self._emit("status", "PV steps: the syringe did not confirm a move; block ended.")
                 ctl.note("pv_end", "move not confirmed (slack)")
@@ -2148,19 +2157,21 @@ class PumpTestRunner(LiveSessionBase):
             moved += tk_c
             if not wait_to(CLOCK() + tk_wait):
                 return
-            p_now = ctl.p
-            responded = abs(p_now - p_ref) >= tk_mbar or beyond_guard(p_now)
+            step = d * (ctl.p - p_bm)
+            responded = step >= thr or beyond_guard(ctl.p)
+            wrong = wrong + 1 if step <= -thr else 0
+            if wrong >= 2:
+                ctl.note("pv_end", f"pressure moved the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar on a {dname})")
+                raise RuntimeError(f"PV steps: a {dname} moved the pressure the wrong way ({p_ref:.1f} -> "
+                                   f"{ctl.p:.1f} mbar): is the syringe mounted the other way round? Run stopped.")
         if stopped() or ctl.mode == "fault":
             return
         if not responded:
-            self._emit("status", f"PV steps ({dname}): the pressure did not respond within {tk_max} counts "
-                                 f"(line open? syringe not coupled?); block ended.")
+            # 26 Nov rig: an open inlet / air left whole staircases without data; stop instead of carrying on
             ctl.note("pv_end", f"no response within {tk_max} counts")
-            return
-        if tk_max and d * (ctl.p - p_ref) < 0:
-            ctl.note("pv_end", f"pressure moved the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar on a {dname})")
-            raise RuntimeError(f"PV steps: a {dname} moved the pressure the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar): "
-                               f"is the syringe mounted the other way round? Run stopped.")
+            raise RuntimeError(f"PV steps ({dname}): no {tk_c}-count move changed the pressure by {thr:g} mbar within "
+                               f"{tk_max} counts ({tk_max * ulpc:.1f} uL): the line is open (inlet clamp?), full of "
+                               f"air, or the syringe is not coupled. Run stopped.")
         prev = measure_hold(CLOCK())
         if prev is None:
             return
@@ -2171,6 +2182,7 @@ class PumpTestRunner(LiveSessionBase):
         k_est: Optional[float] = None             # |mbar| per count in this direction, from the last move
         n_done, why = 0, f"max_moves {max_moves}"
         p_begin = prev["p"]
+        recent: List[Tuple[int, float]] = []      # (counts, pressure change the expected way) for the soft check
         if fine_mbar > 0:
             max_moves += int(fine_mbar / 2.0)     # room for the fine moves on top
         for move in range(1, max_moves + 1):
@@ -2212,6 +2224,21 @@ class PumpTestRunner(LiveSessionBase):
                 ctl.note("pv_end", f"move {move} changed the pressure by {dp:+.1f} mbar on a {dname}")
                 raise RuntimeError(f"PV steps: {dname} move {move} changed the pressure by {dp:+.1f} mbar, the wrong "
                                    f"way (syringe reversed or the line opened?). Run stopped.")
+            if max_c_chk > 0:
+                recent.append((counts, d * dp))
+                while len(recent) > 1 and sum(c for c, _ in recent) - recent[0][0] >= chk_counts:
+                    recent.pop(0)
+                n_c = sum(c for c, _ in recent)
+                if n_c >= chk_counts:
+                    c_win = n_c * ulpc / max(1e-6, sum(x for _, x in recent))
+                    if c_win > max_c_chk or sum(x for _, x in recent) <= 0:
+                        msg = (f"over the last {n_c} counts ({n_c * ulpc:.2f} uL) the pressure moved "
+                               f"{sum(x for _, x in recent):+.1f} mbar: compliance "
+                               + (f"{c_win:.2f}" if sum(x for _, x in recent) > 0 else "unbounded")
+                               + f" uL/mbar, limit {max_c_chk:g} (a closed, bubble-free line is ~0.03)")
+                        ctl.note("pv_end", "too soft: " + msg)
+                        raise RuntimeError(f"PV steps ({dname}): line too soft, {msg}. Air in the syringe or line, "
+                                           f"or the inlet is open. Run stopped.")
             if d * dp > 0.2:                      # the pressure moved the expected way
                 k_est = abs(dp) / counts
             self._emit("status", f"PV {section} {dname} #{move}: {d * counts:+d} counts ({d * counts * ulpc:+.3f} uL) "

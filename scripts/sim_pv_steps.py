@@ -70,6 +70,23 @@ class ValvedPlant(pc.PressurePlant):
                 p_line = q - self.crack
             return p_line
 
+    inlet_open, crack_in = False, 10.0       # inlet left open: the chamber can't go below -crack_in
+
+    def pin_inlet(self):
+        if not self.inlet_open:
+            return
+        p_floor = -(self.crack_in + self.crack)
+        p_line = (self.v_in - self.v_ch) / self.c_line
+        if p_line < p_floor:                  # liquid comes in from the reservoir through the pump
+            q = -self.crack_in
+            self.v_ch = self.c_ch * q + self.gas * q / (self.p_atm + q)
+            self.v_in = self.c_line * p_floor + self.v_ch
+
+    def read_sensor(self):
+        with self.lock:
+            self.pin_inlet()
+        return super().read_sensor()
+
     def unclamp_inlet(self):
         with self.lock:                       # the chamber refills from the reservoir to 0 mbar
             self.v_in -= self.v_ch
@@ -124,9 +141,9 @@ def make_fake(room_steps_note=""):
 def block(direction, until, rep, section, **kw):
     b = {"type": "pressure", "target_mbar": "pv_steps", "direction": direction, "until_mbar": until,
          "target_dp_mbar": 20, "first_counts": 4, "min_counts": 2, "max_counts": 160, "max_moves": 40,
-         "hold_s": a.hold, "measure_s": a.hold / 2, "takeup_mbar": 2.0, "takeup_counts": 4, "takeup_wait_s": 0.15,
+         "hold_s": a.hold, "measure_s": a.hold / 2, "takeup_mbar": 2.0, "takeup_counts": 4, "takeup_wait_s": 0.3,
          "takeup_max_counts": 800, "room_steps": 150, "section": section, "rep": rep,
-         "fine_mbar": 40.0 if direction == "pull" else 0.0, "fine_counts": 6}
+         "fine_mbar": 40.0 if direction == "pull" else 0.0, "fine_counts": 6, "max_c_ul_mbar": 0.15, "check_counts": 30}
     b.update(kw)
     return b
 
@@ -199,5 +216,23 @@ print(f"   raised: {raised}; highest pressure {p_max_seen:.1f} mbar -> {'OK' if 
 ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
+for name, setup in (("case 4: air in the line (0.5 uL/mbar, as on the rig 26 Nov) -> stops in the slack search",
+                     lambda pl: setattr(pl, "c_line", 0.5)),
+                    ("case 5: inlet left open (pressure stalls at -25 mbar) -> 'line too soft' stop",
+                     lambda pl: setattr(pl, "inlet_open", True))):
+    print(name)
+    f = make_fake()
+    setup(f.plant)
+    t1 = time.perf_counter()
+    try:
+        f._exec_pv_steps(block("pull", -300.0, 1, "soft"), lambda: None)
+        raised = None
+    except RuntimeError as e:
+        raised = str(e)
+    ok = raised is not None and ("too soft" in raised or "no 4-count move" in raised) and not f.faults
+    print(f"   raised after {time.perf_counter() - t1:.0f} s: {raised} -> {'OK' if ok else 'FAIL'}")
+    ok_all &= ok
+    f.stop_flag.set()
+    f.ctl.close()
 print("ALL OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)
