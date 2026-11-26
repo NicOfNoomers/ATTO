@@ -1,0 +1,90 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "meta": {
+    "name": "G test",
+    "description": "G test (pump undriven): 1 x [syringe pull staircase 0 -> -300 mbar (~20 mbar per move), push staircase back to ~0]; hold 12 s per move, mean of the last 5 s; pv_steps.csv. Inlet clamped, suction from the outlet; prompts for the hand changes (--on-prompt wait, someone at the rig). Limits -330 / +250 mbar; plunger room 70 full steps. MANUAL bench supply set by hand to 2.50 V; PPK2 on. Analysis: scripts/analyze_pv_steps.py.",
+    "operator": "",
+    "pump_id": "261123-1"
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "pressure": {
+    "enabled": true,
+    "backend": "arduino",
+    "port": "COM6",
+    "baud": 115200,
+    "firmware": "v2",
+    "sensor": {
+      "backend": "fluigent",
+      "channel": 1
+    },
+    "limit_mbar": 250.0,
+    "min_mbar": -330.0,
+    "microsteps": 16,
+    "pos_min": 0,
+    "pos_max": 2470,
+    "pos_margin": 30,
+    "clear_reserve_steps": 150,
+    "ul_per_step": 0.4049,
+    "release_on_stop": true
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  },
+  "tests": [
+    {
+      "type": "pressure",
+      "target_mbar": "pv_steps",
+      "direction": "pull",
+      "until_mbar": -300.0,
+      "target_dp_mbar": 20.0,
+      "first_counts": 24,
+      "min_counts": 2,
+      "max_counts": 160,
+      "max_moves": 40,
+      "hold_s": 12.0,
+      "measure_s": 5.0,
+      "takeup_mbar": 2.0,
+      "takeup_counts": 6,
+      "takeup_wait_s": 0.3,
+      "takeup_max_counts": 1600,
+      "room_steps": 70.0,
+      "max_c_ul_mbar": 0.5,
+      "check_counts": 120,
+      "fine_mbar": 0.0,
+      "fine_counts": 6,
+      "section": "g_pull",
+      "rep": 1,
+      "plan_moves": 17
+    }
+  ]
+}

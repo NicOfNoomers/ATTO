@@ -81,7 +81,9 @@ ap.add_argument("--no-push", action="store_true",
                 help="pull staircases only (the flow sensor measures the pump side directly, 26 Nov: no line baseline needed)")
 ap.add_argument("--takeup-max", type=int, default=800, help="slack search limit (counts); 26 Nov rig: 600-800+ per reversal")
 ap.add_argument("--takeup-counts", type=int, default=4, help="slack search move (counts)")
-ap.add_argument("--max-c", type=float, default=0.15, help="too-soft stop (uL/mbar over the last 30 counts)")
+ap.add_argument("--max-c", type=float, default=0.15, help="too-soft stop (uL/mbar over the last --check-counts counts)")
+ap.add_argument("--check-counts", type=int, default=30,
+                help="window of the too-soft check (counts); 26 Nov rig: 6-count moves stick-slip, use >= 120 there")
 ap.add_argument("--no-stopcock", action="store_true",
                 help="the syringe sits directly on the outlet line (no 3-way stopcock): no priming, checks or "
                      "sensor zero (the cracking-pressure step makes the result independent of the zero)")
@@ -138,7 +140,7 @@ def pv(direction, until, rep, section, plan_moves):
             "target_dp_mbar": a.dp, "first_counts": a.first_counts, "min_counts": 2, "max_counts": a.max_counts,
             "max_moves": 40, "hold_s": a.hold_s, "measure_s": a.measure_s, "takeup_mbar": 2.0, "takeup_counts": a.takeup_counts,
             "takeup_wait_s": 0.3, "takeup_max_counts": a.takeup_max, "room_steps": a.room_steps,
-            "max_c_ul_mbar": a.max_c, "check_counts": 30,
+            "max_c_ul_mbar": a.max_c, "check_counts": a.check_counts,
             "fine_mbar": fine, "fine_counts": a.fine_counts, "section": section, "rep": rep,
             "plan_moves": plan_moves + (int(fine / 5.0) if fine else 0)}
 
