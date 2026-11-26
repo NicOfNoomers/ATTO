@@ -139,11 +139,79 @@ def line_gate(groups, pa, gate):
     return out
 
 
+def flow_fit(rows, pa, pcrs=(0.0, 10.0, 20.0), min_dp=10.0, c_open=0.002, plot=None):
+    """Pump-side compliance from the flow sensor (it sits between the syringe and the pump, so it sees only the
+    volume that leaves the pump side: flow-sensor-to-pump tubing, chamber, inlet stub; the syringe side's softness,
+    slack and creep drop out). Only full-size pull moves (|dp| >= min_dp; on ~5 mbar moves the flow is noise),
+    from the first one with C = dv_flow / -dp > c_open (the outlet valve open) on.
+    Fit on the CUMULATIVE volume per staircase (robust to volume landing in the next move's window):
+      V_out(p) = c_staircase + C_struct (p_start - p) + V_g0 p_atm / (p_atm + p + P_cr)
+    (isothermal gas at the chamber pressure p + P_cr; P_cr, the outlet valve's cracking pressure, is not measured
+    here, so the fit is given for each value in pcrs)."""
+    pts = {}                                       # staircase -> [(p, V_out)]
+    shown = []
+    for key, br in branches([r for r in rows if r["direction"] == "pull" and r.get("dv_flow_ul")]).items():
+        opened, v = False, 0.0
+        for r in br:
+            if abs(r["dp"]) < min_dp:
+                continue
+            c = float(r["dv_flow_ul"]) / -r["dp"]
+            opened = opened or c > c_open
+            if not opened:
+                continue
+            if key not in pts:
+                pts[key] = [(r["p1"], 0.0)]
+            v += float(r["dv_flow_ul"])
+            pts[key].append((r["p2"], v))
+            r["c_flow"] = c
+            shown.append(r)
+    n = sum(len(v) for v in pts.values())
+    if n - len(pts) < 3:
+        raise SystemExit(f"too few full-size pull moves with flow after the valve opened: {n - len(pts)}")
+    print(f"flow-sensor fit (pump side): {len(pts)} staircase(s), {n - len(pts)} moves, "
+          f"{max(p for v in pts.values() for p, _ in v):.0f} to {min(p for v in pts.values() for p, _ in v):.0f} mbar")
+    for r in shown:
+        print(f"   {r['p1']:7.1f} -> {r['p2']:7.1f} mbar  flow {float(r['dv_flow_ul']):7.4f} uL  C {r['c_flow']:.5f} uL/mbar")
+    out = {}
+    for pcr in pcrs:
+        X, Y = [], []
+        for key, v in pts.items():                 # remove each staircase's own intercept (demean)
+            g = [(-p_, pa / (pa + p_ + pcr), vv) for p_, vv in v]
+            m0, m1, m2 = (sum(t[i] for t in g) / len(g) for i in range(3))
+            X += [(t[0] - m0, t[1] - m1) for t in g]
+            Y += [t[2] - m2 for t in g]
+        (cs, vg), (se_cs, se_vg), sd = lstsq(X, Y, [lambda x: x[0], lambda x: x[1]])
+        out[pcr] = {"c_struct": cs, "se_c_struct": se_cs, "gas_ul": vg, "se_gas_ul": se_vg, "resid_sd_ul": sd}
+        print(f"   P_cr {pcr:4.0f} mbar: C_struct {cs:.5f} +- {se_cs:.5f} uL/mbar ({cs * 1e-11:.2e} m^3/Pa), "
+              f"V_g0 {vg:.2f} +- {se_vg:.2f} uL (residual SD {sd:.3f} uL)")
+    allp = [(p_, vv) for v in pts.values() for p_, vv in v]
+    for key, v in pts.items():
+        (a0, b0), (sa, sb), _ = lstsq([p_ for p_, _ in v], [vv for _, vv in v], [lambda x: 1.0, lambda x: x])
+        print(f"   straight line, staircase {key[1:]}: C_total {-b0:.5f} +- {sb:.5f} uL/mbar over "
+              f"{v[0][0]:.0f}..{v[-1][0]:.0f} mbar")
+    if plot:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(6.4, 4.2))
+        for key, v in pts.items():
+            ax.plot([p_ for p_, _ in v], [vv for _, vv in v], "o-", ms=4, lw=0.8, label=f"{key[0][-24:]} {key[1]}")
+        ax.set_xlabel("line pressure (mbar gauge)")
+        ax.set_ylabel("volume out of the pump side (uL, flow sensor)")
+        ax.legend(fontsize=7)
+        fig.tight_layout()
+        fig.savefig(plot, dpi=150)
+        print(f"   plot: {plot}")
+    return out
+
 def main():
     ap = argparse.ArgumentParser(description="G test: chamber compliance and gas volume")
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--baseline", action="append", default=[], help="line-only run(s) (pump replaced by a union)")
     ap.add_argument("--line-from-push", action="store_true", help="line = the push branch of the same run(s)")
+    ap.add_argument("--from-flow", action="store_true",
+                    help="pump-side compliance from the flow sensor (no line baseline needed; 26 Nov rig: the syringe side "
+                         "is ~17x softer than the pump side and its coupling slips, so this is the primary result)")
     ap.add_argument("--line-from-reps", action="store_true",
                     help="line = the line_pull staircases of the same run (make_config_g_test.py --auto: inlet kept "
                          "clamped, the outlet valve holds the chamber low after rep 1), above the rep-1 bottom + 30 mbar")
@@ -156,6 +224,11 @@ def main():
     ap.add_argument("--plot", default=None)
     ap.add_argument("--json", action="store_true", help="last line: the fit as JSON")
     a = ap.parse_args()
+    if a.from_flow:
+        out = flow_fit([r for run in a.runs for r in load(run) if abs(r["dp"]) >= a.min_dp], a.p_atm, plot=a.plot)
+        if a.json:
+            print(json.dumps({str(k): v for k, v in out.items()}))
+        return 0
     if not a.baseline and not a.line_from_push and not a.line_from_reps:
         raise SystemExit("give --baseline <run_dir>, --line-from-reps or --line-from-push")
     pa = a.p_atm
