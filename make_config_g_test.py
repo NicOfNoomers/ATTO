@@ -73,6 +73,10 @@ ap.add_argument("--address", default="COM7")
 ap.add_argument("--v", type=int, default=2500)
 ap.add_argument("--firmware", choices=("v2", "v1", "auto"), default="v2",
                 help="COM6 runs syringe_v2; auto-detect misreads it as v1 after the reset (23 Nov)")
+ap.add_argument("--auto", action="store_true",
+                help="no prompts at all (NM 26 Nov: setup ready, inlet stays clamped): rep 1 pulls line + chamber; with the "
+                     "inlet clamped the outlet valve then holds the chamber low, so reps 2.. pull the line alone "
+                     "(section line_pull: the in-situ line baseline)")
 ap.add_argument("--no-stopcock", action="store_true",
                 help="the syringe sits directly on the outlet line (no 3-way stopcock): no priming, checks or "
                      "sensor zero (the cracking-pressure step makes the result independent of the zero)")
@@ -91,6 +95,8 @@ if a.measure_s >= a.hold_s or a.hold_s < 2.0:
 checks = [int(x) for x in a.checks.split(",") if x.strip()]
 if a.baseline and (a.prime_f or checks):
     raise SystemExit("--baseline has no pump: no priming or checks")
+if a.auto and not a.no_stopcock:
+    raise SystemExit("--auto needs --no-stopcock (nobody turns a stopcock)")
 if a.no_stopcock and (a.prime_f or checks):
     raise SystemExit("--no-stopcock: the pump would pump into the 1 mL syringe (a 20 s check is ~80 uL, more than "
                      "the plunger room): no priming or checks in this run")
@@ -168,7 +174,8 @@ tests = []
 if a.supply == "rsd3305p" and not a.baseline:
     tests.append({"type": "voltage", "voltage_mv": a.v, "while_waiting": "zero", "settle_s": 5,
                   "note": f"{a.v / 1000:.2f} V by the supply"})
-tests.append(prompt("Setup A: open loop" if not a.no_stopcock else "Setup: syringe on the outlet", setup_a, 120))
+if not a.auto:
+    tests.append(prompt("Setup A: open loop" if not a.no_stopcock else "Setup: syringe on the outlet", setup_a, 120))
 if not a.no_stopcock:
     tests.append({"type": "pressure", "target_mbar": "zero", "wait_s": 3, "seconds": 3})
 if a.prime_f:
@@ -179,18 +186,20 @@ if a.prime_f:
         tests += check_blocks("prime_check", r)
 elif checks:
     tests += check_blocks("prime_check", 0)
-tests.append(prompt("Setup B: closed for the G test", setup_b, 60))
+if not a.auto:
+    tests.append(prompt("Setup B: closed for the G test", setup_b, 60))
 for rep in range(1, a.reps + 1):
-    tests.append(pv("pull", a.until, rep, "g_pull", nmoves))
+    tests.append(pv("pull", a.until, rep, "g_pull" if (rep == 1 or not a.auto) else "line_pull", nmoves))
     tests.append(pv("push", -10.0, rep, "g_push", nmoves))
-    if rep < a.reps and not a.baseline:
+    if rep < a.reps and not a.baseline and not a.auto:
         tests.append(prompt(f"Reset after rep {rep}", reset, 30))
 if a.no_stopcock:
     end_text = "Open the inlet clamp (the chamber back to the reservoir's pressure). The run then ends."
 else:
     end_text = ("Open the inlet clamp, stopcock back to the RESERVOIR (Setup A)." if not a.baseline
                 else "Stopcock back to the RESERVOIR, unclamp the inlet stub.")
-tests.append(prompt("Back to the open loop" if not a.no_stopcock else "Open the inlet", end_text, 60))
+if not a.auto:
+    tests.append(prompt("Back to the open loop" if not a.no_stopcock else "Open the inlet", end_text, 60))
 tests += check_blocks("post_check", 0)
 
 if a.supply == "manual":
