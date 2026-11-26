@@ -139,6 +139,46 @@ def line_gate(groups, pa, gate):
     return out
 
 
+def static_zero_volumes(run_dir, rows, zero_s=8.0):
+    """Re-integrate each move's flow-sensor volume from flow.csv with the STATIC zero (mean flow in the first
+    zero_s seconds of the run, before any move) instead of the flow in the previous hold: after a move the flow
+    decays with tau ~9 s (26 Nov, g_test7) and is still 2-3 uL/min when the hold ends, so the per-hold "offset" is
+    the unfinished response, not the sensor zero. Interval per move: previous row's measure-window end to this
+    row's. Sets r["dv_flow_ul"]; returns the zero (uL/min)."""
+    path = os.path.join(run_dir, "flow.csv")
+    if not os.path.exists(path):
+        raise SystemExit(f"--flow-zero static needs {path}")
+    ts, qs = [], []
+    for r in csv.DictReader(open(path, encoding="utf-8")):
+        try:
+            t, q = float(r["t_s"]), float(r["flow"])
+        except (KeyError, ValueError):
+            continue
+        if q == q:
+            ts.append(t)
+            qs.append(q)
+    mine = [r for r in rows if r["src"] == run_dir]
+    t_first = min(float(r["t_move_s"]) for r in mine) if mine else zero_s
+    sel = [q for t, q in zip(ts, qs) if t < min(zero_s, t_first - 0.5)]
+    if len(sel) < 10:
+        raise SystemExit(f"{run_dir}: fewer than 10 flow samples before the first move for the static zero")
+    z = sum(sel) / len(sel)
+    allrows = [r for r in csv.DictReader(open(os.path.join(run_dir, "pv_steps.csv"), encoding="utf-8"))]
+    prev_to = {}
+    last = None
+    for r in allrows:
+        prev_to[r["row"]] = last
+        last = float(r["t_meas_to_s"])
+    for r in mine:
+        a, b = prev_to.get(r["row"]), float(r["t_meas_to_s"])
+        if a is None:
+            continue
+        pts = [(t, q) for t, q in zip(ts, qs) if a <= t <= b]
+        r["dv_flow_ul"] = str(sum(0.5 * (q0 + q1 - 2 * z) * (t1 - t0) / 60.0
+                                  for (t0, q0), (t1, q1) in zip(pts, pts[1:])))
+    return z
+
+
 def flow_fit(rows, pa, pcrs=(0.0, 10.0, 20.0), min_dp=10.0, c_open=0.002, plot=None):
     """Pump-side compliance from the flow sensor (it sits between the syringe and the pump, so it sees only the
     volume that leaves the pump side: flow-sensor-to-pump tubing, chamber, inlet stub; the syringe side's softness,
@@ -212,6 +252,9 @@ def main():
     ap.add_argument("--from-flow", action="store_true",
                     help="pump-side compliance from the flow sensor (no line baseline needed; 26 Nov rig: the syringe side "
                          "is ~17x softer than the pump side and its coupling slips, so this is the primary result)")
+    ap.add_argument("--flow-zero", choices=("hold", "static"), default="static",
+                    help="flow-sensor zero: static = mean flow before the first move of each run (default; the hold "
+                         "flow is the unfinished response, tau ~9 s), hold = the flow in the previous hold (as logged)")
     ap.add_argument("--line-from-reps", action="store_true",
                     help="line = the line_pull staircases of the same run (make_config_g_test.py --auto: inlet kept "
                          "clamped, the outlet valve holds the chamber low after rep 1), above the rep-1 bottom + 30 mbar")
@@ -225,7 +268,12 @@ def main():
     ap.add_argument("--json", action="store_true", help="last line: the fit as JSON")
     a = ap.parse_args()
     if a.from_flow:
-        out = flow_fit([r for run in a.runs for r in load(run) if abs(r["dp"]) >= a.min_dp], a.p_atm, plot=a.plot)
+        frows = [r for run in a.runs for r in load(run) if abs(r["dp"]) >= a.min_dp]
+        if a.flow_zero == "static":
+            for run in a.runs:
+                z = static_zero_volumes(run, frows)
+                print(f"static flow zero {z:+.3f} uL/min ({os.path.basename(run.rstrip(chr(47)))})")
+        out = flow_fit(frows, a.p_atm, plot=a.plot)
         if a.json:
             print(json.dumps({str(k): v for k, v in out.items()}))
         return 0
