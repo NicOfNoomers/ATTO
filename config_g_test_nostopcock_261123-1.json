@@ -66,14 +66,16 @@
       "target_mbar": "prompt",
       "title": "Setup: syringe on the outlet",
       "text": "Syringe directly on the outlet line (pump -> flow -> pressure -> syringe), liquid-filled, no bubbles; pump at 0 Hz; inlet line OPEN to the reservoir. The plunger needs at least 80 full steps (~1.8 mm) of travel BEHIND it (this test pulls; the run never goes further than that from where it starts). If it has less, press Stop now.",
-      "plan_s": 120
+      "plan_s": 120,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
       "target_mbar": "prompt",
       "title": "Setup B: closed for the G test",
       "text": "Open the inlet clamp ~5 s if it was closed (chamber at the reservoir's pressure), then CLAMP the inlet right at the pump's inlet port. Pump stays at 0 Hz.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
@@ -130,7 +132,8 @@
       "target_mbar": "prompt",
       "title": "Reset after rep 1",
       "text": "Open the inlet clamp for ~5 s (the chamber refills from the reservoir, back to ~0 mbar), then clamp it again at the same point.",
-      "plan_s": 30
+      "plan_s": 30,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
@@ -187,7 +190,8 @@
       "target_mbar": "prompt",
       "title": "Reset after rep 2",
       "text": "Open the inlet clamp for ~5 s (the chamber refills from the reservoir, back to ~0 mbar), then clamp it again at the same point.",
-      "plan_s": 30
+      "plan_s": 30,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
@@ -244,7 +248,8 @@
       "target_mbar": "prompt",
       "title": "Open the inlet",
       "text": "Open the inlet clamp (the chamber back to the reservoir's pressure). The run then ends.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 80.0
     }
   ]
 }

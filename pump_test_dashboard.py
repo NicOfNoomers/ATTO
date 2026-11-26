@@ -1924,8 +1924,9 @@ class PumpTestRunner(LiveSessionBase):
                 try:
                     title = str(test.get("title") or "Rig change by hand")
                     ctl.note("prompt", title)
-                    self._ask_operator("pressure_prompt", title, str(test.get("text") or "")
-                                       + "\nPress 'Done - continue' when ready.")
+                    if self._ask_operator("pressure_prompt", title, str(test.get("text") or "")
+                                          + "\nPress 'Done - continue' when ready."):
+                        self._pv_recover_after_handling(ctl, title, test)
                 finally:
                     ctl.set_handling(False)
                 return
@@ -1984,6 +1985,41 @@ class PumpTestRunner(LiveSessionBase):
                 self._emit("status", f"Pressure {target:g} mbar not settled within {timeout:g} s; continuing.")
 
     # ---- G test: pressure-volume steps with the syringe ----
+    def _pv_recover_after_handling(self, ctl, title: str, test: Dict[str, Any]):
+        """After a hand change the line can sit outside the limits: closing a clamp or reconnecting a line pushes
+        liquid into the closed line (26 Nov: +38 mbar per clamping; a 100 mbar limit faulted the moment the prompt
+        ended). While the limits are still in handling mode, let it down with the controller's release (the one mode
+        the handling guard lets the motor move in above the limit) to p_max - 40, instead of faulting. Watched
+        against the G test's room (room_steps from where the run's first syringe move began). Suction below the
+        floor isn't pushed back (it never came from a hand change on 26 Nov): RuntimeError with what to do."""
+        time.sleep(1.0)                             # the reading settles after the hand change
+        p = ctl.p
+        lo, hi = ctl.p_min + 20.0, ctl.p_max - 20.0
+        if math.isnan(p) or lo <= p <= hi:
+            return
+        if p < lo:
+            raise RuntimeError(f"After '{title}' the line sits at {p:.0f} mbar, below {lo:.0f}: open the inlet clamp "
+                               f"briefly to let it back up, then restart.")
+        target = min(hi - 20.0, 30.0)               # near 0: the staircase then starts close to where it should
+        if self._pv_origin is None:
+            self._pv_origin = ctl.syr.position()
+        room = int(round(safe_float(test.get("room_steps", 80), 80.0) * ctl.m))
+        ctl.note("recover", f"{p:.1f} mbar after '{title}', release to {target:.0f}")
+        self._emit("status", f"After '{title}': {p:.0f} mbar, above {hi:.0f}; the syringe lets it down to "
+                             f"{target:.0f} mbar")
+        ctl.release(rate_mbar_s=30.0, floor_mbar=target)
+        t_end = CLOCK() + safe_float(test.get("recover_timeout_s", 90), 90.0)
+        while ctl.mode == "release" and not self.stop_flag.is_set():
+            if abs(ctl.syr.position() - self._pv_origin) > room or CLOCK() > t_end:
+                ctl.idle()
+                raise RuntimeError(f"After '{title}' the syringe could not let the line down from {p:.0f} mbar "
+                                   f"(now {ctl.p:.0f}) within the plunger room / time: open the inlet clamp briefly "
+                                   f"to let it down by hand, then restart.")
+            time.sleep(0.1)
+        ctl.hold_position()
+        ctl.note("recovered", f"{ctl.p:.1f} mbar, syringe at {ctl.syr.position()}")
+        self._emit("status", f"Pressure back at {ctl.p:.0f} mbar.")
+
     def _write_pv_row(self, row: Dict[str, Any]):
         if self._pv_writer is None:
             self._pv_file = open(os.path.join(self.run_dir, "pv_steps.csv"), "a", newline="", encoding="utf-8")

@@ -66,7 +66,8 @@
       "target_mbar": "prompt",
       "title": "Setup A: open loop",
       "text": "Stopcock to the RESERVOIR (pump -> flow -> pressure -> stopcock -> reservoir), inlet line OPEN, pump at 0 Hz. Syringe on the motor with at least 150 full steps (~3.4 mm) of travel BEHIND the plunger; line from the outlet to the syringe short and stiff, no bubbles.",
-      "plan_s": 120
+      "plan_s": 120,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -427,7 +428,8 @@
       "target_mbar": "prompt",
       "title": "Setup B: closed for the G test",
       "text": "Stopcock to the SYRINGE (closed to the reservoir). CLAMP the inlet right at the pump's inlet port. Pump stays at 0 Hz.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -484,7 +486,8 @@
       "target_mbar": "prompt",
       "title": "Reset after rep 1",
       "text": "Open the inlet clamp for ~5 s (the chamber refills from the reservoir, back to ~0 mbar), then clamp it again at the same point.",
-      "plan_s": 30
+      "plan_s": 30,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -541,7 +544,8 @@
       "target_mbar": "prompt",
       "title": "Reset after rep 2",
       "text": "Open the inlet clamp for ~5 s (the chamber refills from the reservoir, back to ~0 mbar), then clamp it again at the same point.",
-      "plan_s": 30
+      "plan_s": 30,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -598,7 +602,8 @@
       "target_mbar": "prompt",
       "title": "Back to the open loop",
       "text": "Open the inlet clamp, stopcock back to the RESERVOIR (Setup A).",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 150.0
     },
     {
       "type": "constant",

@@ -234,5 +234,28 @@ for name, setup in (("case 4: air in the line (0.5 uL/mbar, as on the rig 26 Nov
     ok_all &= ok
     f.stop_flag.set()
     f.ctl.close()
+print("case 6: a hand change leaves the line above the limit (clamping) -> released, no fault, then the staircase runs")
+f = make_fake()
+f._pv_recover_after_handling = types.MethodType(m.PumpTestRunner._pv_recover_after_handling, f)
+f.ctl.set_handling(True)
+with f.plant.lock:
+    f.plant.v_in += 150.0 * f.plant.c_line      # +150 mbar in the line (limit 100 in this sim)
+time.sleep(1.0)
+p_hand = f.ctl.p
+f._pv_recover_after_handling(f.ctl, "clamp", {"room_steps": 150})
+f.ctl.set_handling(False)
+p_after = f.ctl.p
+time.sleep(0.5)
+try:
+    f._exec_pv_steps(block("pull", -100.0, 1, "after_recover"), lambda: None)
+    raised = None
+except RuntimeError as e:
+    raised = str(e)
+ok = p_hand > 100 and p_after <= 31.0 and not f.faults and raised is None and f.ctl.p <= -95
+print(f"   hand change {p_hand:.0f} mbar -> released to {p_after:.1f}; staircase to {f.ctl.p:.0f} mbar; faults {f.faults}; "
+      f"raised {raised} -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+f.stop_flag.set()
+f.ctl.close()
 print("ALL OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)

@@ -117,7 +117,8 @@ def check_blocks(section, rnd):
 
 
 def prompt(title, text, plan_s=60):
-    return {"type": "pressure", "target_mbar": "prompt", "title": title, "text": text, "plan_s": plan_s}
+    return {"type": "pressure", "target_mbar": "prompt", "title": title, "text": text, "plan_s": plan_s,
+            "room_steps": a.room_steps}
 
 
 def pv(direction, until, rep, section, plan_moves):

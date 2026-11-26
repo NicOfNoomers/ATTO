@@ -66,14 +66,16 @@
       "target_mbar": "prompt",
       "title": "Setup: syringe on the outlet",
       "text": "BASELINE (no pump): the pump is replaced by a stiff union between the inlet stub and the outlet line; the syringe sits directly on the outlet line; everything liquid-filled, no bubbles. The plunger needs at least 80 full steps (~1.8 mm) of travel BEHIND it (this test pulls; the run never goes further than that from where it starts). If it has less, press Stop now.",
-      "plan_s": 120
+      "plan_s": 120,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
       "target_mbar": "prompt",
       "title": "Setup B: closed for the G test",
       "text": "CLAMP the inlet stub at the same point as with the pump.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 80.0
     },
     {
       "type": "pressure",
@@ -230,7 +232,8 @@
       "target_mbar": "prompt",
       "title": "Open the inlet",
       "text": "Open the inlet clamp (the chamber back to the reservoir's pressure). The run then ends.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 80.0
     }
   ]
 }

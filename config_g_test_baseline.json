@@ -66,7 +66,8 @@
       "target_mbar": "prompt",
       "title": "Setup A: open loop",
       "text": "BASELINE (no pump): the pump is replaced by a stiff union between the inlet stub and the outlet line (same tubing, sensors and stopcock as with the pump). Stopcock to the RESERVOIR, inlet stub OPEN, everything liquid-filled without bubbles. Syringe on the motor with at least 150 full steps (~3.4 mm) of travel BEHIND the plunger.",
-      "plan_s": 120
+      "plan_s": 120,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -79,7 +80,8 @@
       "target_mbar": "prompt",
       "title": "Setup B: closed for the G test",
       "text": "Stopcock to the SYRINGE (closed to the reservoir). Clamp the inlet stub at the same point as with the pump.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 150.0
     },
     {
       "type": "pressure",
@@ -236,7 +238,8 @@
       "target_mbar": "prompt",
       "title": "Back to the open loop",
       "text": "Stopcock back to the RESERVOIR, unclamp the inlet stub.",
-      "plan_s": 60
+      "plan_s": 60,
+      "room_steps": 150.0
     }
   ]
 }
