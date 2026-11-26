@@ -230,7 +230,13 @@ def main():
     if c_tot0 == c_tot0:
         print(f"chamber share of the total compliance near 0 mbar: {(cs + vg / pa) / c_tot0:.0%}")
     (cs0, vg0), _, _ = lstsq([xg(r["p1"], r["p2"], 0.0) for r in pulls], ys, [lambda x: 1.0, lambda x: x], wts(pulls))
-    print(f"without the P_cr correction: V_g0 {vg0:.2f} uL, C_struct {cs0:.5f}")
+    (csh, vgh), _, _ = lstsq([xg(r["p1"], r["p2"], 0.5 * pcr) for r in pulls], ys, [lambda x: 1.0, lambda x: x],
+                             wts(pulls))
+    print(f"without the P_cr correction: V_g0 {vg0:.2f} uL, C_struct {cs0:.5f}; with half of it: V_g0 {vgh:.2f} uL")
+    if pcr_list:
+        print("  note: after an inlet reset the chamber refills through the inlet valve to about -P_cr(inlet), so the "
+              "step found measures P_cr(outlet) + P_cr(inlet), an upper bound on the offset while pulling. If the "
+              "valves match, half is right: the truth lies between the half and full results.")
 
     # The line subtraction dominates the uncertainty: refit with other line models
     lx = [xg(r["p1"], r["p2"], 0.0) for r in line_rows]
@@ -291,7 +297,7 @@ def main():
         print(f"plot: {a.plot}")
     if a.json:
         print(json.dumps({"gas_ul": vg, "se_gas_ul": se_vg, "c_struct_ul_mbar": cs, "se_c_struct": se_cs,
-                          "p_crack_mbar": pcr, "p_crack_estimates": pcr_list, "gas_ul_no_pcr": vg0,
+                          "p_crack_mbar": pcr, "p_crack_estimates": pcr_list, "gas_ul_no_pcr": vg0, "gas_ul_half_pcr": vgh,
                           "c_line_at0": lb[0], "c_line_slope": lb[1], "n_pull": len(pulls), "n_line": len(line_rows),
                           "c_total_near0": c_tot0, "two_level": two, "other_line_models": alt, "gate": gate}))
 
