@@ -2157,6 +2157,10 @@ class PumpTestRunner(LiveSessionBase):
                                  f"(line open? syringe not coupled?); block ended.")
             ctl.note("pv_end", f"no response within {tk_max} counts")
             return
+        if tk_max and d * (ctl.p - p_ref) < 0:
+            ctl.note("pv_end", f"pressure moved the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar on a {dname})")
+            raise RuntimeError(f"PV steps: a {dname} moved the pressure the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar): "
+                               f"is the syringe mounted the other way round? Run stopped.")
         prev = measure_hold(CLOCK())
         if prev is None:
             return
@@ -2204,6 +2208,10 @@ class PumpTestRunner(LiveSessionBase):
                 break
             dp = row("step", move, counts, prev, cur, t_mv)
             n_done += 1
+            if d * dp < -3.0:                     # a move the wrong way (and not noise): stop, don't keep going
+                ctl.note("pv_end", f"move {move} changed the pressure by {dp:+.1f} mbar on a {dname}")
+                raise RuntimeError(f"PV steps: {dname} move {move} changed the pressure by {dp:+.1f} mbar, the wrong "
+                                   f"way (syringe reversed or the line opened?). Run stopped.")
             if d * dp > 0.2:                      # the pressure moved the expected way
                 k_est = abs(dp) / counts
             self._emit("status", f"PV {section} {dname} #{move}: {d * counts:+d} counts ({d * counts * ulpc:+.3f} uL) "

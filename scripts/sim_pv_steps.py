@@ -184,5 +184,20 @@ print(f"   moved {pos_span} counts (room {3 * MS}) -> {'OK' if ok else 'FAIL'}")
 ok_all &= ok
 f.stop_flag.set()
 f.ctl.close()
+print("case 3: syringe mounted the other way round -> the block raises, the run stops")
+f = make_fake()
+_move = f.ctl.syr.move
+f.ctl.syr.move = lambda steps, timeout_s=10.0: _move(-steps, timeout_s)    # every move goes the other way
+try:
+    f._exec_pv_steps(block("pull", -300.0, 1, "reversed"), lambda: None)
+    raised = None
+except RuntimeError as e:
+    raised = str(e)
+p_max_seen = max(h[1] for h in f.ctl.hist)
+ok = raised is not None and "wrong way" in raised and p_max_seen < 30 and not f.faults
+print(f"   raised: {raised}; highest pressure {p_max_seen:.1f} mbar -> {'OK' if ok else 'FAIL'}")
+ok_all &= ok
+f.stop_flag.set()
+f.ctl.close()
 print("ALL OK" if ok_all else "FAILED")
 sys.exit(0 if ok_all else 1)

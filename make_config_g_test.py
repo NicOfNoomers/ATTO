@@ -71,6 +71,9 @@ ap.add_argument("--address", default="COM7")
 ap.add_argument("--v", type=int, default=2500)
 ap.add_argument("--firmware", choices=("v2", "v1", "auto"), default="v2",
                 help="COM6 runs syringe_v2; auto-detect misreads it as v1 after the reset (23 Nov)")
+ap.add_argument("--no-stopcock", action="store_true",
+                help="the syringe sits directly on the outlet line (no 3-way stopcock): no priming, checks or "
+                     "sensor zero (the cracking-pressure step makes the result independent of the zero)")
 ap.add_argument("--dummy", action="store_true", help="simulated line, syringe and sensors (no rig)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
@@ -86,6 +89,9 @@ if a.measure_s >= a.hold_s or a.hold_s < 2.0:
 checks = [int(x) for x in a.checks.split(",") if x.strip()]
 if a.baseline and (a.prime_f or checks):
     raise SystemExit("--baseline has no pump: no priming or checks")
+if a.no_stopcock and (a.prime_f or checks):
+    raise SystemExit("--no-stopcock: the pump would pump into the 1 mL syringe (a 20 s check is ~80 uL, more than "
+                     "the plunger room): no priming or checks in this run")
 if a.prime_f and not (1 <= round(0.8 * a.prime_f) and round(1.2 * a.prime_f) <= 3000):
     raise SystemExit("--prime-f: 0.8 F .. 1.2 F must lie within 1..3000 Hz")
 if any(not 1 <= f <= 3000 for f in checks) or (checks and a.check_s < 10):
@@ -139,13 +145,28 @@ else:
                "port. Pump stays at 0 Hz.")
 reset = ("Open the inlet clamp for ~5 s (the chamber refills from the reservoir, back to ~0 mbar), then clamp it "
          "again at the same point.")
+if a.no_stopcock:
+    room_txt = (f"The plunger needs at least {a.room_steps:g} full steps (~{room_mm:.1f} mm) of travel BEHIND it "
+                f"(this test pulls; the run never goes further than that from where it starts). If it has less, "
+                f"press Stop now.")
+    if a.baseline:
+        setup_a = ("BASELINE (no pump): the pump is replaced by a stiff union between the inlet stub and the outlet "
+                   "line; the syringe sits directly on the outlet line; everything liquid-filled, no bubbles. "
+                   + room_txt)
+        setup_b = "CLAMP the inlet stub at the same point as with the pump."
+    else:
+        setup_a = ("Syringe directly on the outlet line (pump -> flow -> pressure -> syringe), liquid-filled, no "
+                   "bubbles; pump at 0 Hz; inlet line OPEN to the reservoir. " + room_txt)
+        setup_b = ("Open the inlet clamp ~5 s if it was closed (chamber at the reservoir's pressure), then CLAMP the "
+                   "inlet right at the pump's inlet port. Pump stays at 0 Hz.")
 
 tests = []
 if a.supply == "rsd3305p" and not a.baseline:
     tests.append({"type": "voltage", "voltage_mv": a.v, "while_waiting": "zero", "settle_s": 5,
                   "note": f"{a.v / 1000:.2f} V by the supply"})
-tests.append(prompt("Setup A: open loop", setup_a, 120))
-tests.append({"type": "pressure", "target_mbar": "zero", "wait_s": 3, "seconds": 3})
+tests.append(prompt("Setup A: open loop" if not a.no_stopcock else "Setup: syringe on the outlet", setup_a, 120))
+if not a.no_stopcock:
+    tests.append({"type": "pressure", "target_mbar": "zero", "wait_s": 3, "seconds": 3})
 if a.prime_f:
     F = a.prime_f
     for r in range(1, a.prime_rounds + 1):
@@ -160,9 +181,12 @@ for rep in range(1, a.reps + 1):
     tests.append(pv("push", -10.0, rep, "g_push", nmoves))
     if rep < a.reps and not a.baseline:
         tests.append(prompt(f"Reset after rep {rep}", reset, 30))
-end_text = ("Open the inlet clamp, stopcock back to the RESERVOIR (Setup A)." if not a.baseline
-            else "Stopcock back to the RESERVOIR, unclamp the inlet stub.")
-tests.append(prompt("Back to the open loop", end_text, 60))
+if a.no_stopcock:
+    end_text = "Open the inlet clamp (the chamber back to the reservoir's pressure). The run then ends."
+else:
+    end_text = ("Open the inlet clamp, stopcock back to the RESERVOIR (Setup A)." if not a.baseline
+                else "Stopcock back to the RESERVOIR, unclamp the inlet stub.")
+tests.append(prompt("Back to the open loop" if not a.no_stopcock else "Open the inlet", end_text, 60))
 tests += check_blocks("post_check", 0)
 
 if a.supply == "manual":
