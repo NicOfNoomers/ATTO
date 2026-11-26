@@ -144,6 +144,9 @@ def main():
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--baseline", action="append", default=[], help="line-only run(s) (pump replaced by a union)")
     ap.add_argument("--line-from-push", action="store_true", help="line = the push branch of the same run(s)")
+    ap.add_argument("--line-from-reps", action="store_true",
+                    help="line = the line_pull staircases of the same run (make_config_g_test.py --auto: inlet kept "
+                         "clamped, the outlet valve holds the chamber low after rep 1), above the rep-1 bottom + 30 mbar")
     ap.add_argument("--p-crack", default="auto", help="chamber above the line reading while pulling (mbar), or auto")
     ap.add_argument("--gate", type=float, default=0.03, help="largest relative spread of the line between repeats")
     ap.add_argument("--p-atm", type=float, default=1013.0, help="absolute pressure at 0 gauge (mbar)")
@@ -153,16 +156,21 @@ def main():
     ap.add_argument("--plot", default=None)
     ap.add_argument("--json", action="store_true", help="last line: the fit as JSON")
     a = ap.parse_args()
-    if not a.baseline and not a.line_from_push:
-        raise SystemExit("give --baseline <run_dir> or --line-from-push")
+    if not a.baseline and not a.line_from_push and not a.line_from_reps:
+        raise SystemExit("give --baseline <run_dir>, --line-from-reps or --line-from-push")
     pa = a.p_atm
 
     rows = [r for run in a.runs for r in load(run) if abs(r["dp"]) >= a.min_dp]
-    pull_all = [r for r in rows if r["direction"] == "pull"]
+    pull_all = [r for r in rows if r["direction"] == "pull" and r["section"] != "line_pull"]
     if a.baseline:
         base = [r for b in a.baseline for r in load(b) if abs(r["dp"]) >= a.min_dp]
         line_rows = [r for r in base if r["direction"] == "pull"]
         base_push = [r for r in base if r["direction"] == "push"]
+    elif a.line_from_reps:
+        p_cut = min(r["p2"] for r in pull_all) + 30.0      # below this the chamber can join again
+        line_rows = [r for r in rows if r["section"] == "line_pull" and r["p2"] >= p_cut]
+        base_push = [r for r in rows if r["direction"] == "push"]
+        print(f"line from the line_pull staircases above {p_cut:.0f} mbar (the chamber held near the rep-1 bottom)")
     else:
         line_rows, base_push = [r for r in rows if r["direction"] == "push"], []
     if len(pull_all) < 4 or len(line_rows) < 3:
@@ -172,7 +180,7 @@ def main():
     lb, lse, lsd = lstsq([r["pm"] for r in line_rows], [r["dv"] / r["dp"] for r in line_rows],
                          [lambda x: 1.0, lambda x: x], wts(line_rows))
     c_line = lambda p: lb[0] + lb[1] * p
-    src = "baseline pull moves" if a.baseline else "push branch"
+    src = "baseline pull moves" if a.baseline else ("line_pull staircases" if a.line_from_reps else "push branch")
     print(f"line ({src}, {len(line_rows)} moves): C_line = {lb[0]:.5f} + {lb[1]:.2e} x p uL/mbar "
           f"(at 0: {lb[0]:.5f}, at -300: {c_line(-300):.5f}; residual SD {lsd:.5f})")
     if base_push:
