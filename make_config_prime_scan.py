@@ -24,6 +24,9 @@ ap.add_argument("--ilim", type=int, default=60, help="supply limit and PPK2 trip
 ap.add_argument("--rest-s", type=float, default=0.0,
                 help="REST instead of priming: each round is this many seconds at 0 Hz before the scan (27 Nov: 600 Hz "
                      "'priming' degraded 261123-2 every round; does it recover at rest?)")
+ap.add_argument("--sweep", default="",
+                help="priming SWEEP instead of the fixed-frequency round: 'lo,hi,steps,step_s' (e.g. 100,2000,20,1.5): up then down (NM 27 Nov: after a rest the air has merged; sweep it out)")
+ap.add_argument("--no-first-scan", action="store_true", help="skip scan_A (the previous run ended with a scan)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
 if not 0 < a.v <= 2500:
@@ -57,11 +60,20 @@ tests = [zero(10.0)]
 if a.supply == "rsd3305p":
     tests.append({"type": "voltage", "voltage_mv": a.v, "while_waiting": "zero", "settle_s": 5,
                   "note": f"{a.v / 1000:.2f} V by the supply"})
-tests += scan("scan_A", 0)
+if not a.no_first_scan:
+    tests += scan("scan_A", 0)
 for r in range(1, a.rounds + 1):
     if a.rest_s > 0:
         tests.append(zero(a.rest_s))
         tests += scan("scan_rest", r)
+        continue
+    if a.sweep:
+        lo, hi, n, st = a.sweep.split(",")
+        for s0, s1 in ((int(lo), int(hi)), (int(hi), int(lo))):
+            tests.append({"type": "sweep", "start_hz": s0, "end_hz": s1, "steps": int(n), "step_duration_s": float(st),
+                          "repeat": 1, "settle_ms": 0, "level_mv": a.v, "section": "prime_sweep", "rep": r})
+        tests.append(zero(10.0))
+        tests += scan("scan_round", r)
         continue
     for fr, sec in ((F, 30.0), (0, 5.0), (round(0.8 * F), 10.0), (0, 5.0), (round(1.2 * F), 10.0), (0, 10.0)):
         tests.append(zero(sec) if fr == 0 else drive(fr, sec, section="prime_at", rep=r))
@@ -87,9 +99,9 @@ cfg = {
               "raw_length_s": 2.0, "post_run_tail_s": 10.0},
     "tests": tests,
 }
-dur = sum(t.get("duration_s", 0) for t in tests if t["type"] == "constant") + 5
+dur = sum(t.get("duration_s", 0) for t in tests if t["type"] == "constant") + 5 + sum(t["steps"] * t["step_duration_s"] for t in tests if t["type"] == "sweep")
 out = a.out or f"config_prime_scan_{a.pump}_{F}Hz.json"
 with open(out, "w", encoding="utf-8") as fh:
     json.dump(cfg, fh, indent=2)
-what = f"{a.rest_s:g} s rest" if a.rest_s > 0 else f"prime at {F} Hz"
+what = f"{a.rest_s:g} s rest" if a.rest_s > 0 else (f"sweep {a.sweep} up+down" if a.sweep else f"prime at {F} Hz")
 print(f"wrote {out}: scan + {a.rounds} x [{what} + scan], about {dur / 60:.0f} min")
