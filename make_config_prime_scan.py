@@ -18,6 +18,8 @@ ap.add_argument("--f", type=int, default=600, help="priming frequency (Hz): the 
 ap.add_argument("--rounds", type=int, default=4)
 ap.add_argument("--v", type=int, default=2500)
 ap.add_argument("--address", default="COM7")
+ap.add_argument("--supply", choices=("rsd3305p", "manual"), default="rsd3305p",
+                help="manual = a fixed DC supply set by hand (27 Nov: 2.5 V bench supply); no voltage step, PPK2 trip only")
 ap.add_argument("--ilim", type=int, default=60, help="supply limit and PPK2 trip (mA); 57 mA trip at the default 60")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
@@ -48,15 +50,20 @@ def scan(name, rnd):
 
 
 F = a.f
-tests = [zero(10.0), {"type": "voltage", "voltage_mv": a.v, "while_waiting": "zero", "settle_s": 5,
-                      "note": f"{a.v / 1000:.2f} V by the supply"}]
+tests = [zero(10.0)]
+if a.supply == "rsd3305p":
+    tests.append({"type": "voltage", "voltage_mv": a.v, "while_waiting": "zero", "settle_s": 5,
+                  "note": f"{a.v / 1000:.2f} V by the supply"})
 tests += scan("scan_A", 0)
 for r in range(1, a.rounds + 1):
     for fr, sec in ((F, 30.0), (0, 5.0), (round(0.8 * F), 10.0), (0, 5.0), (round(1.2 * F), 10.0), (0, 10.0)):
         tests.append(zero(sec) if fr == 0 else drive(fr, sec, section="prime_at", rep=r))
     tests += scan("scan_round", r)
-supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": a.ilim, "max_mv": 2500, "initial_mv": a.v,
-          "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF", "address": a.address}
+if a.supply == "manual":
+    supply = {"mode": "manual", "current_limit_ma": a.ilim, "max_mv": 2500, "initial_mv": a.v, "lead_min": 2}
+else:
+    supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": a.ilim, "max_mv": 2500, "initial_mv": a.v,
+              "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF", "address": a.address}
 cfg = {
     "port": "COM3", "baud": 115200, "read_timeout_s": 0.2, "start_time": None, "end_time": None,
     "break_seconds_between_tests": 0.0, "send_zero_on_exit": True, "require_pump_id": True,
@@ -64,7 +71,7 @@ cfg = {
              "description": (f"Open loop (no pressure control): full quick scan as found (scan_A), then {a.rounds} priming "
                              f"rounds at {F} Hz (30 s, 0.8 F 10 s, 1.2 F 10 s), each followed by a full quick scan "
                              f"({', '.join(map(str, FREQS))} Hz, 10 s each). Primed = two consecutive scans within ~3 %. "
-                             f"{a.v / 1000:.2f} V by the RSD3305P, PPK2 on.")},
+                             + (f"{a.v / 1000:.2f} V by the RSD3305P" if a.supply == "rsd3305p" else f"fixed {a.v / 1000:.2f} V DC supply set by hand") + ", PPK2 on.")},
     "serial": {"protocol": "freq_only"}, "protocol": "freq_only",
     "flow_sensor": {"backend": "fluigent", "channel": 0, "sample_rate_hz": 25.0},
     "supply": supply,
