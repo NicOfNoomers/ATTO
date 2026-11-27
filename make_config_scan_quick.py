@@ -16,7 +16,13 @@ import json
 ap = argparse.ArgumentParser(description="Quick free-flow frequency scan (any pump)")
 ap.add_argument("--address", default="COM7", help="RSD3305P address (default COM7, the lab PC); '' = Power panel")
 ap.add_argument("--v", type=int, default=2500, help="supply voltage in mV (0 < v <= 2500)")
+ap.add_argument("--ilim", type=int, default=60, help="supply current limit and PPK2 trip (mA); NM 27 Nov: 110 for the "
+                "see-through pump 260930_04 (90-95 mA for 1.4-3 s at each drive start in October)")
+ap.add_argument("--pump", default="", help="pump ID (empty: type it / --pump-id)")
+ap.add_argument("--out", default="config_scan_quick.json")
 args = ap.parse_args()
+if not 20 <= args.ilim <= 120:
+    raise SystemExit("--ilim: 20..120 mA")
 if not 0 < args.v <= 2500:
     raise SystemExit("--v must be between 1 and 2500 mV (the pump's limit)")
 
@@ -32,7 +38,7 @@ def drive(hz, s, **meta):
     return {"type": "constant", "frequency_hz": int(hz), "duration_s": float(s), "repeat": 1, "settle_ms": 0, **meta}
 
 
-supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": 60, "max_mv": 2500, "initial_mv": args.v,
+supply = {"mode": "rsd3305p", "channel": 1, "current_limit_ma": args.ilim, "max_mv": 2500, "initial_mv": args.v,
           "tolerance_mv": 50, "step_timeout_s": 10, "off_on_exit": True, "eol": "LF"}
 if args.address:
     supply["address"] = args.address
@@ -46,7 +52,7 @@ cfg = {
     "break_seconds_between_tests": 0.0, "send_zero_on_exit": True,
     "require_pump_id": True,
     "tests": tests,
-    "meta": {"name": "Quick frequency scan", "operator": "", "pump_id": "", "freqs_hz": FREQS,
+    "meta": {"name": "Quick frequency scan", "operator": "", "pump_id": args.pump, "freqs_hz": FREQS,
              "description": (f"Quick free-flow frequency scan, any pump: outlet VENTED, no syringe pressure. "
                              f"{', '.join(map(str, FREQS))} Hz, {DRIVE_S:g} s each with {ZERO_S:g} s zeros, ascending, "
                              f"at {args.v / 1000:.2f} V (RSD3305P), PPK2 on. Type the Pump ID. Run it before AND after "
@@ -56,11 +62,11 @@ cfg = {
     "protocol": "freq_only",
     "flow_sensor": {"backend": "fluigent", "channel": 0, "sample_rate_hz": 25.0},
     "supply": supply,
-    "power": {"enabled": True, "backend": "ppk2", "port": "auto", "bin_ms": 10.0, "watch_ma": 57,
+    "power": {"enabled": True, "backend": "ppk2", "port": "auto", "bin_ms": 10.0, "watch_ma": args.ilim - 3 if args.ilim <= 60 else args.ilim,
               "watch_hold_ms": 300, "raw_every_min": 10, "raw_length_s": 2.0, "post_run_tail_s": 10.0},
 }
-with open("config_scan_quick.json", "w", encoding="utf-8") as fh:
+with open(args.out, "w", encoding="utf-8") as fh:
     json.dump(cfg, fh, indent=2)
 nom = sum(t.get("duration_s", 0) for t in tests if t["type"] == "constant") + 5
-print(f"config_scan_quick.json: {len(FREQS)} frequencies, {nom / 60:.1f} min + 10 s tail; supply "
+print(f"{args.out}: {len(FREQS)} frequencies, {nom / 60:.1f} min + 10 s tail; supply "
       f"{args.address or 'from the Power panel'}")
