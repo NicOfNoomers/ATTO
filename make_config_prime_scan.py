@@ -16,6 +16,7 @@ ap = argparse.ArgumentParser(description="Priming rounds with full-scan checks (
 ap.add_argument("--pump", required=True)
 ap.add_argument("--f", type=int, default=600, help="priming frequency (Hz): the pump's own best")
 ap.add_argument("--rounds", type=int, default=4)
+ap.add_argument("--round-s", type=float, default=30.0, help="seconds at F in each priming round (long priming: e.g. 180)")
 ap.add_argument("--v", type=int, default=2500)
 ap.add_argument("--address", default="COM7")
 ap.add_argument("--supply", choices=("rsd3305p", "manual"), default="rsd3305p",
@@ -75,7 +76,7 @@ for r in range(1, a.rounds + 1):
         tests.append(zero(10.0))
         tests += scan("scan_round", r)
         continue
-    for fr, sec in ((F, 30.0), (0, 5.0), (round(0.8 * F), 10.0), (0, 5.0), (round(1.2 * F), 10.0), (0, 10.0)):
+    for fr, sec in ((F, a.round_s), (0, 5.0), (round(0.8 * F), 10.0), (0, 5.0), (round(1.2 * F), 10.0), (0, 10.0)):
         tests.append(zero(sec) if fr == 0 else drive(fr, sec, section="prime_at", rep=r))
     tests += scan("scan_round", r)
 if a.supply == "manual":
@@ -88,7 +89,7 @@ cfg = {
     "break_seconds_between_tests": 0.0, "send_zero_on_exit": True, "require_pump_id": True,
     "meta": {"name": "Prime with scan checks", "operator": "", "pump_id": a.pump, "freqs_hz": FREQS,
              "description": (f"Open loop (no pressure control): full quick scan as found (scan_A), then {a.rounds} priming "
-                             f"rounds at {F} Hz (30 s, 0.8 F 10 s, 1.2 F 10 s), each followed by a full quick scan "
+                             f"rounds at {F} Hz ({a.round_s:g} s, 0.8 F 10 s, 1.2 F 10 s), each followed by a full quick scan "
                              f"({', '.join(map(str, FREQS))} Hz, 10 s each). Primed = two consecutive scans within ~3 %. "
                              + (f"{a.v / 1000:.2f} V by the RSD3305P" if a.supply == "rsd3305p" else f"fixed {a.v / 1000:.2f} V DC supply set by hand") + ", PPK2 on.")},
     "serial": {"protocol": "freq_only"}, "protocol": "freq_only",
