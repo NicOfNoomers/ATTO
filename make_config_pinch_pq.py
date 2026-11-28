@@ -69,6 +69,9 @@ ap.add_argument("--prime-f", type=int, default=0, help="priming frequency before
 ap.add_argument("--prime-rounds", type=int, default=4, help="priming rounds, each followed by the flow checks")
 ap.add_argument("--checks", default="", help="flow-check frequencies after each priming round and after the PQ, e.g. 520,780,1090")
 ap.add_argument("--check-s", type=float, default=20.0, help="s per check frequency (>= 10; 1 s steps are unusable)")
+ap.add_argument("--check-scan", action="store_true",
+                help="each check is a FULL quick scan (100..1600 Hz, 12 frequencies, 10 s each, ~3 min) instead of the "
+                     "--checks frequencies (NM 27 Nov: the peak moves with priming state; 2-3 frequencies miss it)")
 ap.add_argument("--dummy", action="store_true", help="simulated loop, motor and sensor (test without the rig)")
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
@@ -101,8 +104,15 @@ def drive(hz, sec, **meta):
             "level_mv": a.v, **meta}
 
 
+SCAN_F = [100, 150, 200, 300, 400, 500, 600, 700, 800, 1000, 1300, 1600]
+
+
 def check_blocks(section, rnd):
     out = []
+    if a.check_scan:
+        for f in SCAN_F:
+            out += [drive(f, 10.0, section=section, rep=rnd, check_hz=f), zero(5.0)]
+        return out
     for f in checks:
         out += [drive(f, a.check_s, section=section, rep=rnd, check_hz=f), zero(10.0)]
     return out
@@ -115,7 +125,7 @@ if a.prime_f:
         for f, sec in ((F, 30.0), (0, 5.0), (round(0.8 * F), 10.0), (0, 5.0), (round(1.2 * F), 10.0), (0, 10.0)):
             prime.append(zero(sec) if f == 0 else drive(f, sec, section="prime_at", rep=r))
         prime += check_blocks("prime_check", r)
-elif checks:
+elif checks or a.check_scan:
     prime += check_blocks("prime_check", 0)
 
 tests = []
@@ -128,7 +138,7 @@ tests += [{"type": "constant", "frequency_hz": 0, "duration_s": 10.0, "repeat": 
            "close_max": not a.no_close, "max_stop_mbar": a.max_stop, "settle_s": a.settle_s, "measure_s": a.measure_s,
            "hold_timeout_s": a.hold_timeout_s, "spin_up_s": a.spin_up_s, "section": "pinch_pq", "level_mv": a.v},
           {"type": "constant", "frequency_hz": 0, "duration_s": 10.0, "repeat": 1, "settle_ms": 0}]
-tests += check_blocks("post_check", 0)
+tests += check_blocks("post_check", 0) if (checks or a.check_scan) else []
 if a.supply == "manual":
     supply = {"mode": "manual", "current_limit_ma": 60, "max_mv": 2500, "initial_mv": a.v, "lead_min": 2}
     stxt = f"MANUAL bench supply set by hand to {a.v / 1000:.2f} V (switch it off by hand after the run)"
@@ -167,7 +177,7 @@ cfg = {
 per = a.settle_s + a.measure_s
 npts = 1 + len(positions) + len(targets) + (0 if a.no_close else 1)
 est = len(freqs) * (a.spin_up_s + 30 + npts * per + 20 * len(targets) + 30) + 20
-est += sum(t["duration_s"] for t in prime) + len(checks) * (a.check_s + 10)
+est += sum(t["duration_s"] for t in prime) + (12 * 15.0 if a.check_scan else len(checks) * (a.check_s + 10))
 out = a.out or f"config_pinch_pq_{'_'.join(str(f) for f in freqs)}Hz_{a.supply}{'_dummy' if a.dummy else ''}.json"
 with open(out, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)

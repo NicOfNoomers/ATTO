@@ -1,0 +1,563 @@
+{
+  "port": "COM3",
+  "baud": 115200,
+  "read_timeout_s": 0.2,
+  "start_time": null,
+  "end_time": null,
+  "break_seconds_between_tests": 0.0,
+  "send_zero_on_exit": true,
+  "require_pump_id": true,
+  "meta": {
+    "name": "Prime with scan checks",
+    "operator": "",
+    "pump_id": "261123-2",
+    "freqs_hz": [
+      100,
+      150,
+      200,
+      300,
+      400,
+      500,
+      600,
+      700,
+      800,
+      1000,
+      1300,
+      1600
+    ],
+    "description": "Open loop (no pressure control): full quick scan as found (scan_A), then 1 priming rounds at 600 Hz (30 s, 0.8 F 10 s, 1.2 F 10 s), each followed by a full quick scan (100, 150, 200, 300, 400, 500, 600, 700, 800, 1000, 1300, 1600 Hz, 10 s each). Primed = two consecutive scans within ~3 %. fixed 2.50 V DC supply set by hand, PPK2 on."
+  },
+  "serial": {
+    "protocol": "freq_only"
+  },
+  "protocol": "freq_only",
+  "flow_sensor": {
+    "backend": "fluigent",
+    "channel": 0,
+    "sample_rate_hz": 25.0
+  },
+  "supply": {
+    "mode": "manual",
+    "current_limit_ma": 60,
+    "max_mv": 2500,
+    "initial_mv": 2500,
+    "lead_min": 2
+  },
+  "power": {
+    "enabled": true,
+    "backend": "ppk2",
+    "port": "auto",
+    "bin_ms": 10.0,
+    "watch_ma": 57,
+    "watch_hold_ms": 300,
+    "raw_every_min": 10,
+    "raw_length_s": 2.0,
+    "post_run_tail_s": 10.0
+  },
+  "tests": [
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 100
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 150,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 150
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 200
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 300
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 400
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 600
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 700
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 1300
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_A",
+      "rep": 0,
+      "check_hz": 1600
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 30.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "prime_at",
+      "rep": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 480,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "prime_at",
+      "rep": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 720,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "prime_at",
+      "rep": 1
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 100,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 100
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 150,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 150
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 200,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 200
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 300
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 400,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 400
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 500,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 500
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 600
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 700,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 700
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 800,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 800
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1000,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 1000
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1300,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 1300
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 1600,
+      "duration_s": 10.0,
+      "repeat": 1,
+      "settle_ms": 0,
+      "level_mv": 2500,
+      "section": "scan_round",
+      "rep": 1,
+      "check_hz": 1600
+    },
+    {
+      "type": "constant",
+      "frequency_hz": 0,
+      "duration_s": 5.0,
+      "repeat": 1,
+      "settle_ms": 0
+    }
+  ]
+}

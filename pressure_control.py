@@ -127,6 +127,8 @@ class PressurePlant:
     `backlash` steps move nothing. Lost steps: each step is lost with p_lose. Near the range ends
     (within stick_zone) a move does nothing with p_stick. Creep (soft tubing): a delayed compliance
     creep_frac x C fills with time constant creep_tau_s, so after a push P jumps, then sags.
+    Gas (G test): gas_ul of gas at 1 atm (p_atm_mbar absolute) sits in the line, isothermal, so the
+    volume taken up is C x P + gas_ul x P / (p_atm + P) and the compliance grows at suction.
     """
 
     def __init__(self, get_freq: Callable[[], float] = lambda: 0.0, compliance_ul_mbar: float = 0.25,
@@ -134,9 +136,11 @@ class PressurePlant:
                  q_max: float = 400.0, r_leak: float = 400.0, backlash: int = 6, p_lose: float = 0.02,
                  stick_zone: int = 80, p_stick: float = 0.3, pos_max: int = 2470, sensor_range=(-312.0, 312.0),
                  offset_mbar: float = 1.5, noise_mbar: float = 0.3, seed: int = 1,
-                 creep_frac: float = 0.0, creep_tau_s: float = 2.0):
+                 creep_frac: float = 0.0, creep_tau_s: float = 2.0, gas_ul: float = 0.0,
+                 p_atm_mbar: float = 1013.0):
         self.get_freq = get_freq
         self.C, self.ul_step = compliance_ul_mbar, ul_per_step
+        self.gas_ul, self.p_atm = float(gas_ul), float(p_atm_mbar)
         self.p_shutoff, self.q_per_hz, self.q_max, self.r_leak = p_shutoff, q_per_hz, q_max, r_leak
         self.backlash, self.p_lose, self.stick_zone, self.p_stick = backlash, p_lose, stick_zone, p_stick
         self.pos_max, self.range, self.offset, self.noise = pos_max, sensor_range, offset_mbar, noise_mbar
@@ -157,12 +161,20 @@ class PressurePlant:
         q0 = min(self.q_max, self.q_per_hz * f)
         return max(0.0, q0 * (1.0 - p / self.p_shutoff))
 
+    def _p_of_v(self, v: float) -> float:
+        """Pressure (mbar gauge) for an excess volume v (uL): v = C p + gas x p / (p_atm + p)."""
+        if self.gas_ul <= 0:
+            return v / self.C
+        c, g, pa = self.C, self.gas_ul, self.p_atm
+        b = c * pa + g - v                           # C p^2 + b p - v pa = 0, the root above -p_atm
+        return (-b + math.sqrt(b * b + 4.0 * c * v * pa)) / (2.0 * c)
+
     def _advance(self):
         now = clock()
         dt, self.t = now - self.t, now
         if dt <= 0:
             return
-        p = (self.v_in - self.v_c) / self.C
+        p = self._p_of_v(self.v_in - self.v_c)
         dv = (self.pump_flow_ul_min(p) / 60.0 - p / self.r_leak) * dt
         self.v_in += dv
         if self.creep_frac > 0:
@@ -171,7 +183,7 @@ class PressurePlant:
     def pressure(self) -> float:
         with self.lock:
             self._advance()
-            return (self.v_in - self.v_c) / self.C
+            return self._p_of_v(self.v_in - self.v_c)
 
     def read_sensor(self) -> Tuple[bool, float]:
         p = self.pressure() + self.offset + self.rng.gauss(0.0, self.noise)

@@ -428,6 +428,11 @@ PRESSURE_SETTLE_GUESS_S = 20.0
 PQ_COLS = ["point", "block", "frequency_hz", "target_mbar", "p_mean_mbar", "p_sd_mbar", "flow_mean", "flow_sd",
            "flow_n", "syringe_steps_per_s", "syringe_flow_ul_min", "current_mean_ma", "settled", "t_settle_s",
            "t_start_s", "t_end_s", "pos_start", "pos_end", "syringe_clears", "note"]
+# G test (pressure-volume steps): one row per syringe move. dv_line_ul = volume pushed into the line
+# (negative = pulled out); p_* are means over the last measure_s of the hold before / after the move.
+PV_COLS = ["row", "section", "rep", "direction", "phase", "move", "counts", "dv_line_ul", "pos_before", "pos_after",
+           "p_before_mbar", "p_after_mbar", "dp_mbar", "p_sd_mbar", "drift_mbar_s", "c_ul_per_mbar",
+           "dv_flow_ul", "flow_offset", "t_move_s", "t_meas_from_s", "t_meas_to_s", "note"]
 
 
 def block_type(t: Dict[str, Any]) -> str:
@@ -446,6 +451,14 @@ def block_duration_s(t: Dict[str, Any]) -> float:
     if ttype == "voltage":
         return max(0.0, safe_float(t.get("settle_s", 0), 0.0))
     if ttype == "pressure":
+        key = str(t.get("target_mbar", "release")).lower()
+        if key == "pv_steps":         # plan value: plan_moves holds + the starting hold + the slack take-up
+            hold = safe_float(t.get("hold_s", 8), 8.0)
+            return (safe_float(t.get("plan_moves", 15), 15.0) + 1) * (hold + 0.3) + hold + 20.0
+        if key == "prompt":           # someone at the rig; unknown, this is a guess
+            return safe_float(t.get("plan_s", 60), 60.0)
+        if key == "zero":
+            return safe_float(t.get("wait_s", 2), 2.0) + safe_float(t.get("seconds", 3), 3.0)
         return PRESSURE_SETTLE_GUESS_S if t.get("wait_settled", True) and is_pressure_target(t) else 0.0
     if ttype == "pq":
         n = len(pq_frequencies(t)) * len(t.get("pressures_mbar") or [])
@@ -711,6 +724,36 @@ def serial_send_duty(ser, duty: float, protocol: str):
     duty = clamp(float(duty), 0.0, 1.0)
     ser.write(f"D {duty:.4f}\n".encode("utf-8"))
     ser.flush()
+
+
+def serial_send_drive(ser, carrier_duty: float, carrier_hz: int, protocol: str, ramp_s: Optional[float] = None):
+    """Carrier-PWM amplitude (firmware/pump_driver_duty_*; protocol 'freq_amp' only): A = carrier duty 0..1 (coil
+    amplitude +-D x VM, slow decay), C = carrier Hz, R = start/stop ramp s. The legacy 'D' stays the old on/off duty."""
+    if protocol != "freq_amp":
+        return
+    if ramp_s is not None:
+        ser.write(f"R {clamp(float(ramp_s), 0.0, 1.5):.3f}\n".encode("utf-8"))
+    ser.write(f"C {int(carrier_hz)}\n".encode("utf-8"))
+    ser.write(f"A {clamp(float(carrier_duty), 0.0, 1.0):.4f}\n".encode("utf-8"))
+    ser.flush()
+
+
+def drive_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Driver defaults for protocol 'freq_amp': carrier_duty 1.0 (= today's plain square wave), carrier 50 kHz, no ramp."""
+    d = dict(cfg.get("driver") or {})
+    return {"carrier_duty": float(d.get("carrier_duty", 1.0)), "carrier_hz": int(d.get("carrier_hz", 50000)),
+            "ramp_s": float(d.get("ramp_s", 0.0))}
+
+
+def blocks_use_carrier(blocks: List[Dict[str, Any]]) -> bool:
+    """Any block (groups included) that sets carrier_duty below 1 or a carrier_hz."""
+    for b in blocks:
+        if block_type(b) == "group":
+            if blocks_use_carrier(b.get("blocks") or []):
+                return True
+        elif ("carrier_duty" in b and float(b["carrier_duty"]) < 0.999) or "carrier_hz" in b:
+            return True
+    return False
 
 
 # ---------------- flow backends ----------------
@@ -1306,8 +1349,16 @@ class LiveSessionBase:
         sensor = None
         if sim:
             m = pc.microsteps(c)
+            # optional pressure.sim: line parameters for dry runs (G test: a stiffer line, gas, no leak)
+            s = dict(c.get("sim") or {})
+            kw = {k: s[k] for k in ("compliance_ul_mbar", "gas_ul", "p_atm_mbar", "r_leak", "p_lose", "noise_mbar",
+                                    "offset_mbar", "creep_frac", "creep_tau_s", "seed") if k in s}
+            if s.get("sensor_range"):
+                kw["sensor_range"] = tuple(s["sensor_range"])
             self.plant = pc.PressurePlant(get_freq=self._pump_hz, pos_max=int(c["pos_max"]) * m,
-                                          ul_per_step=0.405 / m, backlash=6 * m)
+                                          ul_per_step=0.405 / m,
+                                          backlash=int(round(safe_float(s.get("backlash_full_steps", 6), 6.0) * m)),
+                                          **kw)
             read, rng = self.plant.read_sensor, self.plant.range
             cal = {}
         else:
@@ -1718,6 +1769,12 @@ class PumpTestRunner(LiveSessionBase):
         self.syringe_clears = 0
         self._pq_file = None
         self._pq_writer = None
+        self._pv_file = None            # pv_steps.csv (G test: syringe volume steps)
+        self._pv_writer = None
+        self._pv_origin: Optional[int] = None   # syringe position where the run's first pv_steps block began
+        self._pv_n = 0
+        self._drive_now: Optional[Tuple[float, int]] = None   # (carrier_duty, carrier_hz) last sent (protocol freq_amp)
+        self._drive_file = None                 # drive_events.csv
 
     def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
@@ -1886,6 +1943,34 @@ class PumpTestRunner(LiveSessionBase):
             raise RuntimeError("'pressure' blocks are for the syringe; in pinch mode use 'pinch' blocks.")
         tgt = test.get("target_mbar", "release")
         if isinstance(tgt, str) or tgt is None:
+            if str(tgt).lower() == "pv_steps":
+                self._exec_pv_steps(test, log_event)
+                return
+            if str(tgt).lower() == "prompt":
+                # A rig change by hand (clamp, stopcock): pump 0 Hz, motor still, limits stop the motor
+                # but don't fault while the operator handles the line
+                self._set_freq(0)
+                log_event()
+                ctl.idle()
+                ctl.set_handling(True)
+                try:
+                    title = str(test.get("title") or "Rig change by hand")
+                    ctl.note("prompt", title)
+                    if self._ask_operator("pressure_prompt", title, str(test.get("text") or "")
+                                          + "\nPress 'Done - continue' when ready."):
+                        self._pv_recover_after_handling(ctl, title, test)
+                finally:
+                    ctl.set_handling(False)
+                return
+            if str(tgt).lower() == "zero":
+                # the line is open to the reservoir: that pressure becomes 0
+                self._set_freq(0)
+                log_event()
+                ctl.idle()
+                time.sleep(max(0.0, safe_float(test.get("wait_s", 2), 2.0)))
+                off = ctl.zero_sensor(max(1.0, safe_float(test.get("seconds", 3), 3.0)))
+                self._emit("status", f"Pressure sensor zeroed: offset {off:.2f} mbar")
+                return
             if str(tgt).lower() == "idle":
                 ctl.idle()
                 return
@@ -1930,6 +2015,305 @@ class PumpTestRunner(LiveSessionBase):
             self._nominal_end(PRESSURE_SETTLE_GUESS_S)
             if not ctl.settled() and ctl.mode != "fault":
                 self._emit("status", f"Pressure {target:g} mbar not settled within {timeout:g} s; continuing.")
+
+    # ---- G test: pressure-volume steps with the syringe ----
+    def _pv_recover_after_handling(self, ctl, title: str, test: Dict[str, Any]):
+        """After a hand change the line can sit outside the limits: closing a clamp or reconnecting a line pushes
+        liquid into the closed line (26 Nov: +38 mbar per clamping; a 100 mbar limit faulted the moment the prompt
+        ended). While the limits are still in handling mode, let it down with the controller's release (the one mode
+        the handling guard lets the motor move in above the limit) to p_max - 40, instead of faulting. Watched
+        against the G test's room (room_steps from where the run's first syringe move began). Suction below the
+        floor isn't pushed back (it never came from a hand change on 26 Nov): RuntimeError with what to do."""
+        time.sleep(1.0)                             # the reading settles after the hand change
+        p = ctl.p
+        lo, hi = ctl.p_min + 20.0, ctl.p_max - 20.0
+        if math.isnan(p) or lo <= p <= hi:
+            return
+        if p < lo:
+            raise RuntimeError(f"After '{title}' the line sits at {p:.0f} mbar, below {lo:.0f}: open the inlet clamp "
+                               f"briefly to let it back up, then restart.")
+        target = min(hi - 20.0, 30.0)               # near 0: the staircase then starts close to where it should
+        if self._pv_origin is None:
+            self._pv_origin = ctl.syr.position()
+        room = int(round(safe_float(test.get("room_steps", 80), 80.0) * ctl.m))
+        ctl.note("recover", f"{p:.1f} mbar after '{title}', release to {target:.0f}")
+        self._emit("status", f"After '{title}': {p:.0f} mbar, above {hi:.0f}; the syringe lets it down to "
+                             f"{target:.0f} mbar")
+        ctl.release(rate_mbar_s=30.0, floor_mbar=target)
+        t_end = CLOCK() + safe_float(test.get("recover_timeout_s", 90), 90.0)
+        while ctl.mode == "release" and not self.stop_flag.is_set():
+            if abs(ctl.syr.position() - self._pv_origin) > room or CLOCK() > t_end:
+                ctl.idle()
+                raise RuntimeError(f"After '{title}' the syringe could not let the line down from {p:.0f} mbar "
+                                   f"(now {ctl.p:.0f}) within the plunger room / time: open the inlet clamp briefly "
+                                   f"to let it down by hand, then restart.")
+            time.sleep(0.1)
+        ctl.hold_position()
+        ctl.note("recovered", f"{ctl.p:.1f} mbar, syringe at {ctl.syr.position()}")
+        self._emit("status", f"Pressure back at {ctl.p:.0f} mbar.")
+
+    def _write_pv_row(self, row: Dict[str, Any]):
+        if self._pv_writer is None:
+            self._pv_file = open(os.path.join(self.run_dir, "pv_steps.csv"), "a", newline="", encoding="utf-8")
+            self._pv_writer = csv.DictWriter(self._pv_file, fieldnames=PV_COLS, lineterminator="\n")
+            if self._pv_file.tell() == 0:
+                self._pv_writer.writeheader()
+        self._pv_n += 1
+        row = dict(row, row=self._pv_n)
+        self._pv_writer.writerow({k: ("" if row.get(k) is None else row.get(k)) for k in PV_COLS})
+        self._pv_file.flush()
+        try:
+            os.fsync(self._pv_file.fileno())
+        except Exception:
+            pass
+
+    def _pv_window(self, a: float, b: float) -> Dict[str, float]:
+        """Pressure mean, SD and slope (mbar/s) between run times a and b, from the controller's samples."""
+        rows = [h for h in list(self.ctl.hist) if a <= h[0] <= b]
+        n = len(rows)
+        if n < 3:
+            return {"n": n, "p": float("nan"), "sd": float("nan"), "slope": float("nan")}
+        ts, ps = [r[0] for r in rows], [r[1] for r in rows]
+        mt, mp = sum(ts) / n, sum(ps) / n
+        stt = sum((t - mt) ** 2 for t in ts)
+        slope = sum((t - mt) * (p - mp) for t, p in zip(ts, ps)) / stt if stt > 0 else float("nan")
+        sd = math.sqrt(sum((p - mp) ** 2 for p in ps) / (n - 1))
+        return {"n": n, "p": mp, "sd": sd, "slope": slope}
+
+    def _pv_flow_volume(self, a: float, b: float, offset: float) -> Optional[float]:
+        """Flow-sensor volume (uL, + = forward, towards the syringe) between run times a and b, offset
+        (uL/min, the reading while nothing moves) removed. None without flow samples."""
+        with self.lock:
+            pts = [(t, q) for t, q in zip(self.buf_t, self.buf_flow) if a <= t <= b and q is not None]
+        if len(pts) < 2 or offset is None or math.isnan(offset):
+            return None
+        vol = 0.0
+        for (t0, q0), (t1, q1) in zip(pts, pts[1:]):
+            vol += 0.5 * (q0 + q1 - 2.0 * offset) * (t1 - t0) / 60.0
+        return vol
+
+    def _exec_pv_steps(self, test, log_event):
+        """{'type': 'pressure', 'target_mbar': 'pv_steps', 'direction': 'pull' | 'push', 'until_mbar': -300,
+        'target_dp_mbar': 20, 'first_counts': 4, 'min_counts': 2, 'max_counts': 160, 'max_moves': 40,
+        'hold_s': 8, 'measure_s': 4, 'takeup_mbar': 2, 'takeup_counts': 4, 'takeup_wait_s': 0.25,
+        'takeup_max_counts': 800, 'room_steps': 150, 'back_limit_pos': null, 'fine_mbar': 0, 'fine_counts': 4,
+        'section': ..., 'rep': ...}
+
+        G test (compliance = volume step / pressure step): open-loop syringe moves of a known number of
+        motor counts, each followed by a hold with the motor energised and no regulation; pump at 0 Hz.
+        1. Slack: after a direction change the plunger doesn't move for some counts (~350 at x16, lab
+           29 Oct); small moves (takeup_counts) until the pressure has moved takeup_mbar (row 'takeup').
+        2. Moves: fine_mbar > 0: fixed fine_counts moves until the pressure is fine_mbar from where the moves
+           began (resolves the check valve's cracking pressure); then the first is first_counts and the rest
+           are sized for target_dp_mbar from the last measured mbar per count (min_counts..max_counts). Each move: hold hold_s, pressure averaged over its last
+           measure_s, one row in pv_steps.csv (counts, uL, pressure before/after, drift during the hold,
+           flow-sensor volume as a cross-check).
+        Ends when the held pressure has passed until_mbar, after max_moves, when the next move would leave
+        the room (room_steps full steps either side of where the run's first pv_steps block began, and
+        never past back_limit_pos, an absolute count, when pulling), or when it is predicted to cross the
+        controller's limits (10 mbar guard, 1.5x the measured gain)."""
+        ctl = self._need_ctl()
+        if pinch_control is not None and isinstance(ctl, pinch_control.PinchController):
+            raise RuntimeError("'pv_steps' needs the syringe (pressure mode 'syringe'), not the pinch valve.")
+        g = lambda k, dflt: safe_float(test.get(k, dflt), dflt)
+        d = -1 if str(test.get("direction", "pull")).lower() == "pull" else 1     # +1 = push in (pos down)
+        until = g("until_mbar", -300.0 if d < 0 else 0.0)
+        target_dp = max(1.0, g("target_dp_mbar", 20.0))
+        first_c = max(1, int(g("first_counts", 4)))
+        # fine start: fixed small moves until the pressure is fine_mbar from where the moves began, so the
+        # check valve's opening (compliance steps up from line to line + chamber) is resolved
+        fine_mbar, fine_c = max(0.0, g("fine_mbar", 0.0)), max(1, int(g("fine_counts", first_c)))
+        # too-soft check: compliance over the last check_counts counts above max_c_ul_mbar = air in the line or an
+        # open path (inlet clamp) -> stop the run (0 = off)
+        max_c_chk, chk_counts = max(0.0, g("max_c_ul_mbar", 0.0)), max(1, int(g("check_counts", 30)))
+        min_c, max_c = max(1, int(g("min_counts", 2))), max(1, int(g("max_counts", 160)))
+        max_moves = max(1, int(g("max_moves", 40)))
+        hold_s, meas_s = max(1.0, g("hold_s", 8.0)), max(0.5, g("measure_s", 4.0))
+        meas_s = min(meas_s, hold_s - 0.5)
+        tk_mbar, tk_c = max(0.3, g("takeup_mbar", 2.0)), max(1, int(g("takeup_counts", 4)))
+        tk_wait, tk_max = max(0.05, g("takeup_wait_s", 0.25)), max(0, int(g("takeup_max_counts", 800)))
+        room = int(round(g("room_steps", 150.0) * ctl.m))
+        back_lim = test.get("back_limit_pos")
+        back_lim = None if back_lim in (None, "") else int(back_lim)
+        ulpc = safe_float(ctl.cfg.get("ul_per_step"), float("nan"))      # per motor count (motor_cfg)
+        section, rep = test.get("section", ""), test.get("rep", "")
+        dname = "pull" if d < 0 else "push"
+        guard_lo, guard_hi = ctl.p_min + 10.0, ctl.p_max - 10.0
+        stopped = self.stop_flag.is_set
+
+        if self.freq_set:
+            self._set_freq(0)
+            log_event()
+        ctl.hold_position()                       # idle (no regulation), motor energised
+        pos0 = ctl.syr.position()
+        if self._pv_origin is None:
+            self._pv_origin = pos0
+            ctl.note("pv_origin", f"pos {pos0}; room {room} counts either side")
+        rel = lambda: CLOCK() - self.t0
+
+        def room_ok(counts: int) -> bool:
+            new = ctl.syr.position() - d * counts
+            if abs(new - self._pv_origin) > room:
+                return False
+            return not (d < 0 and back_lim is not None and new > back_lim)
+
+        def passed(p: float) -> bool:
+            return (p <= until) if d < 0 else (p >= until)
+
+        def beyond_guard(p: float) -> bool:
+            return p <= guard_lo if d < 0 else p >= guard_hi
+
+        def wait_to(t_abs: float) -> bool:
+            while CLOCK() < t_abs:
+                if stopped() or ctl.mode == "fault":
+                    return False
+                time.sleep(0.02)
+            return True
+
+        def measure_hold(t_from_abs: float) -> Optional[Dict[str, float]]:
+            if not wait_to(t_from_abs + hold_s):
+                return None
+            b = rel()
+            st = self._pv_window(b - meas_s, b)
+            fl = self._window_flow_stats(self.t0 + b - meas_s, self.t0 + b)
+            st.update(a=b - meas_s, b=b, flow=fl.get("flow_mean", float("nan")))
+            return st
+
+        def row(phase, move, counts, before, after, t_move, note=""):
+            dv = d * counts * ulpc
+            dp = after["p"] - before["p"]
+            dvf = self._pv_flow_volume(before["b"], after["b"], before.get("flow"))
+            self._write_pv_row({
+                "section": section, "rep": rep, "direction": dname, "phase": phase, "move": move,
+                "counts": d * counts, "dv_line_ul": f"{dv:.4f}", "pos_before": pos_b, "pos_after": ctl.syr.position(),
+                "p_before_mbar": f"{before['p']:.3f}", "p_after_mbar": f"{after['p']:.3f}", "dp_mbar": f"{dp:.3f}",
+                "p_sd_mbar": f"{after['sd']:.3f}", "drift_mbar_s": f"{after['slope']:.4f}",
+                "c_ul_per_mbar": f"{dv / dp:.5f}" if abs(dp) > 1e-6 and not math.isnan(dv) else "",
+                "dv_flow_ul": "" if dvf is None else f"{dvf:.4f}",
+                "flow_offset": "" if math.isnan(before.get("flow", float("nan"))) else f"{before['flow']:.3f}",
+                "t_move_s": f"{t_move:.3f}", "t_meas_from_s": f"{after['a']:.3f}", "t_meas_to_s": f"{after['b']:.3f}",
+                "note": note})
+            return dp
+
+        # Starting point: a short hold (the line may still relax from the previous block)
+        start = measure_hold(CLOCK() - hold_s + max(2.0, meas_s + 0.5))
+        if start is None:
+            return
+        if passed(start["p"]):
+            self._emit("status", f"PV steps ({dname}): already at {start['p']:.1f} mbar (until {until:g}); skipped.")
+            ctl.note("pv_skip", f"{dname} at {start['p']:.1f}")
+            return
+
+        # 1. Slack after the direction change
+        pos_b, t_tk = ctl.syr.position(), rel()
+        # Engaged = a single small move changes the pressure by >= takeup_mbar / 2 (min 1 mbar) the expected way:
+        # judged per move, so a slow creep during the search can't fake it (26 Nov rig: 48 counts "took up" a
+        # ~350-count slack on a creeping line). Two moves in a row the wrong way = syringe reversed.
+        moved, responded, wrong = 0, tk_max == 0, 0
+        thr = max(1.0, 0.5 * tk_mbar)
+        p_ref = start["p"]
+        while not responded and moved < tk_max and not stopped() and ctl.mode != "fault":
+            if not room_ok(tk_c):
+                self._emit("status", f"PV steps ({dname}): no room left while taking up the slack.")
+                ctl.note("pv_end", "room (slack)")
+                return
+            p_bm = ctl.p
+            if not ctl.syr.move(d * tk_c):
+                self._emit("status", "PV steps: the syringe did not confirm a move; block ended.")
+                ctl.note("pv_end", "move not confirmed (slack)")
+                return
+            moved += tk_c
+            if not wait_to(CLOCK() + tk_wait):
+                return
+            step = d * (ctl.p - p_bm)
+            responded = step >= thr or beyond_guard(ctl.p)
+            wrong = wrong + 1 if step <= -thr else 0
+            if wrong >= 2:
+                ctl.note("pv_end", f"pressure moved the wrong way ({p_ref:.1f} -> {ctl.p:.1f} mbar on a {dname})")
+                raise RuntimeError(f"PV steps: a {dname} moved the pressure the wrong way ({p_ref:.1f} -> "
+                                   f"{ctl.p:.1f} mbar): is the syringe mounted the other way round? Run stopped.")
+        if stopped() or ctl.mode == "fault":
+            return
+        if not responded:
+            # 26 Nov rig: an open inlet / air left whole staircases without data; stop instead of carrying on
+            ctl.note("pv_end", f"no response within {tk_max} counts")
+            raise RuntimeError(f"PV steps ({dname}): no {tk_c}-count move changed the pressure by {thr:g} mbar within "
+                               f"{tk_max} counts ({tk_max * ulpc:.1f} uL): the line is open (inlet clamp?), full of "
+                               f"air, or the syringe is not coupled. Run stopped.")
+        prev = measure_hold(CLOCK())
+        if prev is None:
+            return
+        row("takeup", 0, moved, start, prev, t_tk, note=f"slack taken up in {moved} counts")
+        ctl.note("pv_takeup", f"{dname}: {moved} counts")
+
+        # 2. Volume steps
+        k_est: Optional[float] = None             # |mbar| per count in this direction, from the last move
+        n_done, why = 0, f"max_moves {max_moves}"
+        p_begin = prev["p"]
+        recent: List[Tuple[int, float]] = []      # (counts, pressure change the expected way) for the soft check
+        if fine_mbar > 0:
+            max_moves += int(fine_mbar / 2.0)     # room for the fine moves on top
+        for move in range(1, max_moves + 1):
+            if stopped() or ctl.mode == "fault":
+                why = "stopped"
+                break
+            if passed(prev["p"]):
+                why = f"reached {prev['p']:.1f} mbar (until {until:g})"
+                break
+            if fine_mbar > 0 and abs(prev["p"] - p_begin) < fine_mbar:
+                counts = fine_c
+            else:
+                counts = first_c if k_est is None else int(min(max_c, max(min_c, round(target_dp / k_est))))
+            if k_est is not None:                 # don't let the next move cross the limits
+                room_mbar = (prev["p"] - guard_lo) if d < 0 else (guard_hi - prev["p"])
+                if counts * k_est * 1.5 > room_mbar:
+                    counts = int(room_mbar / (1.5 * k_est))
+                    if counts < min_c:
+                        why = f"next move would cross the {guard_lo if d < 0 else guard_hi:.0f} mbar guard"
+                        break
+            if beyond_guard(prev["p"]):
+                why = "at the guard"
+                break
+            if not room_ok(counts):
+                why = "syringe room used up"
+                break
+            pos_b, t_mv = ctl.syr.position(), rel()
+            t_abs = CLOCK()
+            if not ctl.syr.move(d * counts):
+                why = "move not confirmed"
+                break
+            cur = measure_hold(t_abs)
+            if cur is None:
+                why = "stopped"
+                break
+            dp = row("step", move, counts, prev, cur, t_mv)
+            n_done += 1
+            if d * dp < -3.0:                     # a move the wrong way (and not noise): stop, don't keep going
+                ctl.note("pv_end", f"move {move} changed the pressure by {dp:+.1f} mbar on a {dname}")
+                raise RuntimeError(f"PV steps: {dname} move {move} changed the pressure by {dp:+.1f} mbar, the wrong "
+                                   f"way (syringe reversed or the line opened?). Run stopped.")
+            if max_c_chk > 0:
+                recent.append((counts, d * dp))
+                while len(recent) > 1 and sum(c for c, _ in recent) - recent[0][0] >= chk_counts:
+                    recent.pop(0)
+                n_c = sum(c for c, _ in recent)
+                if n_c >= chk_counts:
+                    c_win = n_c * ulpc / max(1e-6, sum(x for _, x in recent))
+                    if c_win > max_c_chk or sum(x for _, x in recent) <= 0:
+                        msg = (f"over the last {n_c} counts ({n_c * ulpc:.2f} uL) the pressure moved "
+                               f"{sum(x for _, x in recent):+.1f} mbar: compliance "
+                               + (f"{c_win:.2f}" if sum(x for _, x in recent) > 0 else "unbounded")
+                               + f" uL/mbar, limit {max_c_chk:g} (a closed, bubble-free line is ~0.03)")
+                        ctl.note("pv_end", "too soft: " + msg)
+                        raise RuntimeError(f"PV steps ({dname}): line too soft, {msg}. Air in the syringe or line, "
+                                           f"or the inlet is open. Run stopped.")
+            if d * dp > 0.2:                      # the pressure moved the expected way
+                k_est = abs(dp) / counts
+            self._emit("status", f"PV {section} {dname} #{move}: {d * counts:+d} counts ({d * counts * ulpc:+.3f} uL) "
+                                 f"-> {cur['p']:.1f} mbar (dp {dp:+.1f}, drift {cur['slope']:+.2f} mbar/s)")
+            prev = cur
+        ctl.note("pv_end", f"{dname}: {n_done} moves; {why}")
+        self._emit("status", f"PV steps ({section}, {dname}): {n_done} moves, ended: {why}; at {prev['p']:.1f} mbar.")
 
     def _open_pq_log(self):
         if self._pq_writer is None:
@@ -2279,6 +2663,38 @@ class PumpTestRunner(LiveSessionBase):
         self.logger.open()
         self._set_freq(0)
         self._set_duty(0.0)
+        if self.protocol == "freq_amp":
+            dc = drive_cfg(self.cfg)
+            self._apply_drive({}, ramp_s=dc["ramp_s"], note="start (defaults)")
+
+    def _apply_drive(self, test: Dict[str, Any], ramp_s: Optional[float] = None, note: str = ""):
+        """Protocol freq_amp: set the block's carrier duty / carrier (or the config defaults) before it drives; every
+        change goes to drive_events.csv (t_s, frequency about to be set, carrier_duty, carrier_hz, supply mV, note)."""
+        if self.protocol != "freq_amp":
+            return
+        dc = drive_cfg(self.cfg)
+        duty = clamp(safe_float(test.get("carrier_duty", dc["carrier_duty"]), dc["carrier_duty"]), 0.0, 1.0)
+        carrier = int(safe_float(test.get("carrier_hz", dc["carrier_hz"]), dc["carrier_hz"]))
+        if self._drive_now == (round(duty, 4), carrier) and ramp_s is None:
+            return
+        if self.ser:
+            with self._ser_lock:
+                serial_send_drive(self.ser, duty, carrier, self.protocol, ramp_s)
+        self._drive_now = (round(duty, 4), carrier)
+        try:
+            if self._drive_file is None:
+                path = os.path.join(self.run_dir, "drive_events.csv")
+                new = not os.path.exists(path)
+                self._drive_file = open(path, "a", newline="", encoding="utf-8")
+                if new:
+                    self._drive_file.write("t_s,frequency_hz,carrier_duty,carrier_hz,ramp_s,supply_mv,note\n")
+            t_s = (CLOCK() - self.t0) if self.t0 is not None else 0.0
+            f_next = test.get("frequency_hz", test.get("start_hz", ""))
+            self._drive_file.write(f"{t_s:.3f},{f_next},{duty:.4f},{carrier},{'' if ramp_s is None else ramp_s},"
+                                   f"{getattr(self, 'v_set_mv', '')},{note}\n")
+            self._drive_file.flush()
+        except Exception:
+            log_exception("drive_events.csv write failed")
 
     def _teardown_hardware(self):
         """Pump to 0 Hz, close pressure control, PPK2, serial, flow sensor and logger. Runs once:
@@ -2291,14 +2707,27 @@ class PumpTestRunner(LiveSessionBase):
             if bool(self.cfg.get("send_zero_on_exit", True)):
                 self._set_freq(0)
                 self._set_duty(0.0)
+                if self.protocol == "freq_amp" and self.ser:      # leave the driver at full amplitude (today's default)
+                    with self._ser_lock:
+                        serial_send_drive(self.ser, 1.0, drive_cfg(self.cfg)["carrier_hz"], self.protocol)
         except Exception:
             log_exception("PumpTestRunner teardown: failed to send zero on exit")
+        if self._drive_file is not None:
+            try:
+                self._drive_file.close()
+            except Exception:
+                pass
         self._close_pressure("PumpTestRunner teardown")
         if self._pq_file is not None:
             try:
                 self._pq_file.close()
             except Exception:
                 log_exception("PumpTestRunner teardown: failed to close pq_points.csv")
+        if self._pv_file is not None:
+            try:
+                self._pv_file.close()
+            except Exception:
+                log_exception("PumpTestRunner teardown: failed to close pv_steps.csv")
         if getattr(self, "_ap_file", None) is not None:
             try:
                 self._ap_file.close()
@@ -2535,6 +2964,8 @@ class PumpTestRunner(LiveSessionBase):
             if ttype == "constant":
                 hz = int(test["frequency_hz"])
                 dur = float(test["duration_s"])
+                if hz > 0:
+                    self._apply_drive(test)
                 t_start = self._step_start()
                 self._nominal_begin(t_start, settle_s + dur)
                 self._set_freq(hz)
@@ -2564,6 +2995,7 @@ class PumpTestRunner(LiveSessionBase):
 
             elif ttype == "sweep":
                 a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
+                self._apply_drive(test)
                 if "step_duration_s" in test:
                     step_dur = float(test["step_duration_s"])
                 elif "total_duration_s" in test:
@@ -3645,7 +4077,7 @@ class DashboardApp:
         ttk.Entry(hw, textvariable=self.var_baud, width=9).grid(row=1, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Protocol:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
-        proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty"], textvariable=self.var_protocol)
+        proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty", "freq_amp"], textvariable=self.var_protocol)
         proto.grid(row=2, column=1, sticky="w", padx=4, pady=2)
         proto.bind("<<ComboboxSelected>>", lambda *_: self._refresh_manual_duty_state())
 
@@ -5859,6 +6291,11 @@ class DashboardApp:
                     f"settle {safe_float(t.get('settle_s', 0), 0.0):g} s{when})")
         if ttype == "pressure":
             tgt = t.get("target_mbar", "release")
+            if str(tgt).lower() == "pv_steps":
+                return (f"PV STEPS: {t.get('direction', 'pull')} until {t.get('until_mbar')} mbar, ~"
+                        f"{t.get('target_dp_mbar', 20)} mbar per move, hold {t.get('hold_s', 8)} s (pump 0 Hz)")
+            if str(tgt).lower() == "prompt":
+                return f"PROMPT (you, at the rig): {t.get('title', '')}"
             if not is_pressure_target(t):
                 return f"PRESSURE: {str(tgt).lower()}"
             wait = f", wait until settled (max {safe_float(t.get('timeout_s', 120), 120.0):g} s)" \
