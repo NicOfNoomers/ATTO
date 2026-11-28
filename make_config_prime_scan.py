@@ -28,13 +28,16 @@ ap.add_argument("--rest-s", type=float, default=0.0,
 ap.add_argument("--sweep", default="",
                 help="priming SWEEP instead of the fixed-frequency round: 'lo,hi,steps,step_s' (e.g. 100,2000,20,1.5): up then down (NM 27 Nov: after a rest the air has merged; sweep it out)")
 ap.add_argument("--no-first-scan", action="store_true", help="skip scan_A (the previous run ended with a scan)")
+ap.add_argument("--holds", default="", help="SHAKE SEARCH: holds at these frequencies (Hz, comma list), each --hold-s long and "
+                "followed by a full scan (NM 27 Nov: find the frequency where the gas breaks, then hold it long)")
+ap.add_argument("--hold-s", type=float, default=120.0)
 ap.add_argument("--out", default=None)
 a = ap.parse_args()
 if not 0 < a.v <= 2500:
     raise SystemExit("--v must be between 1 and 2500 mV")
 if not (1 <= round(0.8 * a.f) and round(1.2 * a.f) <= 3000):
     raise SystemExit("--f: 0.8 F .. 1.2 F must lie within 1..3000 Hz")
-if not 20 <= a.ilim <= 120 or not 1 <= a.rounds <= 8:
+if not 20 <= a.ilim <= 120 or not 1 <= a.rounds <= 8 or not 10 <= a.hold_s <= 1800:
     raise SystemExit("--ilim 20..120 mA, --rounds 1..8")
 
 FREQS = [100, 150, 200, 300, 400, 500, 600, 700, 800, 1000, 1300, 1600]
@@ -63,7 +66,13 @@ if a.supply == "rsd3305p":
                   "note": f"{a.v / 1000:.2f} V by the supply"})
 if not a.no_first_scan:
     tests += scan("scan_A", 0)
-for r in range(1, a.rounds + 1):
+holds = [int(x) for x in a.holds.split(",") if x.strip()]
+if any(not 1 <= h <= 3000 for h in holds):
+    raise SystemExit("--holds: 1..3000 Hz")
+for k, h in enumerate(holds, 1):
+    tests += [drive(h, a.hold_s, section="hold", rep=k, hold_hz=h), zero(10.0)]
+    tests += scan("scan_hold", k)
+for r in range(1, (0 if holds else a.rounds) + 1):
     if a.rest_s > 0:
         tests.append(zero(a.rest_s))
         tests += scan("scan_rest", r)
@@ -104,5 +113,5 @@ dur = sum(t.get("duration_s", 0) for t in tests if t["type"] == "constant") + 5 
 out = a.out or f"config_prime_scan_{a.pump}_{F}Hz.json"
 with open(out, "w", encoding="utf-8") as fh:
     json.dump(cfg, fh, indent=2)
-what = f"{a.rest_s:g} s rest" if a.rest_s > 0 else (f"sweep {a.sweep} up+down" if a.sweep else f"prime at {F} Hz")
+what = (f"holds {a.holds} x {a.hold_s:g} s" if a.holds else (f"{a.rest_s:g} s rest" if a.rest_s > 0 else (f"sweep {a.sweep} up+down" if a.sweep else f"prime at {F} Hz")))
 print(f"wrote {out}: scan + {a.rounds} x [{what} + scan], about {dur / 60:.0f} min")
