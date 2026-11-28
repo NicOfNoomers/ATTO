@@ -726,6 +726,36 @@ def serial_send_duty(ser, duty: float, protocol: str):
     ser.flush()
 
 
+def serial_send_drive(ser, carrier_duty: float, carrier_hz: int, protocol: str, ramp_s: Optional[float] = None):
+    """Carrier-PWM amplitude (firmware/pump_driver_duty_*; protocol 'freq_amp' only): A = carrier duty 0..1 (coil
+    amplitude +-D x VM, slow decay), C = carrier Hz, R = start/stop ramp s. The legacy 'D' stays the old on/off duty."""
+    if protocol != "freq_amp":
+        return
+    if ramp_s is not None:
+        ser.write(f"R {clamp(float(ramp_s), 0.0, 1.5):.3f}\n".encode("utf-8"))
+    ser.write(f"C {int(carrier_hz)}\n".encode("utf-8"))
+    ser.write(f"A {clamp(float(carrier_duty), 0.0, 1.0):.4f}\n".encode("utf-8"))
+    ser.flush()
+
+
+def drive_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Driver defaults for protocol 'freq_amp': carrier_duty 1.0 (= today's plain square wave), carrier 50 kHz, no ramp."""
+    d = dict(cfg.get("driver") or {})
+    return {"carrier_duty": float(d.get("carrier_duty", 1.0)), "carrier_hz": int(d.get("carrier_hz", 50000)),
+            "ramp_s": float(d.get("ramp_s", 0.0))}
+
+
+def blocks_use_carrier(blocks: List[Dict[str, Any]]) -> bool:
+    """Any block (groups included) that sets carrier_duty below 1 or a carrier_hz."""
+    for b in blocks:
+        if block_type(b) == "group":
+            if blocks_use_carrier(b.get("blocks") or []):
+                return True
+        elif ("carrier_duty" in b and float(b["carrier_duty"]) < 0.999) or "carrier_hz" in b:
+            return True
+    return False
+
+
 # ---------------- flow backends ----------------
 class FlowSensorBase:
     def open(self): ...
@@ -1743,6 +1773,8 @@ class PumpTestRunner(LiveSessionBase):
         self._pv_writer = None
         self._pv_origin: Optional[int] = None   # syringe position where the run's first pv_steps block began
         self._pv_n = 0
+        self._drive_now: Optional[Tuple[float, int]] = None   # (carrier_duty, carrier_hz) last sent (protocol freq_amp)
+        self._drive_file = None                 # drive_events.csv
 
     def _emit(self, kind: str, msg: Any):
         self.ui_events.put((kind, msg))
@@ -2631,6 +2663,38 @@ class PumpTestRunner(LiveSessionBase):
         self.logger.open()
         self._set_freq(0)
         self._set_duty(0.0)
+        if self.protocol == "freq_amp":
+            dc = drive_cfg(self.cfg)
+            self._apply_drive({}, ramp_s=dc["ramp_s"], note="start (defaults)")
+
+    def _apply_drive(self, test: Dict[str, Any], ramp_s: Optional[float] = None, note: str = ""):
+        """Protocol freq_amp: set the block's carrier duty / carrier (or the config defaults) before it drives; every
+        change goes to drive_events.csv (t_s, frequency about to be set, carrier_duty, carrier_hz, supply mV, note)."""
+        if self.protocol != "freq_amp":
+            return
+        dc = drive_cfg(self.cfg)
+        duty = clamp(safe_float(test.get("carrier_duty", dc["carrier_duty"]), dc["carrier_duty"]), 0.0, 1.0)
+        carrier = int(safe_float(test.get("carrier_hz", dc["carrier_hz"]), dc["carrier_hz"]))
+        if self._drive_now == (round(duty, 4), carrier) and ramp_s is None:
+            return
+        if self.ser:
+            with self._ser_lock:
+                serial_send_drive(self.ser, duty, carrier, self.protocol, ramp_s)
+        self._drive_now = (round(duty, 4), carrier)
+        try:
+            if self._drive_file is None:
+                path = os.path.join(self.run_dir, "drive_events.csv")
+                new = not os.path.exists(path)
+                self._drive_file = open(path, "a", newline="", encoding="utf-8")
+                if new:
+                    self._drive_file.write("t_s,frequency_hz,carrier_duty,carrier_hz,ramp_s,supply_mv,note\n")
+            t_s = (CLOCK() - self.t0) if self.t0 is not None else 0.0
+            f_next = test.get("frequency_hz", test.get("start_hz", ""))
+            self._drive_file.write(f"{t_s:.3f},{f_next},{duty:.4f},{carrier},{'' if ramp_s is None else ramp_s},"
+                                   f"{getattr(self, 'v_set_mv', '')},{note}\n")
+            self._drive_file.flush()
+        except Exception:
+            log_exception("drive_events.csv write failed")
 
     def _teardown_hardware(self):
         """Pump to 0 Hz, close pressure control, PPK2, serial, flow sensor and logger. Runs once:
@@ -2643,8 +2707,16 @@ class PumpTestRunner(LiveSessionBase):
             if bool(self.cfg.get("send_zero_on_exit", True)):
                 self._set_freq(0)
                 self._set_duty(0.0)
+                if self.protocol == "freq_amp" and self.ser:      # leave the driver at full amplitude (today's default)
+                    with self._ser_lock:
+                        serial_send_drive(self.ser, 1.0, drive_cfg(self.cfg)["carrier_hz"], self.protocol)
         except Exception:
             log_exception("PumpTestRunner teardown: failed to send zero on exit")
+        if self._drive_file is not None:
+            try:
+                self._drive_file.close()
+            except Exception:
+                pass
         self._close_pressure("PumpTestRunner teardown")
         if self._pq_file is not None:
             try:
@@ -2892,6 +2964,8 @@ class PumpTestRunner(LiveSessionBase):
             if ttype == "constant":
                 hz = int(test["frequency_hz"])
                 dur = float(test["duration_s"])
+                if hz > 0:
+                    self._apply_drive(test)
                 t_start = self._step_start()
                 self._nominal_begin(t_start, settle_s + dur)
                 self._set_freq(hz)
@@ -2921,6 +2995,7 @@ class PumpTestRunner(LiveSessionBase):
 
             elif ttype == "sweep":
                 a = int(test["start_hz"]); b = int(test["end_hz"]); n = int(test["steps"])
+                self._apply_drive(test)
                 if "step_duration_s" in test:
                     step_dur = float(test["step_duration_s"])
                 elif "total_duration_s" in test:
@@ -4002,7 +4077,7 @@ class DashboardApp:
         ttk.Entry(hw, textvariable=self.var_baud, width=9).grid(row=1, column=3, sticky="w", padx=4, pady=2)
 
         ttk.Label(hw, text="Protocol:").grid(row=2, column=0, sticky="w", padx=4, pady=2)
-        proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty"], textvariable=self.var_protocol)
+        proto = ttk.Combobox(hw, state="readonly", width=10, values=["freq_only", "freq_duty", "freq_amp"], textvariable=self.var_protocol)
         proto.grid(row=2, column=1, sticky="w", padx=4, pady=2)
         proto.bind("<<ComboboxSelected>>", lambda *_: self._refresh_manual_duty_state())
 

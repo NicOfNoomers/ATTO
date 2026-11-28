@@ -184,6 +184,14 @@ def main(argv=None):
     if needs_person and a.on_prompt == "stop":
         problems.append("needs a person at the rig: " + ", ".join(sorted(set(needs_person)))
                         + " (use --on-prompt wait only if someone is there)")
+    proto = (cfg.get("protocol") or (cfg.get("serial") or {}).get("protocol") or "freq_only")
+    if d.blocks_use_carrier(tests) and proto != "freq_amp":
+        problems.append(f"blocks set carrier_duty / carrier_hz but the protocol is {proto!r}: the old driver firmware would "
+                        f"ignore them; needs firmware/pump_driver_duty_* and protocol 'freq_amp'")
+    if proto == "freq_amp":
+        dc = d.drive_cfg(cfg)
+        out(f"driver: protocol freq_amp, default carrier duty {dc['carrier_duty']:g}, carrier {dc['carrier_hz']} Hz, "
+            f"ramp {dc['ramp_s']:g} s")
     if cfg.get("require_pump_id") and not (cfg.get("meta") or {}).get("pump_id"):
         problems.append("the config requires a pump ID: --pump-id")
     if video_problem:
